@@ -20,7 +20,7 @@
 ## Special Instructions
 The main results we present are the core AccurateLatency test results (Figure 12) and the Accuracy test results (Figures 13 and 14) from the paper. 
 Due to the varying execution dependencies of different models, we selected several representative test points to demonstrate the effects with minimizing configuration, in order to reduce the efforts of configuring different environments as much as possible.
-We rewrote the original code to ensure that, while showing the effects, we could also provide a more concise interface and more readable code.
+We rewrote the original code in Python to ensure that, while showing the effects, we could also provide a more concise interface and more readable code.
 
 Our main claim of the paper contains three part:
 1. The latency of SAVE can be as small as 9% for end-to-end performance.
