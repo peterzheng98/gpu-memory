@@ -58,7 +58,7 @@ After build, run the following code to check whether it is well-built.
 conda activate base_environment
 python -c "import torch; print(torch.__version__);"
 ```
-The expected output should contain `test-base`. 
+The expected output should contain `0.1.0`. 
 Once the base pytorch is built, run the following code:
 ```bash
 conda activate base_environment
@@ -92,7 +92,7 @@ After build, run the following code to check whether it is well-built.
 conda activate save_environment
 python -c "import torch; print(torch.__version__);"
 ```
-The expected output should contain `test-save`. 
+The expected output should contain `0.1.1`. 
 Once the base pytorch is built, run the following code:
 ```bash
 conda activate save_environment
