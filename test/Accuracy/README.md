@@ -65,5 +65,6 @@ Cnt     vit_direct.csv          vit_rednet.csv          vit_save.csv            
 **Claim:** The expected outcome is a noticeable decrease in accuracy when up to 64 bits are flipped. This degradation in performance is influenced by different memory placement on the GPU, which may not exactly match the decline points described in the paper. 
 
 ## Q&A
-1. What is the difference between virt and phy?
+### 1. What is the difference between virt and phy?
+ 
 Answer: According to the trace provided in the RedNet paper, real-world bit flips can be categorized as either contiguous in physical space (similar to being in the same row or column) or contiguous in virtual address space. In the former case, the flips appear as bit flips that are very far apart in the virtual address space. To distinguish between these two scenarios, we conducted separate tests.
