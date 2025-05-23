@@ -1,10 +1,6 @@
 #pragma once
 
-#include <condition_variable>
 #include <memory>
-#include <mutex>
-#include <stdexcept>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -37,6 +33,7 @@ class TORCH_API Backend : public torch::CustomClassHolder {
     std::chrono::milliseconds timeout;
 
     // backend name
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     const std::string backend;
   };
 
@@ -55,6 +52,10 @@ class TORCH_API Backend : public torch::CustomClassHolder {
   // with its collectives.
   int64_t getID() const {
     return reinterpret_cast<std::intptr_t>(this);
+  }
+
+  virtual bool supportsSplitting() const {
+    return false;
   }
 
   virtual void startCoalescing() {
@@ -357,12 +358,39 @@ class TORCH_API Backend : public torch::CustomClassHolder {
   }
 
   // Do not call this directly, use ProcessGroup::setGroupName instead.
-  void setGroupName(const std::string& name) {
-    pg_name_ = name;
+  void setGroupUid(const std::string& pg_uid) {
+    pg_uid_ = pg_uid;
   }
 
-  const std::string& getGroupName() const {
-    return pg_name_;
+  const std::string& getGroupUid() const {
+    return pg_uid_;
+  }
+
+  void setGroupDesc(const std::string& desc) {
+    pg_desc_ = desc;
+  }
+
+  const std::string& getGroupDesc() const {
+    return pg_desc_;
+  }
+
+  // See similar functions in ProcessGroup.hpp for context.
+  std::optional<at::Device> getBoundDeviceId() const {
+    return bound_device_id_;
+  }
+
+  // Perform an eager connect to the specified device if the backend supports
+  // it.
+  virtual void eagerConnectSingleDevice(at::Device device) {
+    // no-op in the default case; this is an optimization some
+    // backends may perform
+  }
+
+  void setBoundDeviceId(std::optional<at::Device> device) {
+    if (device) {
+      TORCH_CHECK(device->has_index(), "setBoundDeviceId must have an index");
+    }
+    bound_device_id_ = device;
   }
 
  protected:
@@ -370,14 +398,19 @@ class TORCH_API Backend : public torch::CustomClassHolder {
   // appropriate logging etc.
   void init();
 
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
   const int rank_;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
   const int size_;
   // Debug level setting. It is parsed once when ProcessGroup is constructed and
   // remains the same across use of this process group.
   DebugLevel dist_debug_level_;
-  std::string pg_name_;
+  std::string pg_uid_;
+  std::string pg_desc_;
 
   std::function<void(std::shared_ptr<WorkInfo>)> onCompletionHook_;
+
+  std::optional<at::Device> bound_device_id_;
 };
 
 } // namespace c10d

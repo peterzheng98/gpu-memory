@@ -1,5 +1,5 @@
 #===============================================================================
-# Copyright 2016-2023 Intel Corporation
+# Copyright 2016-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -79,6 +79,13 @@ if(DNNL_EXPERIMENTAL_SPARSE)
     message(STATUS "Experimental functionality for sparse domain is enabled")
 endif()
 
+if(DNNL_EXPERIMENTAL_UKERNEL)
+    if(DNNL_TARGET_ARCH STREQUAL "ARCH_GENERIC")
+        message(FATAL_ERROR "ukernel API does not support generic architecture.")
+    endif()
+    message(STATUS "Experimental functionality for ukernels is enabled")
+endif()
+
 if(DNNL_EXPERIMENTAL_PROFILING)
     message(STATUS "Experimental profiling capabilities are enabled")
 endif()
@@ -133,11 +140,6 @@ endif()
 
 if(ONEDNN_BUILD_GRAPH)
     message(STATUS "Graph component is enabled")
-    if (DNNL_GPU_RUNTIME STREQUAL "OCL")
-        message(FATAL_ERROR "Graph API does not support OCL GPU runtime. "
-            "Either disable Graph API with ONEDNN_BUILD_GRAPH=OFF or change GPU "
-            "runtime to SYCL with ONEDNN_GPU_RUNTIME=SYCL.")
-    endif()
 
     if (NOT DNNL_GPU_VENDOR STREQUAL "INTEL")
         message(FATAL_ERROR "Graph API does not support ${DNNL_GPU_VENDOR} GPU. "
@@ -283,6 +285,12 @@ if(DNNL_GPU_RUNTIME STREQUAL "OCL")
     install(FILES
         "../cmake/FindOpenCL.cmake"
         DESTINATION ${LIB_CONFIG_INSTALL_DIR})
+endif()
+
+if(DNNL_BLAS_VENDOR STREQUAL "ACCELERATE")
+    install(FILES
+    "../cmake/FindBLAS.cmake"
+    DESTINATION ${LIB_CONFIG_INSTALL_DIR})
 endif()
 
 # On Windows we need to add dnnl.dll path to CTESTCONFIG_PATH which is later

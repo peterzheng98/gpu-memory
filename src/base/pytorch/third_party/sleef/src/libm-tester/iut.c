@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -17,7 +17,6 @@
 #else
 #include <unistd.h>
 #include <sys/types.h>
-#include <signal.h>
 #endif
 
 #include "sleef.h"
@@ -464,7 +463,7 @@ int main(int argc, char **argv) {
     } else if (startsWith(buf, "ldexpf ")) {
       uint32_t u, v;
       sscanf(buf, "ldexpf %x %x", &u, &v);
-      u = f2u(xldexpf(u2f(u), u2f(v)));
+      u = f2u(xldexpf(u2f(u), (int)u2f(v)));
       printf("%x\n", u);
     } else if (startsWith(buf, "powf ")) {
       uint32_t u, v;

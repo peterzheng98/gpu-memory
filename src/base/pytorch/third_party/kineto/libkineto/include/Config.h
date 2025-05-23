@@ -18,9 +18,7 @@
 #include <string>
 #include <vector>
 
-namespace KINETO_NAMESPACE {
-
-using namespace libkineto;
+namespace libkineto {
 
 class Config : public AbstractConfig {
  public:
@@ -354,7 +352,8 @@ class Config : public AbstractConfig {
   void updateActivityProfilerRequestReceivedTime();
 
   void printActivityProfilerConfig(std::ostream& s) const override;
-
+  void setActivityDependentConfig() override;
+  
   void validate(const std::chrono::time_point<std::chrono::system_clock>&
                     fallbackProfileStartTime) override;
 
@@ -369,6 +368,14 @@ class Config : public AbstractConfig {
   // is destroyed before the threads stop. By hanging onto this handle,
   // correct destruction order can be ensured.
   static std::shared_ptr<void> getStaticObjectsLifetimeHandle();
+
+  bool getTSCTimestampFlag() const{
+    return useTSCTimestamp_;
+  }
+
+  void setTSCTimestampFlag(bool flag) {
+    useTSCTimestamp_ = flag;
+  }
 
  private:
   explicit Config(const Config& other) = default;
@@ -488,8 +495,11 @@ class Config : public AbstractConfig {
   // CUPTI Device Buffer
   size_t cuptiDeviceBufferSize_;
   size_t cuptiDeviceBufferPoolLimit_;
+
+  // CUPTI Timestamp Format
+  bool useTSCTimestamp_{true};
 };
 
 constexpr char kUseDaemonEnvVar[] = "KINETO_USE_DAEMON";
 
-} // namespace KINETO_NAMESPACE
+} // namespace libkineto

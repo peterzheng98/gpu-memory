@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -527,6 +527,19 @@ std::string format(const char *fmt, Args &&...args) {
     return format_impl(fmt, format_cvt_impl(std::forward<Args>(args))...);
 }
 
+inline bool need_src_or_dst_check(
+        bool is_fwd, int o, int i, int k, int p, int s, int d) {
+    if (is_fwd) {
+        int i_min = -p;
+        int i_max = (o - 1) * s - p + (k - 1) * (1 + d);
+        return (i_min < 0) || (i_max >= i);
+    }
+    // Backward.
+    int os_min = p - (k - 1) * (1 + d);
+    int os_max = (i - 1) + p;
+    return (os_min < 0) || (os_max >= o * s);
+}
+
 // transforms @param l(ogical)_offset into a @param dims_pos based on input
 // dimensions @param dims and @param ndims.
 inline void l_dims_by_l_offset(
@@ -572,29 +585,22 @@ inline void dim_iterator(const dims_t dims, dims_t indices, int ndims) {
     }
 }
 
-inline std::vector<std::string> str_split(const std::string &str, char delim) {
-    const char *s = str.c_str();
-    int cur_pos = 0, token_start = 0;
-    std::vector<std::string> res;
+template <typename T, size_t S>
+inline size_t array_size(T (&t)[S]) {
+    return S;
+}
 
-    while (s[cur_pos] != '\0') {
-        if (s[cur_pos] == delim) {
-            res.emplace_back(s + token_start, cur_pos - token_start);
-            token_start = cur_pos + 1;
-        }
-        ++cur_pos;
-    }
-    // We reached the last token and no delimiter is ending the string
-    if (cur_pos - token_start > 0)
-        res.emplace_back(s + token_start, cur_pos - token_start);
-
-    return res;
+inline bool validate_dims(int ndims, const dims_t dims) {
+    for (int d = 0; d < ndims; ++d)
+        if (dims[d] <= 0) return false;
+    return true;
 }
 
 } // namespace utils
 
 int32_t fetch_and_add(int32_t *dst, int32_t val);
 inline void yield_thread() {}
+bool is_destroying_cache_safe();
 
 // Reads an environment variable 'name' and stores its string value in the
 // 'buffer' of 'buffer_size' bytes (including the terminating zero) on
@@ -692,6 +698,10 @@ static size_t hash_combine(size_t seed, const T &v) {
 
 inline int float2int(float x) {
     return utils::bit_cast<int>(x);
+}
+
+inline float int2float(int x) {
+    return utils::bit_cast<float>(x);
 }
 
 // XXX: Currently SYCL doesn't provide an API to get device UUID but

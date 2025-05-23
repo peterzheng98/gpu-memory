@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2020-2023 Intel Corporation
+ * Copyright 2020-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@
 #include "fusible_op.hpp"
 #include "fusion_data.hpp"
 #include "util/variant.hpp"
+#include <compiler/ir/builder.hpp>
+#include <compiler/ir/builtin.hpp>
 #include <unordered_map>
 
 namespace dnnl {
@@ -39,22 +41,22 @@ enum class cmp_res : int {
 };
 
 using slice_range_map = std::unordered_map<int, slice_range_list>;
-slice_range_map search_known_slice_ranges(
-        sc_op *cur, fslice_map &fsmap, infer_status_map_t &stat_map);
-void set_unknown_slice_ranges(fusible_op_t *cur,
-        const slice_range_map &known_ranges_map, fslice_map &fsmap,
-        infer_status_map_t &stat_map);
-void infer_binary_slice_ranges(
-        fusible_op_t *cur, fslice_map &fsmap, infer_status_map_t &stat_map);
+slice_range_map search_known_input_slice(sc_op *cur, fslice_map &fsmap);
+void set_unknown_input_slice(fusible_op_t *cur,
+        const slice_range_map &known_ranges_map, fslice_map &fsmap);
+infer_status_code infer_binary_slice_ranges(
+        fusible_op_t *cur, fslice_map &fsmap);
 
-std::unordered_map<int, bound_axis> search_known_bound_axis(
-        sc_op *cur, bound_axis_map &bdax_map);
-void set_unknown_axis_binding(sc_op *cur,
-        const std::unordered_map<int, bound_axis> &known_axis_map,
-        bound_axis_map &bdax_map);
-
-void infer_identical_binding_axis(fusible_op_t *cur, bound_axis_map &bdax_map);
-void pre_identical_binding_axis(fusible_op_t *cur, bound_axis_map &bdax_map);
+std::unordered_map<int, binding_axis> search_known_input_axis(
+        sc_op *cur, binding_axis_map &bdax_map);
+void set_unknown_binding_axis(sc_op *cur,
+        const std::unordered_map<int, binding_axis> &known_axis_map,
+        binding_axis_map &bdax_map);
+void call_output_user_axis_binding(sc_op *cur, binding_axis_map &bdax_map);
+void infer_identical_binding_axis(
+        fusible_op_t *cur, binding_axis_map &bdax_map);
+void pre_infer_identical_binding_axis(
+        fusible_op_t *cur, binding_axis_map &bdax_map);
 
 sc_dims get_expr_to_dims(const std::vector<expr> &dims);
 size_t get_dims_product(const sc_dims &dims);
@@ -78,14 +80,21 @@ bool slice_larger_than_bound_on_axis(const slice_range &ranges,
 int get_slice_size(const slice_range &ranges, const int dtype_size = 1);
 
 inline uint16_t vectorize_step(const context_ptr &ctx, sc_data_etype detype) {
+    // eg: bf16 or s8u8 always promote to f32 or s32 to do calculation, we need
+    // to limited bf16 max lanes is 8 under avx2 environment.
+    auto avx2_lanes_require_dtype = [](const sc_data_etype detype) {
+        return detype == sc_data_etype::BF16 || detype == sc_data_etype::S8
+                || detype == sc_data_etype::U8;
+    };
+    if (!ctx->machine_.cpu_flags_.fAVX512F
+            && avx2_lanes_require_dtype(detype)) {
+        assert(ctx->machine_.cpu_flags_.fAVX2);
+        return std::min(uint16_t(8), ctx->get_max_vector_lanes(detype));
+    }
     return std::min(uint16_t(16), ctx->get_max_vector_lanes(detype));
 }
 bool loop_can_be_fused(const for_loop &loop);
 
-class outer_loop_generator_t;
-// depracated api, use old fusion mgr to lowering single fusible op
-ir_module_ptr fusible_op_get_func(fusible_op_t *op, outer_loop_generator_t &gen,
-        const context_ptr &ctx, bool check_parallel);
 // use new fusion mgr to lowering single fusible op
 ir_module_ptr fusible_op_get_func(fusible_op_t *op, const context_ptr &ctx);
 
@@ -111,15 +120,17 @@ void compute_vectorized_op(const context_ptr &ctx, sc_graph_t &graph,
         sc_op_info_t &info, const vectorized_info_t &vx_info,
         const mask_compute_func_t &compute_lanes,
         const mask_compute_func_t &compute_scalar, any_map_t &attrs,
-        size_t wkld = 0UL, bool use_mask = false,
+        const graph_tensor_ptr &expand_gt, size_t wkld = 0UL,
+        bool use_mask = false,
         const tensor_slice *expand_loop_by
         = nullptr /*by default expand loop by dst*/,
         bool unroll_inner_loop = false);
 expr make_select_by_mask(const expr &, const expr &, const expr &, uint32_t);
 expr generate_mask_var_by_step(stmt &mask_def, const expr &cur_step,
-        int32_t step, const expr &sup_condition = expr());
-expr generate_mask_by_step_directly(
-        const expr &cur_step, int32_t step, const expr &sup_condition = expr());
+        int32_t step, const expr &sup_condition = expr(),
+        bool direct_sup_cond = false);
+expr generate_mask_by_step_directly(const expr &cur_step, int32_t step,
+        const expr &sup_condition = expr(), bool direct_sup_cond = false);
 expr calculate_mask_cur_step(
         const expr &len, const expr &iter_var, const int32_t lanes);
 expr indexing_from_diff_cond(const bool is_last_dim_1, const bool has_tail,
@@ -150,11 +161,6 @@ std::vector<int> transform_axis_blocking2plain(
 
 std::string fusion_create_var_idx();
 std::string fusion_create_idx();
-
-void create_fusible_output_anchor(stmt &parent, const tensor_slice &dst,
-        const std::vector<expr> &loop_vars,
-        const std::vector<int> &anchor_pos_in_loop,
-        const vectorized_info_t &vx_info, any_map_t &attrs);
 
 cmp_res cmp_slice_range(const slice_range_list &left_slice_range_list,
         const slice_range_list &right_slice_range_list);

@@ -96,7 +96,10 @@ TEST(ParseTest, ActivityTypes) {
                             ActivityType::EXTERNAL_CORRELATION,
                             ActivityType::OVERHEAD,
                             ActivityType::CUDA_RUNTIME,
-                            ActivityType::CUDA_DRIVER}));
+                            ActivityType::CUDA_DRIVER,
+                            ActivityType::CUDA_SYNC,
+                            ActivityType::MTIA_RUNTIME,
+                            ActivityType::MTIA_CCP_EVENTS}));
 
   Config cfg2;
   EXPECT_TRUE(cfg2.parse("ACTIVITY_TYPES=gpu_memcpy,gpu_MeMsEt,kernel"));
@@ -119,6 +122,11 @@ TEST(ParseTest, ActivityTypes) {
   EXPECT_TRUE(cfg2.parse("ACTIVITY_TYPES = xpu_Runtime"));
   EXPECT_EQ(cfg2.selectedActivityTypes(),
     std::set<ActivityType>({ActivityType::XPU_RUNTIME}));
+
+  EXPECT_TRUE(cfg2.parse("ACTIVITY_TYPES=privateuse1_Runtime,privateuse1_driver"));
+  EXPECT_EQ(cfg2.selectedActivityTypes(),
+    std::set<ActivityType>({ActivityType::PRIVATEUSE1_RUNTIME,
+                            ActivityType::PRIVATEUSE1_DRIVER}));
 }
 
 TEST(ParseTest, SamplePeriod) {
@@ -339,4 +347,12 @@ TEST(ParseTest, ProfileStartTime) {
       duration_cast<milliseconds>((now - seconds(15)).time_since_epoch())
           .count();
   EXPECT_FALSE(cfg.parse(fmt::format("PROFILE_START_TIME = {}", tbad_ms)));
+}
+
+TEST(ParseTest, RequestTraceIds) {
+  Config cfg;
+  EXPECT_TRUE(cfg.parse("REQUEST_TRACE_ID=XYZ"));
+  EXPECT_EQ(cfg.requestTraceID(), "XYZ");
+  EXPECT_TRUE(cfg.parse("REQUEST_GROUP_TRACE_ID=ABC"));
+  EXPECT_EQ(cfg.requestGroupTraceID(), "ABC");
 }

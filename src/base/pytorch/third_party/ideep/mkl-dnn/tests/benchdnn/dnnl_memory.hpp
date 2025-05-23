@@ -83,8 +83,12 @@ struct dnn_mem_t {
 
     ~dnn_mem_t() { cleanup(); }
 
-    int reorder(const dnn_mem_t &rhs, const_dnnl_primitive_attr_t attr);
-    int reorder(const dnn_mem_t &rhs) { return reorder(rhs, nullptr); }
+    int reorder(const dnn_mem_t &rhs, const_dnnl_primitive_attr_t attr,
+            dnnl_data_type_t swap_dt = dnnl_data_type_undef);
+    int reorder(const dnn_mem_t &rhs,
+            dnnl_data_type_t swap_dt = dnnl_data_type_undef) {
+        return reorder(rhs, nullptr, swap_dt);
+    }
 
     size_t size() const;
 
@@ -112,8 +116,6 @@ struct dnn_mem_t {
     const dnnl_dims_t &inner_idxs() const;
 
     size_t sizeof_dt() const;
-
-    void set_dt(dnnl_data_type_t dt) const;
 
     template <typename T>
     explicit operator T *() const {
@@ -189,6 +191,10 @@ struct dnn_mem_t {
     static benchdnn_dnnl_wrapper_t<dnnl_memory_desc_t> init_csr_md(int ndims,
             const dnnl_dims_t dims, dnnl_data_type_t data_type, dnnl_dim_t nnz,
             dnnl_data_type_t indices_dt, dnnl_data_type_t pointers_dt);
+    // Initializes memory descriptor for packed encoding.
+    static benchdnn_dnnl_wrapper_t<dnnl_memory_desc_t> init_sparse_packed_md(
+            int ndims, const dnnl_dims_t dims, dnnl_data_type_t data_type,
+            dnnl_dim_t nnz);
 #endif
 
     /* fields */
@@ -217,6 +223,8 @@ private:
 
     int initialize(dnnl_engine_t engine,
             const handle_info_t &handle_info = handle_info_t::allocate());
+
+    void set_dt(dnnl_data_type_t dt) const;
 
     int cleanup();
 };

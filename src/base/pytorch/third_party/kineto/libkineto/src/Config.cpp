@@ -12,6 +12,7 @@
 
 #include <fmt/chrono.h>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <chrono>
 #include <fstream>
 #include <functional>
@@ -132,6 +133,11 @@ constexpr char kProfileStartIterationKey[] = "PROFILE_START_ITERATION";
 // PROFILE_START_TIME.
 constexpr char kProfileStartIterationRoundUpKey[] =
     "PROFILE_START_ITERATION_ROUNDUP";
+
+constexpr char kRequestTraceID[] = "REQUEST_TRACE_ID";
+constexpr char kRequestGroupTraceID[] =
+    "REQUEST_GROUP_TRACE_ID";
+
 
 // Enable on-demand trigger via kill -USR2 <pid>
 // When triggered in this way, /tmp/libkineto.conf will be used as config.
@@ -384,6 +390,10 @@ bool Config::handleOption(const std::string& name, std::string& val) {
     activitiesWarmupIterations_ = toInt32(val);
   } else if (!name.compare(kActivitiesDisplayCudaSyncWaitEvents)) {
     activitiesCudaSyncWaitEvents_ = toBool(val);
+  } else if (!name.compare(kRequestTraceID)) {
+    requestTraceID_ = val;
+  } else if (!name.compare(kRequestGroupTraceID)) {
+    requestGroupTraceID_ = val;
   }
 
   // TODO: Deprecate Client Interface
@@ -511,6 +521,7 @@ void Config::validate(
   if (selectedActivityTypes_.size() == 0) {
     selectDefaultActivityTypes();
   }
+  setActivityDependentConfig();
 }
 
 void Config::setReportPeriod(milliseconds msecs) {
@@ -548,6 +559,10 @@ void Config::printActivityProfilerConfig(std::ostream& s) const {
     << fmt::format("{}", fmt::join(activities, ",")) << std::endl;
 
   AbstractConfig::printActivityProfilerConfig(s);
+}
+
+void Config::setActivityDependentConfig(){
+  AbstractConfig::setActivityDependentConfig();
 }
 
 } // namespace KINETO_NAMESPACE

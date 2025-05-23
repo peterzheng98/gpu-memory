@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2020-2023 Intel Corporation
+ * Copyright 2020-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,13 +52,10 @@ using sc_op_ptr = std::shared_ptr<sc_op>;
 
 // the additional data related to fusion manager, attached to logical_tensor_t
 struct tensor_slice;
-struct fusion_data_t;
-struct fuse_state_t;
-struct fuse_anchor_map_t;
+struct fusion_anchor_t;
 
 template <typename valT>
 struct gt_map_t;
-using fdata_map = gt_map_t<fusion_data_t>;
 using gt2gt_map = gt_map_t<graph_tensor_ptr>;
 using gt2axis_map = gt_map_t<std::vector<int>>;
 using gt2buf_map = gt_map_t<expr>;
@@ -67,15 +64,13 @@ using slice_range = std::vector<std::pair<expr, expr>>;
 using slice_range_list = std::vector<slice_range>;
 using fslice_map = gt_map_t<slice_range_list>;
 
-using bound_axis = std::vector<std::vector<int>>;
-using bound_axis_map = gt_map_t<bound_axis>;
-
 using format_stride_pair = std::pair<sc_data_format_t, sc_dims>;
 using shape_rl_vec = std::vector<std::pair<sc_dim, sc_dim>>;
 
 struct dispatch_key_set_base_t;
 using dispatch_set_ptr = std::shared_ptr<dispatch_key_set_base_t>;
 struct dyn_internal_info_t;
+
 /** VConst struct record possible varible in constant value, e.g.
  *
  *   const int a = k * b;
@@ -170,10 +165,6 @@ using ltensors = std::vector<logical_tensor_t>;
 struct sc_op_info_t {
     std::vector<graph_tensor_ptr> outputs_;
     std::vector<graph_tensor_ptr> inputs_;
-    // todo: move the 2 fields below to fusion data
-    /* the map of <output index, input index vector> decribes the sharing
-     relationship between input and output tensors */
-    std::unordered_map<int, std::vector<int>> tensor_share_info_;
     // set of all dynamic dispatch keys combinations of op, this field is mainly
     // prepared for dynamic dispatch during lowering and is created during
     // layout propagation.
@@ -187,9 +178,6 @@ struct sc_op_info_t {
 struct op_base_trait_t {};
 
 namespace op_attr_key {
-// const char, represents the mode of fusion, including total three modes as
-// below
-constexpr const char *fused_mode_hint = "fused_mode_hint";
 // Boolean. If true, don't fuse this Op. Default = false
 constexpr const char *no_fuse = "no_fuse";
 // Boolean. If true, don't break the fusion partition after this Op
@@ -203,15 +191,6 @@ constexpr const char *inner_anchor = "inner_anchor";
 // Inner anchor created in fusible ops and will be add to mixed partition when
 // committing fusible op.
 constexpr const char *fusible_inner_anchors = "fusible_inner_anchors";
-// Batchwise fused
-constexpr const char *bwise_fuse = "bwise_fuse";
-constexpr const char *bwise_no_fuse = "bwise_no_fuse";
-// `bwise_skip_fuse` differs with `bwise_no_fuse` in that it is often used as
-// temporarily status check
-constexpr const char *bwise_skip_fuse = "bwise_skip_fuse";
-constexpr const char *bwise_break_pre_fuse = "bwise_break_pre_fuse";
-constexpr const char *bwise_break_post_fuse = "bwise_break_post_fuse";
-constexpr const char *bwise_no_strided_dims = "bwise_no_strided_dims";
 // the name of the layer. Will be used to name the IR function
 constexpr const char *layer_name = "temp.name";
 // op marked with not_redundant will not be removed in horizontal same op
@@ -222,6 +201,12 @@ constexpr const char *layout_input_index = "layout_input_index";
 // Could use mask select to process output for reduce, matmul or other memory
 // movement op.
 constexpr const char *use_padded_mask = "use_padded_mask";
+// Boolean. If true, it will skip graph pass div_bcast_transform. The precision
+// requirements are high, and division must be used in the calculation of op.
+constexpr const char *must_div = "must_div";
+// Boolean. If true, the optimized formula will be used when norm calculates
+// mean and var.
+constexpr const char *use_norm_opt = "use_norm_opt";
 }; // namespace op_attr_key
 
 class sc_graph_t;
@@ -298,7 +283,11 @@ public:
     // static, the other is also inferred as static, e.g. binary elemwise op
     // input shapes [-1, 64] and [16, 64], -1 will be inferred as 16.
     virtual shape_rl_vec get_dynamic_shape_relations() const { return {}; }
-
+    // Get calculation expressions between different dynamic vars in
+    // output/input. The expressions will be used by internal dynamic vars
+    // inside kernel which does not infer shape. The expression will store in
+    // var expr with attribute `pass.cal_expression`.
+    virtual void calculate_dynamic_shape_expression() {}
     // the op share given graph tensor with opT(except itself)
     template <typename opT>
     bool share_gt_with_op(const graph_tensor_ptr &gt) {

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2017-2023 Intel Corporation
+* Copyright 2017-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -43,8 +43,6 @@ struct desc_t {
 int str2desc(desc_t *desc, const char *str);
 std::ostream &operator<<(std::ostream &s, const desc_t &d);
 
-std::string str2cfg(const char *str);
-
 struct settings_t : public base_settings_t {
     settings_t() = default;
 
@@ -56,7 +54,6 @@ struct settings_t : public base_settings_t {
     desc_t desc {};
 
     std::vector<dir_t> dir {FWD_B};
-    std::vector<std::string> cfg {std::string()};
     std::vector<std::vector<dnnl_data_type_t>> dt {{dnnl_f32}};
     std::vector<std::string> stag {tag::any}, wtag {tag::any}, dtag {tag::any};
 
@@ -78,10 +75,7 @@ struct prb_t : public desc_t {
     // A ctor with common interface across all drivers.
     prb_t(const settings_t &s)
         : prb_t(s.desc, s.mb[0], s.dir[0], s.dt[0], s.stag[0], s.wtag[0],
-                s.dtag[0],
-                settings_t::get_attr(s.scales[0], s.zero_points[0],
-                        s.post_ops[0], s.scratchpad_mode[0], s.fpmath_mode[0]),
-                s.ctx_init[0], s.ctx_exe[0]) {
+                s.dtag[0], s.attributes.front(), s.ctx_init[0], s.ctx_exe[0]) {
         SAFE_V(s.has_single_setup() ? OK : FAIL);
     }
 
@@ -116,6 +110,7 @@ struct prb_t : public desc_t {
     dir_t dir;
     std::vector<dnnl_data_type_t> dt;
     std::string stag, wtag, dtag;
+    bool inplace = false; // Lacks placement, always considered `false`.
     attr_t attr;
     thr_ctx_t ctx_init, ctx_exe;
     int64_t user_mb;
@@ -198,9 +193,6 @@ struct cfg_t : public base_cfg_t {
     float get_density(const density_args_t &density_args) const override;
 };
 
-int handle_legacy_cfg(
-        std::vector<dnnl_data_type_t> &dt, const std::string &cfg);
-
 inline size_t src_off_f(const prb_t *prb, int64_t mb, int64_t ic, int64_t id,
         int64_t ih, int64_t iw) {
     return (((mb * prb->ic + ic) * prb->id + id) * prb->ih + ih) * prb->iw + iw;
@@ -224,7 +216,7 @@ void setup_cmp(compare::compare_t &cmp, const prb_t *prb, data_kind_t kind,
         const args_t &ref_args);
 std::vector<int> supported_exec_args(dir_t dir);
 int init_ref_memory_args(dnn_mem_map_t &ref_mem_map, dnn_mem_map_t &mem_map,
-        dnnl_primitive_t prim, const prb_t *prb, res_t *res, dir_t dir,
+        dnnl_primitive_t prim, const prb_t *prb, res_t *res,
         dnnl_primitive_t prim_ref = nullptr);
 
 void skip_unimplemented_prb(const prb_t *prb, res_t *res);

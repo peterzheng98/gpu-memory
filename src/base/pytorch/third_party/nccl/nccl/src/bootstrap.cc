@@ -80,6 +80,16 @@ static ncclResult_t bootstrapNetRecv(struct ncclSocket* sock, void* data, int si
   NCCLCHECK(ncclSocketRecv(sock, data, std::min(recvSize, size)));
   return ncclSuccess;
 }
+static ncclResult_t bootstrapNetSendRecv(struct ncclSocket* sendSock, void* sendData, int sendSize, struct ncclSocket* recvSock, void* recvData, int recvSize) {
+  int senderRecvSize;
+  NCCLCHECK(ncclSocketSendRecv(sendSock, &sendSize, sizeof(int), recvSock, &senderRecvSize, sizeof(int)));
+  if (senderRecvSize > recvSize) {
+    WARN("Message truncated : received %d bytes instead of %d", senderRecvSize, recvSize);
+    return ncclInternalError;
+  }
+  NCCLCHECK(ncclSocketSendRecv(sendSock, sendData, sendSize, recvSock, recvData, recvSize));
+  return ncclSuccess;
+}
 
 struct extInfo {
   int rank;
@@ -221,6 +231,7 @@ struct bootstrapState {
   struct ncclSocket ringSendSocket;
   union ncclSocketAddress* peerCommAddresses;
   union ncclSocketAddress* peerProxyAddresses;
+  uint64_t* peerProxyAddressesUDS;
   struct unexConn* unexpectedConnections;
   int cudaDev;
   int rank;
@@ -295,6 +306,7 @@ ncclResult_t bootstrapInit(struct ncclBootstrapHandle* handle, struct ncclComm* 
 
   // Create the service proxy
   NCCLCHECK(ncclCalloc(&state->peerProxyAddresses, nranks));
+  NCCLCHECK(ncclCalloc(&state->peerProxyAddressesUDS, nranks));
 
   // proxy is aborted through a message; don't set abortFlag
   NCCLCHECK(ncclCalloc(&proxySocket, 1));
@@ -302,7 +314,13 @@ ncclResult_t bootstrapInit(struct ncclBootstrapHandle* handle, struct ncclComm* 
   NCCLCHECK(ncclSocketListen(proxySocket));
   NCCLCHECK(ncclSocketGetAddr(proxySocket, state->peerProxyAddresses+rank));
   NCCLCHECK(bootstrapAllGather(state, state->peerProxyAddresses, sizeof(union ncclSocketAddress)));
-  NCCLCHECK(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses));
+  // cuMem UDS support
+  // Make sure we create a unique UDS socket name
+  uint64_t randId;
+  NCCLCHECK(getRandomData(&randId, sizeof(randId)));
+  state->peerProxyAddressesUDS[rank] = getPidHash()+randId;
+  NCCLCHECK(bootstrapAllGather(state, state->peerProxyAddressesUDS, sizeof(*state->peerProxyAddressesUDS)));
+  NCCLCHECK(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses, state->peerProxyAddressesUDS));
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
 
@@ -355,8 +373,6 @@ ncclResult_t bootstrapSplit(struct ncclBootstrapHandle* handle, struct ncclComm*
     for (int i = 0; i < nranks; ++i) {
       comm->topParentRanks[i] = parent->topParentRanks[parentRanks[i]];
     }
-    comm->proxyState = parent->sharedRes->proxyState;
-    ncclAtomicRefCountIncrement(&parent->sharedRes->proxyState->refCount);
   } else {
     // Create the service proxy
     NCCLCHECKGOTO(ncclCalloc(&state->peerProxyAddresses, nranks), ret, fail);
@@ -366,10 +382,17 @@ ncclResult_t bootstrapSplit(struct ncclBootstrapHandle* handle, struct ncclComm*
     NCCLCHECKGOTO(ncclSocketGetAddr(proxySocket, &tmpAddr), ret, fail);
     memcpy(state->peerProxyAddresses + rank, &tmpAddr, sizeof(union ncclSocketAddress));
     NCCLCHECKGOTO(bootstrapAllGather(state, state->peerProxyAddresses, sizeof(union ncclSocketAddress)), ret, fail);
-    NCCLCHECKGOTO(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses), ret, fail);
+    // cuMem UDS support
+    NCCLCHECKGOTO(ncclCalloc(&state->peerProxyAddressesUDS, nranks), ret, fail);
+    // Make sure we create a unique UDS socket name
+    uint64_t randId;
+    NCCLCHECKGOTO(getRandomData(&randId, sizeof(randId)), ret, fail);
+    state->peerProxyAddressesUDS[rank] = getPidHash()+randId;
+    NCCLCHECKGOTO(bootstrapAllGather(state, state->peerProxyAddressesUDS, sizeof(*state->peerProxyAddressesUDS)), ret, fail);
+    NCCLCHECKGOTO(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses, state->peerProxyAddressesUDS), ret, fail);
   }
 
-  INFO(NCCL_INIT, "bootstrapSplit: rank %d nranks %d color %d key %d prev %d next %d - DONE", rank, nranks, color, key, prev, next);
+  INFO(NCCL_INIT, "bootstrapSplit: comm %p parent %p rank %d nranks %d color %d key %d prev %d next %d - DONE", comm, parent, rank, nranks, color, key, prev, next);
 
 exit:
   return ret;
@@ -377,103 +400,40 @@ fail:
   goto exit;
 }
 
-ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
+// Bootstrap send/receive functions
+//
+// We do not keep connections opened with all ranks at all times, and we have no guarantee
+// that connections to our unique listen socket will arrive in the same order as we need
+// them. Therefore, when establishing a connection, the sender sends a (peer, tag) tuple to
+// allow the receiver to identify the flow, and keep it in an unexpected queue if needed.
+
+ncclResult_t bootstrapConnect(void* commState, int peer, int tag, struct ncclSocket* sock) {
+  ncclResult_t ret = ncclSuccess;
   struct bootstrapState* state = (struct bootstrapState*)commState;
-  char* data = (char*)allData;
-  int rank = state->rank;
-  int nranks = state->nranks;
 
-  TRACE(NCCL_INIT, "rank %d nranks %d size %d", rank, nranks, size);
-
-  /* Simple ring based AllGather
-   * At each step i receive data from (rank-i-1) from left
-   * and send previous step's data from (rank-i) to right
-   */
-  for (int i=0; i<nranks-1; i++) {
-    size_t rslice = (rank - i - 1 + nranks) % nranks;
-    size_t sslice = (rank - i + nranks) % nranks;
-
-    // Send slice to the right
-    NCCLCHECK(bootstrapNetSend(&state->ringSendSocket, data+sslice*size, size));
-    // Recv slice from the left
-    NCCLCHECK(bootstrapNetRecv(&state->ringRecvSocket, data+rslice*size, size));
-  }
-
-  TRACE(NCCL_INIT, "rank %d nranks %d size %d - DONE", rank, nranks, size);
+  NCCLCHECKGOTO(ncclSocketInit(sock, state->peerCommAddresses+peer, state->magic, ncclSocketTypeBootstrap), ret, fail);
+  NCCLCHECKGOTO(ncclSocketConnect(sock), ret, fail);
+  NCCLCHECKGOTO(bootstrapNetSend(sock, &state->rank, sizeof(int)), ret, fail);
+  NCCLCHECKGOTO(bootstrapNetSend(sock, &tag, sizeof(int)), ret, fail);
   return ncclSuccess;
+fail:
+  NCCLCHECK(ncclSocketClose(sock));
+  return ret;
 }
 
 ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int size) {
   ncclResult_t ret = ncclSuccess;
-  struct bootstrapState* state = (struct bootstrapState*)commState;
   struct ncclSocket sock;
 
-  NCCLCHECKGOTO(ncclSocketInit(&sock, state->peerCommAddresses+peer, state->magic, ncclSocketTypeBootstrap), ret, fail);
-  NCCLCHECKGOTO(ncclSocketConnect(&sock), ret, fail);
-  NCCLCHECKGOTO(bootstrapNetSend(&sock, &state->rank, sizeof(int)), ret, fail);
-  NCCLCHECKGOTO(bootstrapNetSend(&sock, &tag, sizeof(int)), ret, fail);
-  NCCLCHECKGOTO(bootstrapNetSend(&sock, data, size), ret, fail);
+  TRACE(NCCL_BOOTSTRAP, "Sending to peer=%d tag=%d size=%d", peer, tag, size);
+  NCCLCHECK(bootstrapConnect(commState, peer, tag, &sock));
+  NCCLCHECKGOTO(bootstrapNetSend(&sock, data, size), ret, exit);
+
+  TRACE(NCCL_BOOTSTRAP, "Sent to peer=%d tag=%d size=%d", peer, tag, size);
 
 exit:
   NCCLCHECK(ncclSocketClose(&sock));
   return ret;
-fail:
-  goto exit;
-}
-
-ncclResult_t bootstrapBarrier(void* commState, int *ranks, int rank, int nranks, int tag) {
-  if (nranks == 1) return ncclSuccess;
-  TRACE(NCCL_INIT, "rank %d nranks %d tag %x - ENTER", rank, nranks, tag);
-
-  /* Simple intra process barrier
-   *
-   * Based on the dissemination algorithm by Debra Hensgen, Raphael Finkel, and Udi Manbet,
-   * "Two Algorithms for Barrier Synchronization," International Journal of Parallel Programming, 17(1):1-17, 1988"
-   */
-  int data[1];
-  for (int mask=1; mask<nranks; mask<<=1) {
-    int src = (rank - mask + nranks) % nranks;
-    int dst = (rank + mask) % nranks;
-    NCCLCHECK(bootstrapSend(commState, ranks[dst], tag, data, sizeof(data)));
-    NCCLCHECK(bootstrapRecv(commState, ranks[src], tag, data, sizeof(data)));
-  }
-
-  TRACE(NCCL_INIT, "rank %d nranks %d tag %x - DONE", rank, nranks, tag);
-  return ncclSuccess;
-}
-
-ncclResult_t bootstrapIntraNodeAllGather(void* commState, int *ranks, int rank, int nranks, void* allData, int size) {
-  if (nranks == 1) return ncclSuccess;
-  char* data = (char*)allData;
-  TRACE(NCCL_INIT, "rank %d nranks %d size %d - ENTER", rank, nranks, size);
-
-  for (int i=1; i<nranks; i++) {
-    int src = (rank - i + nranks) % nranks;
-    int dst = (rank + i) % nranks;
-    NCCLCHECK(bootstrapSend(commState, ranks[dst], /*tag=*/i, data+rank*size, size));
-    NCCLCHECK(bootstrapRecv(commState, ranks[src], /*tag=*/i, data+src*size, size));
-  }
-
-  TRACE(NCCL_INIT, "rank %d nranks %d size %d - DONE", rank, nranks, size);
-  return ncclSuccess;
-}
-
-// IntraNode in-place Broadcast
-ncclResult_t bootstrapIntraNodeBroadcast(void* commState, int *ranks, int rank, int nranks, int root, void* bcastData, int size) {
-  if (nranks == 1) return ncclSuccess;
-  TRACE(NCCL_INIT, "rank %d nranks %d root %d size %d - ENTER", rank, nranks, root, size);
-
-  if (rank == root) {
-    for (int i=0; i<nranks; i++) {
-      if (i != root) NCCLCHECK(bootstrapSend(commState, ranks[i], /*tag=*/ranks[i], bcastData, size));
-    }
-  }
-  else {
-    NCCLCHECK(bootstrapRecv(commState, ranks[root], /*tag=*/ranks[rank], bcastData, size));
-  }
-
-  TRACE(NCCL_INIT, "rank %d nranks %d root %d size %d - DONE", rank, nranks, root, size);
-  return ncclSuccess;
 }
 
 ncclResult_t unexpectedEnqueue(struct bootstrapState* state, int peer, int tag, struct ncclSocket* sock) {
@@ -530,45 +490,143 @@ static void unexpectedFree(struct bootstrapState* state) {
 }
 
 // We can't know who we'll receive from, so we need to receive everything at once
-ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int size) {
+ncclResult_t bootstrapAccept(void* commState, int peer, int tag, struct ncclSocket* sock) {
   ncclResult_t ret = ncclSuccess;
   struct bootstrapState* state = (struct bootstrapState*)commState;
-  struct ncclSocket sock;
   int newPeer, newTag;
 
   // Search unexpected connections first
   int found;
-  NCCLCHECK(unexpectedDequeue(state, peer, tag, &sock, &found));
-  if (found) {
-    NCCLCHECKGOTO(bootstrapNetRecv(&sock, ((char*)data), size), ret, fail);
-    goto exit;
-  }
+  NCCLCHECK(unexpectedDequeue(state, peer, tag, sock, &found));
+  if (found) return ncclSuccess;
 
   // Then look for new connections
   while (1) {
-    NCCLCHECKGOTO(ncclSocketInit(&sock), ret, fail);
-    NCCLCHECKGOTO(ncclSocketAccept(&sock, &state->listenSock), ret, fail);
-    NCCLCHECKGOTO(bootstrapNetRecv(&sock, &newPeer, sizeof(int)), ret, fail);
-    NCCLCHECKGOTO(bootstrapNetRecv(&sock, &newTag, sizeof(int)), ret, fail);
-    if (newPeer == peer && newTag == tag) {
-      NCCLCHECKGOTO(bootstrapNetRecv(&sock, ((char*)data), size), ret, fail);
-      goto exit;
-    }
-    // Unexpected connection. Save for later.
-    NCCLCHECKGOTO(unexpectedEnqueue(state, newPeer, newTag, &sock), ret, fail);
+    NCCLCHECKGOTO(ncclSocketInit(sock), ret, fail);
+    NCCLCHECKGOTO(ncclSocketAccept(sock, &state->listenSock), ret, fail);
+    NCCLCHECKGOTO(bootstrapNetRecv(sock, &newPeer, sizeof(int)), ret, fail);
+    NCCLCHECKGOTO(bootstrapNetRecv(sock, &newTag, sizeof(int)), ret, fail);
+    if (newPeer == peer && newTag == tag) return ncclSuccess;
+    NCCLCHECKGOTO(unexpectedEnqueue(state, newPeer, newTag, sock), ret, fail);
   }
+  return ncclSuccess;
+fail:
+  NCCLCHECK(ncclSocketClose(sock));
+  return ret;
+}
+
+// We can't know who we'll receive from, so we need to receive everything at once
+ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int size) {
+  ncclResult_t ret;
+  struct ncclSocket sock;
+  NCCLCHECK(bootstrapAccept(commState, peer, tag, &sock));
+  TRACE(NCCL_BOOTSTRAP, "Receiving tag=%d peer=%d size=%d", tag, peer, size);
+  NCCLCHECKGOTO(bootstrapNetRecv(&sock, ((char*)data), size), ret, exit);
 exit:
   NCCLCHECK(ncclSocketClose(&sock));
   return ret;
-fail:
-  goto exit;
+}
+
+// Collective algorithms, based on bootstrapSend/Recv, and sometimes bootstrapConnect/Accept
+
+ncclResult_t bootstrapRingAllGather(struct ncclSocket* prevSocket, struct ncclSocket* nextSocket, int rank, int nranks, char* data, int size) {
+  /* Simple ring based AllGather
+   * At each step i receive data from (rank-i-1) from prev
+   * and send previous step's data from (rank-i) to next
+   */
+  for (int i=0; i<nranks-1; i++) {
+    size_t rslice = (rank - i - 1 + nranks) % nranks;
+    size_t sslice = (rank - i + nranks) % nranks;
+
+    // Send slice to the right, recv slice from the left
+    NCCLCHECK(bootstrapNetSendRecv(nextSocket, data+sslice*size, size, prevSocket, data+rslice*size, size));
+  }
+  return ncclSuccess;
+}
+ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
+  struct bootstrapState* state = (struct bootstrapState*)commState;
+  int rank = state->rank;
+  int nranks = state->nranks;
+
+  TRACE(NCCL_INIT, "rank %d nranks %d size %d", rank, nranks, size);
+
+  NCCLCHECK(bootstrapRingAllGather(&state->ringRecvSocket, &state->ringSendSocket, rank, nranks, (char*)allData, size));
+
+  TRACE(NCCL_INIT, "rank %d nranks %d size %d - DONE", rank, nranks, size);
+  return ncclSuccess;
+}
+
+ncclResult_t bootstrapIntraNodeBarrier(void* commState, int *ranks, int rank, int nranks, int tag) {
+  if (nranks == 1) return ncclSuccess;
+  TRACE(NCCL_INIT, "rank %d nranks %d tag %x - ENTER", rank, nranks, tag);
+
+  /* Simple [intra] process barrier
+   *
+   * Based on the dissemination algorithm by Debra Hensgen, Raphael Finkel, and Udi Manbet,
+   * "Two Algorithms for Barrier Synchronization," International Journal of Parallel Programming, 17(1):1-17, 1988"
+   */
+  int data[1];
+  for (int mask=1; mask<nranks; mask<<=1) {
+    int src = (rank - mask + nranks) % nranks;
+    int dst = (rank + mask) % nranks;
+    NCCLCHECK(bootstrapSend(commState, ranks ? ranks[dst] : dst, tag, data, sizeof(data)));
+    NCCLCHECK(bootstrapRecv(commState, ranks ? ranks[src] : src, tag, data, sizeof(data)));
+  }
+
+  TRACE(NCCL_INIT, "rank %d nranks %d tag %x - DONE", rank, nranks, tag);
+  return ncclSuccess;
+}
+
+ncclResult_t bootstrapBarrier(void* commState, int rank, int nranks, int tag) {
+  return bootstrapIntraNodeBarrier(commState, NULL, rank, nranks, tag);
+}
+
+ncclResult_t bootstrapIntraNodeAllGather(void* commState, int *ranks, int rank, int nranks, void* allData, int size) {
+  if (nranks == 1) return ncclSuccess;
+  TRACE(NCCL_INIT, "rank %d nranks %d size %d - ENTER", rank, nranks, size);
+
+  int prevRank = ranks[(rank - 1 + nranks)%nranks];
+  int nextRank = ranks[(rank + 1) % nranks];
+  struct ncclSocket prevSocket, nextSocket;
+  NCCLCHECK(bootstrapConnect(commState, nextRank, 0, &nextSocket));
+  NCCLCHECK(bootstrapAccept(commState, prevRank, 0, &prevSocket));
+
+  NCCLCHECK(bootstrapRingAllGather(&prevSocket, &nextSocket, rank, nranks, (char*)allData, size));
+
+  NCCLCHECK(ncclSocketClose(&nextSocket));
+  NCCLCHECK(ncclSocketClose(&prevSocket));
+
+  TRACE(NCCL_INIT, "rank %d nranks %d size %d - DONE", rank, nranks, size);
+  return ncclSuccess;
+}
+
+// [IntraNode] in-place Broadcast
+ncclResult_t bootstrapIntraNodeBroadcast(void* commState, int *ranks, int rank, int nranks, int root, void* bcastData, int size) {
+  if (nranks == 1) return ncclSuccess;
+  TRACE(NCCL_INIT, "rank %d nranks %d root %d size %d - ENTER", rank, nranks, root, size);
+
+  if (rank == root) {
+    for (int i=0; i<nranks; i++) {
+      if (i != root) NCCLCHECK(bootstrapSend(commState, ranks ? ranks[i] : i, /*tag=*/ranks ? ranks[i] : i, bcastData, size));
+    }
+  }
+  else {
+    NCCLCHECK(bootstrapRecv(commState, ranks ? ranks[root] : root, /*tag=*/ranks ? ranks[rank] : rank, bcastData, size));
+  }
+
+  TRACE(NCCL_INIT, "rank %d nranks %d root %d size %d - DONE", rank, nranks, root, size);
+  return ncclSuccess;
+}
+
+ncclResult_t bootstrapBroadcast(void* commState, int rank, int nranks, int root, void* bcastData, int size) {
+  return bootstrapIntraNodeBroadcast(commState, NULL, rank, nranks, root, bcastData, size);
 }
 
 ncclResult_t bootstrapClose(void* commState) {
   struct bootstrapState* state = (struct bootstrapState*)commState;
   if (state->unexpectedConnections != NULL) {
     unexpectedFree(state);
-    if (*state->abortFlag == 0) {
+    if (__atomic_load_n(state->abortFlag, __ATOMIC_RELAXED) == 0) {
       WARN("Unexpected connections are not empty");
       return ncclInternalError;
     }
@@ -592,6 +650,7 @@ ncclResult_t bootstrapAbort(void* commState) {
   NCCLCHECK(ncclSocketClose(&state->ringRecvSocket));
   free(state->peerCommAddresses);
   free(state->peerProxyAddresses);
+  free(state->peerProxyAddressesUDS);
   free(state);
   return ncclSuccess;
 }

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2022-2023 Intel Corporation
+ * Copyright 2022-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,7 @@ enum pass_id {
     FUNCTION_PASS_START,
     tensor_shrinker = FUNCTION_PASS_START,
     bf16_fp16_legalizer,
+    dynamic_parallel_transform,
     buffer_rescheduling_tensor_hoisting,
     nested_parallel_flattener,
     func_inliner,
@@ -65,6 +66,7 @@ enum pass_id {
     buffer_scheduler,
     dyn_boundary_check,
     local_tensor_lowering_cpu,
+    loop_splitter,
     ssa_transform,
     value_numbering,
     loop_invariant_code_motion,

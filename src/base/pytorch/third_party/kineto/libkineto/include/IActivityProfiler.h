@@ -23,7 +23,6 @@
 
 namespace libkineto {
 
-using namespace KINETO_NAMESPACE;
 struct CpuTraceBuffer;
 
 #ifdef _MSC_VER
@@ -41,12 +40,19 @@ enum class TraceStatus {
 };
 
 /* DeviceInfo:
- *   Can be used to specify process name, PID and device label
+ *   Can be used to specify process name, sort order, PID and device label.
+ *   The sort order is determined by the sortIndex field to handle ordering of
+ *   processes and gpu rows in the trace viewer.
  */
 struct DeviceInfo {
-  DeviceInfo(int64_t id, const std::string& name, const std::string& label)
-      : id(id), name(name), label(label) {}
+  DeviceInfo(
+      int64_t id,
+      int64_t sortIndex,
+      const std::string& name,
+      const std::string& label)
+      : id(id), sortIndex(sortIndex), name(name), label(label) {}
   int64_t id;               // process id
+  int64_t sortIndex;        // position in trace view
   const std::string name;   // process name
   const std::string label;  // device label
 };
@@ -66,6 +72,10 @@ struct ResourceInfo {
   int64_t deviceId;       // id of device which owns this resource (specified in DeviceInfo.id)
   const std::string name; // resource name
 };
+
+using getLinkedActivityCallback =
+  std::function<const ITraceActivity*(int32_t)>;
+
 /* IActivityProfilerSession:
  *   an opaque object that can be used by a high level profiler to
  *   start/stop and return trace events.
@@ -91,6 +101,12 @@ class IActivityProfilerSession {
   // processes trace activities using logger
   virtual void processTrace(ActivityLogger& logger) = 0;
 
+  virtual void processTrace(ActivityLogger& logger,
+    getLinkedActivityCallback /*getLinkedActivity*/,
+    int64_t /*startTime*/, int64_t /*endTime*/) {
+    processTrace(logger);
+  }
+
   // returns device info used in this trace, could be nullptr
   virtual std::unique_ptr<DeviceInfo> getDeviceInfo() = 0;
 
@@ -102,6 +118,12 @@ class IActivityProfilerSession {
 
   // XXX define trace formats
   // virtual save(string name, TraceFormat format)
+
+  virtual void pushCorrelationId(uint64_t /*id*/) {}
+  virtual void popCorrelationId() {}
+
+  virtual void pushUserCorrelationId(uint64_t /*id*/) {}
+  virtual void popUserCorrelationId() {}
 
  protected:
   TraceStatus status_ = TraceStatus::READY;

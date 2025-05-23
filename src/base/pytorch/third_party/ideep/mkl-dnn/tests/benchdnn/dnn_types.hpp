@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2017-2023 Intel Corporation
+* Copyright 2017-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@
 
 #include "common.hpp"
 #include "oneapi/dnnl/dnnl_types.h"
+#include "utils/data_kind.hpp"
 #include "utils/wrapper.hpp"
 
 namespace tag {
@@ -39,24 +40,6 @@ extern const char *axb;
 extern const char *any;
 extern const char *undef;
 } // namespace tag
-
-enum dir_t {
-    DIR_UNDEF = 0,
-    FLAG_DAT = 1,
-    FLAG_WEI = 2,
-    FLAG_BIA = 4,
-    FLAG_FWD = 32,
-    FLAG_BWD = 64,
-    FLAG_INF = 128,
-    FWD_D = FLAG_FWD + FLAG_DAT,
-    FWD_I = FLAG_FWD + FLAG_DAT + FLAG_INF,
-    FWD_B = FLAG_FWD + FLAG_DAT + FLAG_BIA,
-    BWD_D = FLAG_BWD + FLAG_DAT,
-    BWD_DW = FLAG_BWD + FLAG_DAT + FLAG_WEI,
-    BWD_W = FLAG_BWD + FLAG_WEI,
-    BWD_WB = FLAG_BWD + FLAG_WEI + FLAG_BIA,
-};
-dir_t str2dir(const char *str);
 
 /* TODO: merge prop and dir_t (in favor of prop) */
 const char *prop2str(dnnl_prop_kind_t prop);
@@ -73,39 +56,13 @@ std::ostream &operator<<(std::ostream &s, const std::vector<T> &v) {
     return s;
 }
 
-enum data_kind_t {
-    SRC = 0,
-    WEI,
-    BIA,
-    DST,
-    DIFF_DST,
-    ACC,
-    // bnorm, lnorm
-    SRC_1,
-    MEAN,
-    VAR,
-    SC,
-    SH,
-    // rnn
-    DST_ITER,
-    DST_ITER_C,
-    AUGRU_ATTENTION,
-    SRC_ITER,
-    SRC_ITER_C,
-    WEI_ITER,
-    WEI_PEEPHOLE,
-    WEI_PROJECTION,
-
-    DAT_TOTAL,
-};
-const char *data_kind2str(data_kind_t kind);
-
 struct attr_t {
     // policy_t defines the way entity values will be applied to a tensor
     enum policy_t {
         COMMON = 0, // single value for each point in a tensor
         // apply a single value per...
         PER_OC, // channel (dims[1]) point
+        PER_OCIC, // channel (dims[0] and dims[1]) point
         PER_DIM_0, // ... dims[0] point.
         PER_DIM_1, // ... dims[1] point.
         PER_DIM_01, // ... unique combination of dims[0] and dims[1] points.
@@ -118,19 +75,28 @@ struct attr_t {
     static policy_t str2policy(const std::string &str);
     static const char *policy2str(policy_t policy);
     static int get_default_mask(policy_t policy);
+    static int policy2mask(int arg, policy_t policy,
+            dnnl_primitive_kind_t prim_kind = dnnl_undefined_primitive,
+            int ndims = -1, bool has_groups = false);
 
     struct zero_points_t {
         struct entry_t {
-            entry_t(policy_t apolicy = COMMON, int avalue = 0)
-                : policy(apolicy), value(avalue) {}
+            entry_t(policy_t apolicy = COMMON, int avalue = 0,
+                    dnnl_data_type_t adt = dnnl_s32,
+                    const std::vector<dnnl_dim_t> &agroups = {})
+                : policy(apolicy), value(avalue), dt(adt), groups(agroups) {}
 
-            entry_t(const entry_t &other)
-                : policy(other.policy), value(other.value) {}
+            int from_str(const std::string &s);
 
-            bool is_def() const { return policy == COMMON && value == 0; }
+            bool is_def() const {
+                return policy == COMMON && value == 0 && dt == dnnl_s32
+                        && groups.size() == 0;
+            }
 
             policy_t policy = COMMON;
             int value = 0;
+            dnnl_data_type_t dt = dnnl_s32;
+            std::vector<dnnl_dim_t> groups;
         };
 
         int from_str(const std::string &s);
@@ -156,37 +122,45 @@ struct attr_t {
         void set(int arg, const entry_t &entry) {
             if (!entry.is_def()) points[arg] = entry;
         }
+        void set(int arg, policy_t policy, int value,
+                dnnl_data_type_t data_type, std::vector<dnnl_dim_t> &groups) {
+            set(arg, entry_t(policy, value, data_type, groups));
+        }
         entry_t get(int arg) const {
             const auto it = points.find(arg);
             return it == points.end() ? entry_t() : it->second;
         }
 
-        std::unordered_map<int, entry_t>::const_iterator begin() const {
-            return points.begin();
-        }
-        std::unordered_map<int, entry_t>::const_iterator end() const {
-            return points.end();
+        int get_mask(int arg,
+                dnnl_primitive_kind_t prim_kind = dnnl_undefined_primitive,
+                int ndims = -1, bool has_groups = false) const {
+            const auto &e = get(arg);
+            return attr_t::policy2mask(
+                    arg, e.policy, prim_kind, ndims, has_groups);
         }
 
         zero_points_t() : points() {} // needed for debug icc190 build;
-        std::unordered_map<int, entry_t> points;
+        std::map<int, entry_t> points;
     };
 
     struct arg_scales_t {
         struct entry_t {
-            entry_t(policy_t apolicy = COMMON, float ascale = 1.f)
-                : policy(apolicy), scale(ascale) {}
+            entry_t(policy_t apolicy = COMMON, float ascale = 1.f,
+                    dnnl_data_type_t adt = dnnl_f32,
+                    const std::vector<dnnl_dim_t> &agroups = {})
+                : policy(apolicy), scale(ascale), dt(adt), groups(agroups) {}
 
             int from_str(const std::string &s);
 
-            bool is_def() const { return policy == COMMON && scale == 1.f; }
-
-            int policy2mask(int arg,
-                    dnnl_primitive_kind_t prim_kind = dnnl_undefined_primitive,
-                    bool has_groups = false) const;
+            bool is_def() const {
+                return policy == COMMON && scale == 1.f && dt == dnnl_f32
+                        && groups.size() == 0;
+            }
 
             policy_t policy = COMMON;
             float scale = 1.f;
+            dnnl_data_type_t dt = dnnl_f32;
+            std::vector<dnnl_dim_t> groups;
         };
 
         void set(int arg, entry_t scale) { scales[arg] = scale; }
@@ -198,9 +172,10 @@ struct attr_t {
 
         int get_mask(int arg,
                 dnnl_primitive_kind_t prim_kind = dnnl_undefined_primitive,
-                bool has_groups = false) const {
+                int ndims = -1, bool has_groups = false) const {
             const auto &e = get(arg);
-            return e.policy2mask(arg, prim_kind, has_groups);
+            return attr_t::policy2mask(
+                    arg, e.policy, prim_kind, ndims, has_groups);
         }
 
         bool is_def(int arg) const {
@@ -228,8 +203,6 @@ struct attr_t {
             SUM,
             // depthwise convolution
             DW,
-            DW_K3S1P1,
-            DW_K3S2P1,
             // eltwise
             ELTWISE_START, // a guard to check kind is eltwise
             ABS,
@@ -291,14 +264,6 @@ struct attr_t {
                 } else if (is_eltwise_kind()) {
                     eltwise.alg = kind2dnnl_kind(kind);
                 } else if (is_convolution_kind()) {
-                    convolution.src_scale = arg_scales_t::entry_t();
-                    convolution.wei_scale = arg_scales_t::entry_t();
-                    convolution.dst_scale = arg_scales_t::entry_t();
-                    if (kind != DW) {
-                        convolution.kernel = 3;
-                        convolution.stride = kind == DW_K3S1P1 ? 1 : 2;
-                        convolution.padding = 1;
-                    }
                 } else if (is_binary_kind()) {
                     binary.alg = kind2dnnl_kind(kind);
                 }
@@ -320,9 +285,6 @@ struct attr_t {
                 int stride = 0;
                 int padding = 0;
                 dnnl_data_type_t dst_dt = dnnl_f32;
-                arg_scales_t::entry_t src_scale;
-                arg_scales_t::entry_t wei_scale;
-                arg_scales_t::entry_t dst_scale;
             } convolution;
             struct binary_t {
                 enum class mask_input_t {
@@ -360,14 +322,52 @@ struct attr_t {
         int binary_index() const;
         int prelu_index() const;
 
-        std::vector<std::pair<int, int>> get_po_masks() const;
+        // ndims must be provided for primitives that have po mask that depends
+        // on the ndims. Currently this includes only lnorm with binary post-op
+        // with policy PER_OC.
+        // Some primitives might have a special handling for a policy provided.
+        // For such primitives prim_kind must be set so get_po_masks generates
+        // a correct mask. Currently this behavior depends on policy2mask().
+        std::vector<std::pair<int, int>> get_po_masks(int ndims = -1,
+                dnnl_primitive_kind_t prim_kind
+                = dnnl_undefined_primitive) const;
 
         std::vector<entry_t> entry;
     };
 
+    struct deterministic_t {
+        // The default value is changed for a bitwise mode. To properly work,
+        // `--mode=B` must be specified before the driver name, otherwise,
+        // the driver settings will use `false` as the mode bit was not set
+        // before entering the driver parsing section.
+        deterministic_t() : enabled(has_bench_mode_bit(mode_bit_t::bitwise)) {}
+
+        bool is_def() const {
+            static deterministic_t def;
+            return enabled == def.enabled;
+        }
+
+        bool enabled;
+    };
+
+    struct fpmath_mode_t {
+        fpmath_mode_t() = default;
+
+        void set(dnnl_fpmath_mode_t mode, bool apply_to_int = false) {
+            this->mode = mode;
+            this->apply_to_int = apply_to_int;
+        }
+        bool is_def() const {
+            return mode == dnnl_fpmath_mode_strict && apply_to_int == false;
+        }
+
+        dnnl_fpmath_mode_t mode = dnnl_fpmath_mode_strict;
+        bool apply_to_int = false;
+    };
+
     attr_t()
         : scratchpad_mode(get_default_scratchpad_mode())
-        , fpmath_mode(dnnl_fpmath_mode_strict) {}
+        , acc_mode(dnnl_accumulation_mode_strict) {}
 
     template <typename First, typename... Rest>
     void insert(const First &first, const Rest &...rest) {
@@ -379,7 +379,9 @@ struct attr_t {
     void insert(const zero_points_t &zp) { this->zero_points = zp; }
     void insert(const post_ops_t &po) { this->post_ops = po; }
     void insert(dnnl_scratchpad_mode_t sm) { this->scratchpad_mode = sm; }
-    void insert(dnnl_fpmath_mode_t fpm) { this->fpmath_mode = fpm; }
+    void insert(const fpmath_mode_t &fpm) { this->fpmath_mode = fpm; }
+    void insert(dnnl_accumulation_mode_t am) { this->acc_mode = am; }
+    void insert(const deterministic_t &d) { this->deterministic = d; }
 
     // When parallel creation modifier is enabled, the library scratchpad mode
     // can't be used unless "-DDNNL_ENABLE_CONCURRENT_EXEC=ON" is enabled at the
@@ -396,7 +398,9 @@ struct attr_t {
     zero_points_t zero_points;
     post_ops_t post_ops;
     dnnl_scratchpad_mode_t scratchpad_mode;
-    dnnl_fpmath_mode_t fpmath_mode;
+    fpmath_mode_t fpmath_mode;
+    dnnl_accumulation_mode_t acc_mode;
+    deterministic_t deterministic;
 
     bool is_def(bool skip_fpmath = false) const;
 };
@@ -509,7 +513,8 @@ std::ostream &operator<<(std::ostream &s, const attr_t::arg_scales_t &scales);
 std::ostream &operator<<(std::ostream &s, const attr_t::post_ops_t::kind_t &k);
 std::ostream &operator<<(std::ostream &s, const attr_t::post_ops_t &post_ops);
 std::ostream &operator<<(std::ostream &s, dnnl_scratchpad_mode_t sm);
-std::ostream &operator<<(std::ostream &s, dnnl_fpmath_mode_t fm);
+std::ostream &operator<<(std::ostream &s, const attr_t::fpmath_mode_t &fm);
+std::ostream &operator<<(std::ostream &s, dnnl_accumulation_mode_t am);
 std::ostream &operator<<(std::ostream &s, const attr_t &attr);
 
 // A container for additional data and info, not available from user's input at
@@ -526,8 +531,13 @@ struct attr_args_t {
         entries.insert(std::make_pair(arg, mask));
     };
 
-    int prepare_post_ops_mds(
-            const attr_t &attr, int ndims, const dnnl_dims_t prb_dims);
+    void prepare_zero_points(const attr_t &attr, int arg, int mask = -1) {
+        entries.insert(std::make_pair(DNNL_ARG_ATTR_ZERO_POINTS | arg, mask));
+    };
+
+    int prepare_post_ops_mds(const attr_t &attr, int ndims,
+            const dnnl_dims_t prb_dims,
+            dnnl_primitive_kind_t prim_kind = dnnl_undefined_primitive);
 
     void prepare_dw_post_op(const attr_t &attr, dnnl_data_type_t wei_dt,
             dnnl_data_type_t bia_dt);
@@ -584,6 +594,7 @@ dnnl_primitive_attr_t create_dnnl_attr(
 dnnl_engine_kind_t str2engine_kind(const char *str);
 dnnl_scratchpad_mode_t str2scratchpad_mode(const char *str);
 dnnl_fpmath_mode_t str2fpmath_mode(const char *str);
+dnnl_accumulation_mode_t str2accumulation_mode(const char *str);
 
 void maybe_scale(const attr_t &attr, float &d, const float *scales, int64_t c,
         int arg, bool opposite_scale = false);
@@ -601,7 +612,7 @@ inline void maybe_post_ops(
     maybe_post_ops(attr, val, sum_val, std::vector<float>());
 }
 
-// When using fast-ref-gpu option, reference expects everything to be in f32
+// When using fast-ref option, reference expects everything to be in f32
 // data type and also no additional memories coming from runtime attributes.
 // That's why we update all data types to f32 and remove all runtime arguments
 // to makes them constant when possible.

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -34,7 +34,7 @@
 
 #pragma once
 
-#include "cute/stride.hpp"
+#include "cute/layout.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -45,6 +45,7 @@ namespace cutlass {
 // Strides without batch mode
 
 template <class IntT>
+CUTLASS_HOST_DEVICE
 cute::Stride<IntT, cute::Int<1>>
 make_cute_packed_stride(cute::Stride<IntT, cute::Int<1>> s, cute::Shape<int,int,int> shape_MKL) {
   static_assert(std::is_integral_v<IntT>,
@@ -55,6 +56,7 @@ make_cute_packed_stride(cute::Stride<IntT, cute::Int<1>> s, cute::Shape<int,int,
 }
 
 template <class IntT>
+CUTLASS_HOST_DEVICE
 cute::Stride<cute::Int<1>, IntT>
 make_cute_packed_stride(cute::Stride<cute::Int<1>, IntT> s, cute::Shape<int,int,int> shape_MKL) {
   static_assert(std::is_integral_v<IntT>,
@@ -69,6 +71,7 @@ make_cute_packed_stride(cute::Stride<cute::Int<1>, IntT> s, cute::Shape<int,int,
 // Strides with batch mode
 
 template <class IntT>
+CUTLASS_HOST_DEVICE
 cute::Stride<IntT, cute::Int<1>, int64_t>
 make_cute_packed_stride(cute::Stride<IntT, cute::Int<1>, int64_t> s, cute::Shape<int,int,int> shape_MKL) {
   static_assert(std::is_integral_v<IntT>,
@@ -86,6 +89,7 @@ make_cute_packed_stride(cute::Stride<IntT, cute::Int<1>, int64_t> s, cute::Shape
 }
 
 template <class IntT>
+CUTLASS_HOST_DEVICE
 cute::Stride<cute::Int<1>, IntT, int64_t>
 make_cute_packed_stride(cute::Stride<cute::Int<1>, IntT, int64_t> s, cute::Shape<int,int,int> shape_MKL) {
   static_assert(std::is_integral_v<IntT>,

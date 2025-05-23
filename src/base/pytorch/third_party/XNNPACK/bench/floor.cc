@@ -8,10 +8,11 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <random>
 #include <vector>
 
-#include <fp16.h>
+#include <fp16/fp16.h>
 
 #include <xnnpack.h>
 
@@ -27,7 +28,6 @@
 #endif  // BENCHMARK_TENSORFLOW_LITE
 
 
-#ifndef XNN_NO_F16_OPERATORS
 static void xnnpack_floor_f16(benchmark::State& state) {
   const size_t batch_size = state.range(0);
 
@@ -49,24 +49,27 @@ static void xnnpack_floor_f16(benchmark::State& state) {
 
   xnn_operator_t floor_op = nullptr;
   status = xnn_create_floor_nc_f16(
-    1 /* channels */, 1 /* input stride */, 1 /* output stride */,
     0 /* flags */, &floor_op);
   if (status != xnn_status_success || floor_op == nullptr) {
     state.SkipWithError("failed to create Floor operator");
     return;
   }
 
-  status = xnn_setup_floor_nc_f16(
-    floor_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_floor_nc_f16(floor_op, batch_size,
+    /*channels=*/1, /*input_stride=*/1, /*output_stride=*/1, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Floor operator");
+    return;
+  }
+
+  status = xnn_setup_floor_nc_f16(floor_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Floor operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(floor_op, nullptr /* thread pool */);
+    status = xnn_run_operator(floor_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Floor operator");
       return;
@@ -91,7 +94,6 @@ static void xnnpack_floor_f16(benchmark::State& state) {
   state.counters["bytes"] =
     benchmark::Counter(uint64_t(state.iterations()) * bytes_per_iteration, benchmark::Counter::kIsRate);
 }
-#endif  // XNN_NO_F16_OPERATORS
 
 static void xnnpack_floor_f32(benchmark::State& state) {
   const size_t batch_size = state.range(0);
@@ -113,24 +115,27 @@ static void xnnpack_floor_f32(benchmark::State& state) {
 
   xnn_operator_t floor_op = nullptr;
   status = xnn_create_floor_nc_f32(
-    1 /* channels */, 1 /* input stride */, 1 /* output stride */,
     0 /* flags */, &floor_op);
   if (status != xnn_status_success || floor_op == nullptr) {
     state.SkipWithError("failed to create Floor operator");
     return;
   }
 
-  status = xnn_setup_floor_nc_f32(
-    floor_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_floor_nc_f32(floor_op, batch_size,
+    /*channels=*/1, /*input_stride=*/1, /*output_stride=*/1, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Floor operator");
+    return;
+  }
+
+  status = xnn_setup_floor_nc_f32(floor_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Floor operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(floor_op, nullptr /* thread pool */);
+    status = xnn_run_operator(floor_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Floor operator");
       return;
@@ -254,11 +259,9 @@ static void tflite_floor_f32(benchmark::State& state) {
 }
 #endif  // BENCHMARK_TENSORFLOW_LITE
 
-#ifndef XNN_NO_F16_OPERATORS
-  BENCHMARK(xnnpack_floor_f16)
-    ->Apply(benchmark::utils::UnaryElementwiseParameters<uint16_t, uint16_t>)
-    ->UseRealTime();
-#endif
+BENCHMARK(xnnpack_floor_f16)
+  ->Apply(benchmark::utils::UnaryElementwiseParameters<uint16_t, uint16_t>)
+  ->UseRealTime();
 BENCHMARK(xnnpack_floor_f32)
   ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
   ->UseRealTime();

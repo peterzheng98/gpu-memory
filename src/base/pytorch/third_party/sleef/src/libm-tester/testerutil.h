@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2023.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -11,7 +11,9 @@
 #define POSITIVE_INFINITYf ((float)INFINITY)
 #define NEGATIVE_INFINITYf (-(float)INFINITY)
 
-#define M_PIf ((float)M_PI)
+#ifndef M_PIf
+# define M_PIf ((float)M_PI)
+#endif
 
 extern int enableFlushToZero;
 double flushToZero(double y);
@@ -90,7 +92,9 @@ int cmpDenormsp(float x, mpfr_t fry);
 double countULPsp(float d, mpfr_t c);
 double countULP2sp(float d, mpfr_t c);
 
+#if MPFR_VERSION < MPFR_VERSION_NUM(4, 2, 0)
 void mpfr_sinpi(mpfr_t ret, mpfr_t arg, mpfr_rnd_t rnd);
 void mpfr_cospi(mpfr_t ret, mpfr_t arg, mpfr_rnd_t rnd);
+#endif
 void mpfr_lgamma_nosign(mpfr_t ret, mpfr_t arg, mpfr_rnd_t rnd);
 #endif

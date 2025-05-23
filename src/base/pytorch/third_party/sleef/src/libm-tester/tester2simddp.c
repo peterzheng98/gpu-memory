@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2023.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -20,6 +20,7 @@
 #endif
 
 #include "sleef.h"
+#include "quaddef.h"
 #include "testerutil.h"
 
 #ifdef ENABLE_SSE2
@@ -190,6 +191,38 @@ typedef Sleef_SLEEF_VECTOR_DOUBLE_2 vdouble2;
 typedef Sleef_SLEEF_VECTOR_FLOAT_2 vfloat2;
 #endif
 
+#ifdef ENABLE_RVVM1
+#define CONFIG 1
+#define ENABLE_RVV_DP
+#include "helperrvv.h"
+#include "renamervvm1.h"
+#include "sleef.h"
+#endif
+
+#ifdef ENABLE_RVVM1NOFMA
+#define CONFIG 2
+#define ENABLE_RVV_DP
+#include "helperrvv.h"
+#include "renamervvm1nofma.h"
+#include "sleef.h"
+#endif
+
+#ifdef ENABLE_RVVM2
+#define CONFIG 1
+#define ENABLE_RVV_DP
+#include "helperrvv.h"
+#include "renamervvm2.h"
+#include "sleef.h"
+#endif
+
+#ifdef ENABLE_RVVM2NOFMA
+#define CONFIG 2
+#define ENABLE_RVV_DP
+#include "helperrvv.h"
+#include "renamervvm2nofma.h"
+#include "sleef.h"
+#endif
+
 #ifdef ENABLE_PUREC_SCALAR
 #define CONFIG 1
 #include "helperpurec_scalar.h"
@@ -208,7 +241,7 @@ typedef Sleef_float_2 vfloat2;
 
 //
 
-#if !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA))
+#if !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA) || defined(ENABLE_RVVM1) || defined(ENABLE_RVVM1NOFMA) || defined(ENABLE_RVVM2) || defined(ENABLE_RVVM2NOFMA))
 static vdouble vd2getx_vd_vd2(vdouble2 v) { return v.x; }
 static vdouble vd2gety_vd_vd2(vdouble2 v) { return v.y; }
 #endif
@@ -1083,7 +1116,6 @@ int main(int argc,char **argv)
       mpfr_hypot(frx, frx, fry, GMP_RNDN);
 
       double u0 = countULP2dp(t = vget(xhypot_u05(vd, vd2), e), frx);
-      double c = mpfr_get_d(frx, GMP_RNDN);
 
       if (u0 > 0.5) {
 	printf(ISANAME " hypot_u05 arg=%.20g, %.20g  ulp=%.20g\n", d, d2, u0);
@@ -1139,7 +1171,6 @@ int main(int argc,char **argv)
       mpfr_fmod(frx, frx, fry, GMP_RNDN);
 
       double u0 = countULPdp(t = vget(xfmod(vd, vd2), e), frx);
-      long double c = mpfr_get_ld(frx, GMP_RNDN);
 
       if (fabsl((long double)d / d2) < 1e+300 && u0 > 0.5) {
 	printf(ISANAME " fmod arg=%.20g, %.20g  ulp=%.20g\n", d, d2, u0);
@@ -1154,7 +1185,6 @@ int main(int argc,char **argv)
       mpfr_remainder(frx, frx, fry, GMP_RNDN);
 
       double u0 = countULPdp(t = vget(xremainder(vd, vd2), e), frx);
-      long double c = mpfr_get_ld(frx, GMP_RNDN);
 
       if (fabsl((long double)d / d2) < 1e+300 && u0 > 0.5) {
 	printf(ISANAME " remainder arg=%.20g, %.20g  ulp=%.20g\n", d, d2, u0);
@@ -1264,4 +1294,5 @@ int main(int argc,char **argv)
       }
     }
   }
+  mpfr_clears(frw, frx, fry, frz, NULL);
 }

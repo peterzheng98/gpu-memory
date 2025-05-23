@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include "oneapi/dnnl/dnnl_graph_types.h"
 
 #include "graph/interface/allocator.hpp"
+#include "graph/interface/constant_tensor_cache.hpp"
 #include "graph/interface/logical_tensor.hpp"
 #include "graph/interface/value.hpp"
 
@@ -52,6 +53,8 @@ using prop_kind = dnnl::prop_kind;
 using algorithm = dnnl::algorithm;
 using exec_args = std::unordered_map<int, memory>;
 
+using constant_cache_t = graph::constant_tensor_cache_t;
+
 using pd_cache_t = std::unordered_map<op_t *, graph::utils::any_t>;
 struct dnnl_allocator_t {
     static void *malloc(size_t size, const dnnl::engine &p_engine,
@@ -63,6 +66,11 @@ struct dnnl_allocator_t {
 #ifdef DNNL_WITH_SYCL
     static void free(void *p, const dnnl::engine &p_engine,
             const allocator_t *alc, const ::sycl::event &deps);
+#endif
+
+#if DNNL_GPU_RUNTIME == DNNL_RUNTIME_OCL
+    static void free(void *p, const dnnl::engine &p_engine,
+            const allocator_t *alc, const cl_event &deps);
 #endif
 };
 

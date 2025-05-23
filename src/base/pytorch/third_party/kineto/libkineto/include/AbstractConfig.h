@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace KINETO_NAMESPACE {
+namespace libkineto {
 
 class AbstractConfig {
  public:
@@ -85,6 +85,7 @@ class AbstractConfig {
 
   // TODO: Separate out each profiler type into features?
   virtual void printActivityProfilerConfig(std::ostream& s) const;
+  virtual void setActivityDependentConfig();
 
   // Helpers for use in handleOption
   // Split a string by delimiter and remove external white space
@@ -116,4 +117,4 @@ class AbstractConfig {
   std::map<std::string, AbstractConfig*> featureConfigs_{};
 };
 
-} // namespace KINETO_NAMESPACE
+} // namespace libkineto

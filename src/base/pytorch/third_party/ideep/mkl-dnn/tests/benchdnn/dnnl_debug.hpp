@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2017-2023 Intel Corporation
+* Copyright 2017-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -52,5 +52,8 @@ const char *scratchpad_mode2str(dnnl_scratchpad_mode_t mode);
 
 /* fpmath mode */
 const char *fpmath_mode2str(dnnl_fpmath_mode_t mode);
+
+/* accumulation mode */
+const char *accumulation_mode2str(dnnl_accumulation_mode_t mode);
 
 #endif

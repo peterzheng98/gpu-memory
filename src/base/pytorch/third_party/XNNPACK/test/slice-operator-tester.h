@@ -145,15 +145,19 @@ class SliceOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_slice_op(slice_op, xnn_delete_operator);
 
       ASSERT_EQ(xnn_status_success,
-        xnn_setup_slice_nd_x8(
+        xnn_reshape_slice_nd_x8(
           slice_op,
           num_dims(),
           input_shape().data(), offsets().data(), sizes().data(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
+          /*threadpool=*/nullptr));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(slice_op, nullptr /* thread pool */));
+        xnn_setup_slice_nd_x8(
+          slice_op,
+          input.data(), output.data()));
+
+      ASSERT_EQ(xnn_status_success,
+        xnn_run_operator(slice_op, /*threadpool=*/nullptr));
 
       ASSERT_EQ(output, output_ref);
     }
@@ -202,15 +206,19 @@ class SliceOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_slice_op(slice_op, xnn_delete_operator);
 
       ASSERT_EQ(xnn_status_success,
-        xnn_setup_slice_nd_x16(
+        xnn_reshape_slice_nd_x16(
           slice_op,
           num_dims(),
           input_shape().data(), offsets().data(), sizes().data(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
+          /*threadpool=*/nullptr));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(slice_op, nullptr /* thread pool */));
+        xnn_setup_slice_nd_x16(
+          slice_op,
+          input.data(), output.data()));
+
+      ASSERT_EQ(xnn_status_success,
+        xnn_run_operator(slice_op, /*threadpool=*/nullptr));
 
       ASSERT_EQ(output, output_ref);
     }
@@ -259,15 +267,19 @@ class SliceOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_slice_op(slice_op, xnn_delete_operator);
 
       ASSERT_EQ(xnn_status_success,
-        xnn_setup_slice_nd_x32(
+        xnn_reshape_slice_nd_x32(
           slice_op,
           num_dims(),
           input_shape().data(), offsets().data(), sizes().data(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
+          /*threadpool=*/nullptr));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(slice_op, nullptr /* thread pool */));
+        xnn_setup_slice_nd_x32(
+          slice_op,
+          input.data(), output.data()));
+
+      ASSERT_EQ(xnn_status_success,
+        xnn_run_operator(slice_op, /*threadpool=*/nullptr));
 
       ASSERT_EQ(output, output_ref);
     }
@@ -311,7 +323,7 @@ void TestRunX32() const {
           input_shape().data(), offsets().data(), sizes().data(),
           input.data(), output.data(),
           0,
-          nullptr /* thread pool */));
+          /*threadpool=*/nullptr));
       ASSERT_EQ(output, output_ref);
     }
   }

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@
 
 #include "bfloat16.hpp"
 #include "float16.hpp"
+#include "float8.hpp"
+#include "int4.hpp"
 #include "internal_defs.hpp"
 #include "z_magic.hpp"
 
@@ -154,6 +156,38 @@ template <>
 struct numeric_limits<uint8_t> : public std::numeric_limits<uint8_t> {};
 
 template <>
+struct numeric_limits<float8_e5m2_t> {
+    static constexpr float8_e5m2_t lowest() {
+        return float8_e5m2_t(0xfb, true);
+    }
+
+    static constexpr float8_e5m2_t max() { return float8_e5m2_t(0x7b, true); }
+
+    static constexpr int bias = 0xf;
+    static constexpr int digits = 3; // s1e5m2 -> 2+1 bits
+
+    static constexpr float8_e5m2_t epsilon() {
+        return float8_e5m2_t(((bias - (digits - 1)) << (digits - 1)), true);
+    }
+};
+
+template <>
+struct numeric_limits<float8_e4m3_t> {
+    static constexpr float8_e4m3_t lowest() {
+        return float8_e4m3_t(0xfe, true);
+    }
+
+    static constexpr float8_e4m3_t max() { return float8_e4m3_t(0x7e, true); }
+
+    static constexpr int bias = 0x7;
+    static constexpr int digits = 4; // s1e4m3 -> 3+1 bits
+
+    static constexpr float8_e4m3_t epsilon() {
+        return float8_e4m3_t(((bias - (digits - 1)) << (digits - 1)), true);
+    }
+};
+
+template <>
 struct numeric_limits<bfloat16_t> {
     static constexpr bfloat16_t lowest() { return bfloat16_t(0xff7f, true); }
 
@@ -179,6 +213,28 @@ struct numeric_limits<float16_t> {
     }
 };
 
+template <>
+struct numeric_limits<uint4_t> {
+    static constexpr uint4_t lowest() { return uint4_t(0); }
+
+    static constexpr uint4_t max() { return uint4_t(15); }
+
+    static constexpr int digits = 4;
+
+    static constexpr uint4_t epsilon() { return uint4_t(0); }
+};
+
+template <>
+struct numeric_limits<int4_t> {
+    static constexpr int4_t lowest() { return int4_t(-8); }
+
+    static constexpr int4_t max() { return int4_t(7); }
+
+    static constexpr int digits = 4;
+
+    static constexpr int4_t epsilon() { return int4_t(0); }
+};
+
 template <typename T>
 struct is_integral {
     static constexpr bool value = false;
@@ -197,6 +253,14 @@ struct is_integral<int8_t> {
 };
 template <>
 struct is_integral<uint8_t> {
+    static constexpr bool value = true;
+};
+template <>
+struct is_integral<int4_t> {
+    static constexpr bool value = true;
+};
+template <>
+struct is_integral<uint4_t> {
     static constexpr bool value = true;
 };
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -70,8 +70,9 @@ struct jit_brgemm_copy_to_coarse_t : public jit_generator {
         , tr_row_size_(conf_->LDA)
         , row_granularity_(granularity_in_bytes / typesize_)
         , row_step_(zmm_size_in_bytes / typesize_)
-        , data_stride_(row_size_ * typesize_)
-        , tr_data_stride_(tr_row_size_ * typesize_) {
+        , data_stride_(static_cast<dim_t>(is_fwd_dir_ ? conf_->ks() : 1)
+                  * row_size_ * typesize_)
+        , tr_data_stride_(static_cast<dim_t>(tr_row_size_) * typesize_) {
 
         // Kernel is supposed to be called under the following constraints
         assert(is_superset(conf_->isa, avx512_core_amx));
@@ -178,25 +179,36 @@ struct jit_brgemm_trans_wei_t {
 };
 
 struct jit_brgemm_relo_copy_to_wbuffer_t : public jit_generator {
+    struct cfg_t {
+        data_type_t wei_dt {data_type_t::dnnl_data_type_undef};
+        int out_oc_block {0};
+        int inp_oc_block {0};
+        int rd {0};
+        bool is_rd_padded_to_block {false};
+        int inp_ocb_offs {0};
+        int last_occ_to_copy {0};
+    };
+
     struct ctx_t {
-        const void *src;
-        void *dst;
+        const char *src {nullptr};
+        char *dst {nullptr};
+        size_t last_ocb {0};
     };
 
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_brgemm_relo_copy_to_wbuffer_t)
 
     using reg64_t = Xbyak::Reg64;
 
-    jit_brgemm_relo_copy_to_wbuffer_t(const jit_brgemm_conv_conf_t &ajcp)
-        : jit_generator(
-                jit_name(), nullptr, MAX_CODE_SIZE, true, avx512_core_amx)
-        , jcp(ajcp) {}
+    jit_brgemm_relo_copy_to_wbuffer_t(const cfg_t &ajcp)
+        : jit_generator(jit_name(), avx512_core_amx), wjcp(ajcp) {}
 
 private:
-    jit_brgemm_conv_conf_t jcp;
+    cfg_t wjcp;
 
     const reg64_t reg_src = rax;
     const reg64_t reg_dst = rbx;
+    const reg64_t aux_reg_src = r10;
+    const reg64_t aux_reg_dst = r11;
     const reg64_t reg_tmp = rdx;
 
     const Xbyak::Opmask kmask_load = k2;

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2018-2023 Intel Corporation
+* Copyright 2018-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -76,7 +76,8 @@ static inline void quantize_igo(int8_t *scratch_quantized,
             for (int go = 0; go < G * O; go++) {
                 const float s = scales[(mask == 0) ? 0 : go];
                 scratch_quantized[ldi * G * O + go]
-                        = qz_b0<in_data_t, int8_t>()(src[ldi * G * O + go], s);
+                        = q10n::qz_b0<in_data_t, int8_t>()(
+                                src[ldi * G * O + go], s);
             }
         }
     });
@@ -99,7 +100,7 @@ static inline void quantize_goi(int8_t *scratch_quantized,
         PRAGMA_OMP_SIMD()
         for (dim_t i = 0; i < I; i++) {
             scratch_quantized[ld * I * G * O + i * G * O + go]
-                    = qz_b0<in_data_t, int8_t>()(
+                    = q10n::qz_b0<in_data_t, int8_t>()(
                             src[ld * G * O * I + go * I + i], s);
         }
     });
@@ -135,7 +136,7 @@ static inline void compensate_igo(float *compensation,
             if (I == 1) {
                 PRAGMA_OMP_SIMD()
                 for (int go = GO_s; go < GO_e; go++)
-                    compensation[ld * G * O + go] = saturate<float>(
+                    compensation[ld * G * O + go] = q10n::saturate<float>(
                             scratch_quantized[ld * I * G * O + go]);
             } else {
                 // We split the loop on I in three to avoid conditionals or zeroing compensation
@@ -154,7 +155,7 @@ static inline void compensate_igo(float *compensation,
                 // i = I-1
                 PRAGMA_OMP_SIMD()
                 for (int go = GO_s; go < GO_e; go++)
-                    compensation[ld * G * O + go] = saturate<float>(
+                    compensation[ld * G * O + go] = q10n::saturate<float>(
                             compensation_s32[go]
                             + scratch_quantized[go + G * O * (i + I * (ld))]);
             }
@@ -180,7 +181,7 @@ static inline void compensate_goi(float *compensation,
         // going to be added to a bias (e.g. like in lstm
         // projection where it is directly added to the s32
         // accumulators)
-        compensation[ld * G * O + go] = saturate<float>(compensation_s32);
+        compensation[ld * G * O + go] = q10n::saturate<float>(compensation_s32);
     });
 }
 
@@ -200,7 +201,7 @@ struct rnn_data_reorder_t : public primitive_t {
             using namespace status;
             const memory_desc_wrapper id(src_md), od(dst_md);
 
-            bool args_ok = true;
+            bool args_ok = impl::is_dense_format_kind({src_md, dst_md});
 #define PD_CHECK_ARG(x) args_ok = args_ok && (x)
             PD_CHECK_ARG(id.data_type() == type_i);
             PD_CHECK_ARG(od.data_type() == type_o);
@@ -270,7 +271,7 @@ private:
                 PRAGMA_OMP_SIMD()
                 for (int j = 0; j < inner_dim; ++j) {
                     const float in = (float)i_[j] * scale + shift;
-                    o_[j] = qz_a1b0<float, out_data_t>()(in);
+                    o_[j] = q10n::qz_a1b0<float, out_data_t>()(in);
                 }
             }
         });
@@ -287,7 +288,7 @@ private:
         const size_t nelems = input_d.nelems();
         parallel_nd(nelems, [&](size_t i) {
             const float in = (float)input[input_d.off_l(i)] * scale + shift;
-            output[output_d.off_l(i)] = qz_a1b0<float, out_data_t>()(in);
+            output[output_d.off_l(i)] = q10n::qz_a1b0<float, out_data_t>()(in);
         });
         return status::success;
     }
@@ -346,7 +347,7 @@ struct rnn_weights_reorder_s8_t : public primitive_t {
             using namespace status;
             const memory_desc_wrapper id(src_md), od(dst_md);
 
-            bool args_ok = true;
+            bool args_ok = impl::is_dense_format_kind({src_md, dst_md});
 #define PD_CHECK_ARG(x) args_ok = args_ok && (x)
             // Fast checks
             PD_CHECK_ARG(id.data_type() == type_i);
@@ -560,7 +561,7 @@ struct rnn_weights_reorder_t : public primitive_t {
             using namespace status;
 
             const memory_desc_wrapper id(src_md), od(dst_md);
-            bool args_ok = true;
+            bool args_ok = impl::is_dense_format_kind({src_md, dst_md});
 #define PD_CHECK_ARG(x) args_ok = args_ok && (x)
             PD_CHECK_ARG(id.data_type() == type_i);
             PD_CHECK_ARG(od.data_type() == type_o);
@@ -596,8 +597,8 @@ struct rnn_weights_reorder_t : public primitive_t {
                     = (itag == ldigo && rnn_pdata.format == ldgoi_p)
                     || (itag == ldgoi && rnn_pdata.format == ldigo_p)
                     || (itag == ldio && rnn_pdata.format == ldio_p),
-                    dt_cross_case
-                    = type_i == data_type::f32 && type_o == data_type::bf16;
+                    dt_cross_case = type_i == data_type::f32
+                    && (type_o == data_type::bf16 || type_o == data_type::f16);
             const size_t sz = id.nelems();
 
             using namespace memory_tracking::names;
@@ -606,7 +607,7 @@ struct rnn_weights_reorder_t : public primitive_t {
                     key_reorder_rnn_weights_transposition,
                     layout_cross_case ? sz : 0);
             scratchpad.template book<out_data_t>(
-                    key_reorder_rnn_weights_bf16_cvt, dt_cross_case ? sz : 0);
+                    key_reorder_rnn_weights_xf16_cvt, dt_cross_case ? sz : 0);
         }
         friend dnnl::impl::impl_list_item_t;
     };
@@ -645,15 +646,15 @@ private:
         const int *parts = rnn_pdata.parts;
         const dim_t n = rnn_pdata.n;
 
-        /* Convert fp32 input to bf16 */
+        /* Convert to fp32*/
         out_data_t *input_cvt = (out_data_t *)input;
         if (type_i == data_type::f32 && type_o == data_type::bf16) {
             input_cvt
                     = (out_data_t *)ctx.get_scratchpad_grantor()
                               .template get<void>(memory_tracking::names::
-                                              key_reorder_rnn_weights_bf16_cvt);
+                                              key_reorder_rnn_weights_xf16_cvt);
             parallel_nd(L * D, [&](dim_t ld) {
-                cvt_float_to_bfloat16((bfloat16_t *)input_cvt + ld * G * O * I,
+                types::cvt_from_float((bfloat16_t *)input_cvt + ld * G * O * I,
                         (float *)input + ld * G * O * I, G * O * I);
             });
         }
@@ -697,6 +698,9 @@ private:
                                                 ? off_igo(l, d, 0, g, 0)
                                                 : off_goi(l, d, 0, g, 0)],
                                 (bfloat16_t *)output));
+                    } else if (type_o == data_type::f16) {
+                        assert(!"Unimplemented");
+                        return status::unimplemented;
                     } else {
                         CHECK(sgemm_pack("A", "N", "N", &m_p, &n, &k_p, &lda,
                                 &ldb,
@@ -751,7 +755,8 @@ struct rnn_brgemm_weights_reorder_s8_t : public primitive_t {
 
             const memory_desc_wrapper id(src_md), od(dst_md);
 
-            const bool args_ok = true && id.data_type() == type_i
+            const bool args_ok = impl::is_dense_format_kind({src_md, dst_md})
+                    && id.data_type() == type_i
                     && od.data_type() == data_type::s8 && id.is_dense();
             if (!args_ok) return invalid_arguments;
 

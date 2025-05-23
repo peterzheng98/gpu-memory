@@ -395,6 +395,19 @@ class TestShapeInference(TestShapeInferenceHelper):
             opset_imports=[helper.make_opsetid(ONNX_DOMAIN, version)],
         )
 
+    @parameterized.expand(all_versions_for("Cast"))
+    @unittest.skip(
+        "Issue #5960"
+    )  # FIXME(#5960) propagateElemTypeFromAttributeToOutput does not validate against output type constraints
+    def test_cast_to_complex(self, _, version) -> None:
+        graph = self._make_graph(
+            [("x", TensorProto.FLOAT, (2, 4, 3))],
+            [make_node("Cast", ["x"], ["y"], to=TensorProto.COMPLEX128)],
+            [],
+        )
+
+        self.assertRaises(onnx.shape_inference.InferenceError, self._inferred, graph)
+
     @parameterized.expand(all_versions_for("CastLike"))
     def test_cast_like(self, _, version) -> None:
         graph = self._make_graph(
@@ -1650,6 +1663,21 @@ class TestShapeInference(TestShapeInferenceHelper):
             graph,
             [make_tensor_value_info("y", TensorProto.BOOL, ())],
             opset_imports=[helper.make_opsetid(ONNX_DOMAIN, version)],
+        )
+
+    def test_squeeze_no_axes_opset11(self) -> None:
+        graph = self._make_graph(
+            [
+                ("x", TensorProto.FLOAT, (1, 3, 1, 1, 2, 1)),
+            ],
+            [make_node("Squeeze", ["x"], "y")],
+            [],
+        )
+        operatorsetid = OperatorSetIdProto()
+        operatorsetid.domain = ""
+        operatorsetid.version = 11
+        self._assert_inferred(
+            graph, [make_tensor_value_info("y", TensorProto.FLOAT, (3, 2))]
         )
 
     def test_unsqueeze_regular(self) -> None:
@@ -5250,11 +5278,14 @@ class TestShapeInference(TestShapeInferenceHelper):
         self._make_matmulinteger_test((5, 1, 4, 2), (1, 3, 2, 3))
         self._make_matmulinteger_test((4, 2), (3, 2, 3))
 
-    def test_quantizelinear(self) -> None:
+    @parameterized.expand(
+        [onnx.TensorProto.FLOAT, onnx.TensorProto.FLOAT16, onnx.TensorProto.BFLOAT16]
+    )
+    def test_quantizelinear(self, elem_type) -> None:
         graph = self._make_graph(
             [
-                ("x", TensorProto.FLOAT, (30, 4, 5)),
-                ("y_scale", TensorProto.FLOAT, ()),
+                ("x", elem_type, (30, 4, 5)),
+                ("y_scale", elem_type, ()),
                 ("y_zero_point", TensorProto.UINT8, ()),
             ],
             [make_node("QuantizeLinear", ["x", "y_scale", "y_zero_point"], ["y"])],
@@ -5284,18 +5315,106 @@ class TestShapeInference(TestShapeInferenceHelper):
             graph, [make_tensor_value_info("y", TensorProto.UINT8, (30, 4, 5))]
         )
 
-    def test_dequantizelinear(self) -> None:
+    def test_quantizelinear_output_dtype(self) -> None:
+        graph = self._make_graph(
+            [("x", TensorProto.FLOAT, (3, 4, 5)), ("y_scale", TensorProto.FLOAT, ())],
+            [
+                make_node(
+                    "QuantizeLinear",
+                    ["x", "y_scale"],
+                    ["y"],
+                    output_dtype=TensorProto.UINT4,
+                )
+            ],
+            [],
+        )
+        self._assert_inferred(
+            graph, [make_tensor_value_info("y", TensorProto.UINT4, (3, 4, 5))]
+        )
+
+    def test_quantizelinear_zp_output_dtype(self) -> None:
+        graph = self._make_graph(
+            [
+                ("x", TensorProto.FLOAT, (3, 4, 5)),
+                ("y_scale", TensorProto.FLOAT, ()),
+                ("y_zero_point", TensorProto.UINT16, ()),
+            ],
+            [
+                make_node(
+                    "QuantizeLinear",
+                    ["x", "y_scale", "y_zero_point"],
+                    ["y"],
+                    output_dtype=TensorProto.UINT16,
+                )
+            ],
+            [],
+        )
+        self._assert_inferred(
+            graph, [make_tensor_value_info("y", TensorProto.UINT16, (3, 4, 5))]
+        )
+
+    def test_quantizelinear_zp_output_dtype_conflicted(self) -> None:
+        graph = self._make_graph(
+            [
+                ("x", TensorProto.FLOAT, (3, 4, 5)),
+                ("y_scale", TensorProto.FLOAT, ()),
+                ("y_zero_point", TensorProto.UINT16, ()),
+            ],
+            [
+                make_node(
+                    "QuantizeLinear",
+                    ["x", "y_scale", "y_zero_point"],
+                    ["y"],
+                    output_dtype=TensorProto.INT4,
+                )
+            ],
+            [],
+        )
+
+        self.assertRaises(
+            onnx.shape_inference.InferenceError,
+            self._inferred,
+            graph,
+        )
+
+    @unittest.skip(
+        "Issue #5960"
+    )  # FIXME(#5960) propagateElemTypeFromAttributeToOutput does not validate against output type constraints
+    def test_quantizelinear_invalid_output_dtype(self) -> None:
+        graph = self._make_graph(
+            [("x", TensorProto.FLOAT, (3, 4, 5)), ("y_scale", TensorProto.FLOAT, ())],
+            [
+                make_node(
+                    "QuantizeLinear",
+                    ["x", "y_scale"],
+                    ["y"],
+                    output_dtype=TensorProto.FLOAT16,
+                )
+            ],
+            [],
+        )
+
+        self.assertRaises(
+            onnx.shape_inference.InferenceError,
+            self._inferred,
+            graph,
+        )
+
+    @parameterized.expand(
+        [onnx.TensorProto.FLOAT, onnx.TensorProto.FLOAT16, onnx.TensorProto.BFLOAT16]
+    )
+    def test_dequantizelinear(self, elem_type) -> None:
         graph = self._make_graph(
             [
                 ("x", TensorProto.UINT8, (30, 4, 5)),
-                ("x_scale", TensorProto.FLOAT, ()),
+                ("x_scale", elem_type, ()),
                 ("x_zero_point", TensorProto.UINT8, ()),
             ],
             [make_node("DequantizeLinear", ["x", "x_scale", "x_zero_point"], ["y"])],
             [],
         )
         self._assert_inferred(
-            graph, [make_tensor_value_info("y", TensorProto.FLOAT, (30, 4, 5))]
+            graph, [make_tensor_value_info("y", elem_type, (30, 4, 5))]
         )
 
     def test_dynamicquantizelinear(self) -> None:
@@ -9457,6 +9576,139 @@ class TestShapeInference(TestShapeInferenceHelper):
             ],
         )
 
+    @parameterized.expand([TensorProto.FLOAT, TensorProto.DOUBLE, TensorProto.FLOAT16])
+    @unittest.skipUnless(ONNX_ML, "ONNX_ML required to test ai.onnx.ml operators")
+    def test_tree_ensemble(self, dtype) -> None:
+        interior_nodes = 5
+        leaves = 9
+        tree = make_node(
+            "TreeEnsemble",
+            ["x"],
+            ["y"],
+            domain=ONNX_ML_DOMAIN,
+            n_targets=5,
+            nodes_featureids=[0] * interior_nodes,
+            nodes_splits=make_tensor(
+                "nodes_splits",
+                dtype,
+                (interior_nodes,),
+                list(range(interior_nodes)),
+            ),
+            nodes_modes=make_tensor(
+                "nodes_modes",
+                TensorProto.UINT8,
+                (interior_nodes,),
+                [0] * interior_nodes,
+            ),
+            nodes_truenodeids=[0] * interior_nodes,
+            nodes_falsenodeids=[0] * interior_nodes,
+            nodes_trueleafs=[0] * interior_nodes,
+            nodes_falseleafs=[0] * interior_nodes,
+            membership_values=make_tensor(
+                "membership_values",
+                dtype,
+                (7,),
+                [0.0, 0.1, 0.2, np.nan, 0.4, 0.5, 1.0],
+            ),
+            leaf_targetids=[0] * leaves,
+            leaf_weights=make_tensor("leaf_weights", dtype, (leaves,), [1] * leaves),
+            tree_roots=[0],
+        )
+
+        graph = self._make_graph(
+            [("x", dtype, ("Batch Size", "Features"))],
+            [tree],
+            [],
+        )
+
+        self._assert_inferred(
+            graph,
+            [make_tensor_value_info("y", dtype, ("Batch Size", 5))],
+            opset_imports=[
+                make_opsetid(ONNX_ML_DOMAIN, 5),
+                make_opsetid(ONNX_DOMAIN, 11),
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            {
+                "nodes_truenodeids": [0] * 6,
+                "leaf_weights": make_tensor(
+                    "leaf_weights", TensorProto.DOUBLE, (9,), [1] * 9
+                ),
+                "nodes_splits": make_tensor(
+                    "nodes_splits", TensorProto.DOUBLE, (5,), [1] * 5
+                ),
+            },
+            {
+                "nodes_truenodeids": [0] * 5,
+                "leaf_weights": make_tensor(
+                    "leaf_weights", TensorProto.FLOAT, (9,), [1] * 9
+                ),
+                "nodes_splits": make_tensor(
+                    "nodes_splits", TensorProto.DOUBLE, (5,), [1] * 5
+                ),
+            },
+            {
+                "nodes_truenodeids": [0] * 5,
+                "leaf_weights": make_tensor(
+                    "leaf_weights", TensorProto.DOUBLE, (18,), [1] * 18
+                ),
+                "nodes_splits": make_tensor(
+                    "nodes_splits", TensorProto.DOUBLE, (5,), [1] * 5
+                ),
+            },
+            {
+                "nodes_truenodeids": [0] * 5,
+                "leaf_weights": make_tensor(
+                    "leaf_weights", TensorProto.DOUBLE, (9,), [1] * 9
+                ),
+                "nodes_splits": make_tensor(
+                    "nodes_splits", TensorProto.FLOAT, (5,), [1] * 5
+                ),
+            },
+        ]
+    )
+    @unittest.skipUnless(ONNX_ML, "ONNX_ML required to test ai.onnx.ml operators")
+    def test_tree_ensemble_fails_if_invalid_attributes(
+        self,
+        nodes_truenodeids,
+        leaf_weights,
+        nodes_splits,
+    ) -> None:
+        interior_nodes = 5
+        leaves = 9
+        tree = make_node(
+            "TreeEnsemble",
+            ["x"],
+            ["y"],
+            domain=ONNX_ML_DOMAIN,
+            n_targets=5,
+            nodes_featureids=[0] * interior_nodes,
+            nodes_splits=nodes_splits,
+            nodes_modes=make_tensor(
+                "nodes_modes",
+                TensorProto.UINT8,
+                (interior_nodes,),
+                [0] * interior_nodes,
+            ),
+            nodes_truenodeids=nodes_truenodeids,
+            nodes_falsenodeids=[0] * interior_nodes,
+            nodes_trueleafs=[0] * interior_nodes,
+            nodes_falseleafs=[0] * interior_nodes,
+            leaf_targetids=[0] * leaves,
+            leaf_weights=leaf_weights,
+            tree_roots=[0],
+        )
+
+        graph = self._make_graph(
+            [("x", TensorProto.DOUBLE, ("Batch Size", "Features"))],
+            [tree],
+            [],
+        )
+        self.assertRaises(onnx.shape_inference.InferenceError, self._inferred, graph)
+
     @unittest.skipUnless(ONNX_ML, "ONNX_ML required to test ai.onnx.ml operators")
     def test_tree_ensemble_classifier(self) -> None:
         tree = make_node(
@@ -9622,6 +9874,33 @@ class TestShapeInference(TestShapeInferenceHelper):
             [],
         )
         self._assert_inferred(graph, [make_tensor_value_info("output", TensorProto.INT64, (2, "N", 3, None))])  # type: ignore
+
+    def test_check_type_when_schema_has_empty_io(self):
+        input = """
+            <
+                ir_version: 7,
+                opset_import: ["" : 1]
+            >
+            agraph (X, Y) => (Z)
+            {
+                Z = CustomOp(X, Y)
+            }
+           """
+        model = onnx.parser.parse_model(input)
+
+        op_schema = defs.OpSchema(
+            "CustomOp",
+            "",
+            1,
+            inputs=[],
+            outputs=[],
+        )
+        onnx.defs.register_schema(op_schema)
+        with self.assertRaises(onnx.shape_inference.InferenceError):
+            onnx.shape_inference.infer_shapes(model, True)
+        onnx.defs.deregister_schema(
+            op_schema.name, op_schema.since_version, op_schema.domain
+        )
 
 
 if __name__ == "__main__":

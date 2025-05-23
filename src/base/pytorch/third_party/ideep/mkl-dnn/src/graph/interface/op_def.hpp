@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -83,7 +83,8 @@ DNNL_GRAPH_OP_SCHEMA(AvgPool, 1,
                         {"None", "SAME_UPPER", "SAME_LOWER", "VALID"})
                 .set_type_constraints(
                         "T", {data_type::f32, data_type::bf16, data_type::f16})
-                .set_shape_inference_function(infer_pool_output_shape))
+                .set_shape_inference_function(infer_pool_output_shape)
+                .set_op_def_constraint_function(check_pads))
 
 DNNL_GRAPH_OP_SCHEMA(AvgPoolBackward, 1,
         op_schema_t()
@@ -108,7 +109,8 @@ DNNL_GRAPH_OP_SCHEMA(AvgPoolBackward, 1,
                         "T", {data_type::f32, data_type::bf16, data_type::f16})
                 .set_type_constraints("T1", {data_type::s32})
                 .set_shape_inference_function(infer_pool_bwd_output_shape)
-                .set_op_def_constraint_function(check_avgpool_bwd_input_shape))
+                .set_op_def_constraint_function(check_avgpool_bwd_input_shape)
+                .set_op_def_constraint_function(check_pads))
 
 DNNL_GRAPH_OP_SCHEMA(BatchNormInference, 1,
         op_schema_t()
@@ -252,6 +254,7 @@ DNNL_GRAPH_OP_SCHEMA(Convolution, 1,
                 .set_type_constraints(
                         "T", {data_type::f32, data_type::bf16, data_type::f16})
                 .set_shape_inference_function(infer_conv_output_shape)
+                .set_op_def_constraint_function(check_pads)
                 .SET_CONV_COMMON_ATTRS)
 
 DNNL_GRAPH_OP_SCHEMA(ConvolutionBackwardData, 1,
@@ -274,6 +277,7 @@ DNNL_GRAPH_OP_SCHEMA(ConvolutionBackwardData, 1,
                 .set_type_constraints("T2", {data_type::s32})
                 .set_op_def_constraint_function(
                         check_conv_bwd_data_output_shape)
+                .set_op_def_constraint_function(check_pads)
                 .SET_CONV_COMMON_ATTRS)
 
 DNNL_GRAPH_OP_SCHEMA(ConvolutionBackwardWeights, 1,
@@ -294,6 +298,7 @@ DNNL_GRAPH_OP_SCHEMA(ConvolutionBackwardWeights, 1,
                 .set_type_constraints("T2", {data_type::s32})
                 .set_op_def_constraint_function(
                         check_conv_bwd_weights_weights_shape)
+                .set_op_def_constraint_function(check_pads)
                 .SET_CONV_COMMON_ATTRS)
 
 DNNL_GRAPH_OP_SCHEMA(ConvTranspose, 1,
@@ -310,6 +315,7 @@ DNNL_GRAPH_OP_SCHEMA(ConvTranspose, 1,
                 .set_type_constraints(
                         "T", {data_type::f32, data_type::bf16, data_type::f16})
                 .set_shape_inference_function(infer_convtranspose_output_shape)
+                .set_op_def_constraint_function(check_pads)
                 .SET_CONVTRANSPOSE_COMMON_ATTRS)
 
 DNNL_GRAPH_OP_SCHEMA(ConvTransposeBackwardData, 1,
@@ -323,6 +329,7 @@ DNNL_GRAPH_OP_SCHEMA(ConvTransposeBackwardData, 1,
                         "T", {data_type::f32, data_type::bf16, data_type::f16})
                 .set_shape_inference_function(
                         infer_convtranspose_bprop_data_output_shape)
+                .set_op_def_constraint_function(check_pads)
                 .SET_CONVTRANSPOSE_COMMON_ATTRS)
 
 DNNL_GRAPH_OP_SCHEMA(ConvTransposeBackwardWeights, 1,
@@ -343,6 +350,7 @@ DNNL_GRAPH_OP_SCHEMA(ConvTransposeBackwardWeights, 1,
                 .set_type_constraints("T2", {data_type::s32})
                 .set_op_def_constraint_function(
                         check_conv_bwd_weights_weights_shape)
+                .set_op_def_constraint_function(check_pads)
                 .SET_CONVTRANSPOSE_COMMON_ATTRS)
 
 DNNL_GRAPH_OP_SCHEMA(Divide, 1,
@@ -664,7 +672,9 @@ DNNL_GRAPH_OP_SCHEMA(MaxPool, 1,
                         {"None", "SAME_UPPER", "SAME_LOWER", "VALID"})
                 .set_type_constraints(
                         "T", {data_type::f32, data_type::bf16, data_type::f16})
-                .set_shape_inference_function(infer_pool_output_shape))
+                .set_shape_inference_function(infer_pool_output_shape)
+                .set_op_def_constraint_function(check_pads)
+                .set_op_def_constraint_function(check_maxpool_dilations))
 
 DNNL_GRAPH_OP_SCHEMA(MaxPoolBackward, 1,
         op_schema_t()
@@ -685,7 +695,9 @@ DNNL_GRAPH_OP_SCHEMA(MaxPoolBackward, 1,
                         {"NCX", "NXC"})
                 .set_type_constraints(
                         "T", {data_type::f32, data_type::bf16, data_type::f16})
-                .set_shape_inference_function(infer_pool_bwd_output_shape))
+                .set_shape_inference_function(infer_pool_bwd_output_shape)
+                .set_op_def_constraint_function(check_pads)
+                .set_op_def_constraint_function(check_maxpool_dilations))
 
 DNNL_GRAPH_OP_SCHEMA(Minimum, 1,
         op_schema_t()
@@ -1110,9 +1122,12 @@ DNNL_GRAPH_OP_SCHEMA(Quantize, 1,
                         op_attr::qtype, false, attribute_kind::s, "per_tensor")
                 .set_attr(op_attr::axis, false, attribute_kind::i, int64_t(1))
                 .set_attr(op_attr::scales, true, attribute_kind::fs)
-                .set_attr(op_attr::zps, true, attribute_kind::is)
+                // for symmetric quantization or fp8 quantization, zps is not required.
+                .set_attr(op_attr::zps, false, attribute_kind::is)
                 .set_type_constraints("T1", {data_type::f32})
-                .set_type_constraints("T2", {data_type::u8, data_type::s8})
+                .set_type_constraints("T2",
+                        {data_type::u8, data_type::s8, data_type::f8_e5m2,
+                                data_type::f8_e4m3})
                 .set_shape_inference_function(infer_identity_output_shape)
                 .set_op_def_constraint_function(check_quant_dequant_scales_zps))
 
@@ -1126,8 +1141,11 @@ DNNL_GRAPH_OP_SCHEMA(Dequantize, 1,
                         op_attr::qtype, false, attribute_kind::s, "per_tensor")
                 .set_attr(op_attr::axis, false, attribute_kind::i, int64_t(1))
                 .set_attr(op_attr::scales, true, attribute_kind::fs)
-                .set_attr(op_attr::zps, true, attribute_kind::is)
-                .set_type_constraints("T1", {data_type::u8, data_type::s8})
+                // for symmetric quantization or fp8 quantization, zps is not required.
+                .set_attr(op_attr::zps, false, attribute_kind::is)
+                .set_type_constraints("T1",
+                        {data_type::u8, data_type::s8, data_type::f8_e5m2,
+                                data_type::f8_e4m3})
                 .set_type_constraints("T2", {data_type::f32})
                 .set_shape_inference_function(infer_identity_output_shape)
                 .set_op_def_constraint_function(check_quant_dequant_scales_zps))

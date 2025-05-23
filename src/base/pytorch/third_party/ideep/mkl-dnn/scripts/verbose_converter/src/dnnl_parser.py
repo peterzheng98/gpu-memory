@@ -1,5 +1,5 @@
 ################################################################################
-# Copyright 2020-2023 Intel Corporation
+# Copyright 2020-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -67,6 +67,77 @@ class LogParser:
             representation.
             """
 
+            def split_arg_dt(arg_dt):
+                def buffer(dt):
+                    return {"data": dt, "offset": 0}
+
+                def eof(buf):
+                    return buf["offset"] >= len(buf["data"])
+
+                def get_data(buf):
+                    if eof(buf):
+                        return None
+                    return buf["data"][buf["offset"] :]
+
+                def read_int(buf):
+                    data = get_data(buf)
+                    if not data:
+                        return None
+                    if data[0] not in "123456789":
+                        return None
+                    for n, c in enumerate(data):
+                        if c not in "0123456789":
+                            buf["offset"] += n
+                            return int(data[:n])
+                    buf["offset"] += len(data)
+                    return int(data)
+
+                def read_literal(buf, literal):
+                    data = get_data(buf)
+                    if not data:
+                        return None
+                    if not data.startswith(literal):
+                        return None
+                    buf["offset"] += len(literal)
+                    return True
+
+                def parse_int_type(dt):
+                    buf = buffer(dt)
+                    if not (read_literal(buf, "u") or read_literal(buf, "s")):
+                        return False
+                    if not read_int(buf):
+                        return False
+                    return eof(buf)
+
+                def parse_float_type(dt):
+                    buf = buffer(dt)
+                    read_literal(buf, "b")  # ignore b in bf16
+                    if not read_literal(buf, "f"):
+                        return False
+                    if not read_int(buf):
+                        return False
+                    if eof(buf):
+                        return True  # f16, f32, f64
+                    if not read_literal(buf, "_e"):
+                        return False
+                    if not read_int(buf):
+                        return False
+                    if not read_literal(buf, "m"):
+                        return False
+                    if not read_int(buf):
+                        return False
+                    return eof(buf)  # f8_eXmY
+
+                parts = arg_dt.split("_")
+                for split in range(1, len(parts)):
+                    input_parts = parts[:split]
+                    dt_parts = parts[split:]
+                    dt = "_".join(dt_parts)
+                    if dt == "undef":
+                        return "_".join(input_parts), dt
+                    if parse_int_type(dt) or parse_float_type(dt):
+                        return "_".join(input_parts), dt
+
             def convert_mds(log_mds):
                 mds = []
                 for md in log_mds.split(" "):
@@ -97,8 +168,7 @@ class LogParser:
                             if f[:3] == "zpm":
                                 flags["zp_comp_mask"] = f[3:]
 
-                    data_type = arg_dt.split("_")[-1]
-                    arg = arg_dt[: -len(data_type) - 1]
+                    arg, data_type = split_arg_dt(arg_dt)
                     mds.append(
                         {
                             "arg": arg,
@@ -142,6 +212,8 @@ class LogParser:
                     start_idx += len(type) + 1
                     end_symbol = " "
                     end_idx = attrs.find(end_symbol, start_idx)
+                    if end_idx == -1:
+                        end_idx = None
                     return attrs[start_idx:end_idx]
 
                 def convert_structure_to_ir_seq(ir, value):
@@ -222,7 +294,7 @@ class LogParser:
                     for s in scales:
                         arg = s[: s.find(":")]
                         s_wo_arg = s[s.find(":") + 1 :]
-                        scale_dict = {"mask": "0"}
+                        scale_dict = {"mask": "0", "data_type": "f32", "groups": ""}
                         res[arg] = convert_structure_to_ir_seq(scale_dict, s_wo_arg)
                     return res
 
@@ -232,7 +304,7 @@ class LogParser:
                     for zp in zp_value:
                         arg = zp[: zp.find(":")]
                         zp_value_wo_arg = zp[zp.find(":") + 1 :]
-                        zp_dict = {"mask": "0"}
+                        zp_dict = {"mask": "0", "data_type": "s32", "groups": ""}
                         res[arg] = convert_structure_to_ir_seq(zp_dict, zp_value_wo_arg)
                     return res
 
@@ -242,12 +314,20 @@ class LogParser:
                 def convert_fpmath_mode(value):
                     return value
 
+                def convert_acc_mode(value):
+                    return value
+
+                def convert_deterministic(value):
+                    return value
+
                 converters = {
                     "attr-post-ops": convert_post_ops,
                     "attr-scales": convert_scales,
                     "attr-zero-points": convert_zero_points,
                     "attr-scratchpad": convert_scratchpad_mode,
                     "attr-fpmath": convert_fpmath_mode,
+                    "attr-acc": convert_acc_mode,
+                    "attr-deterministic": convert_deterministic,
                 }
                 attrs = {}
                 for e in converters.keys():
@@ -319,6 +399,11 @@ class LogParser:
                     )
             return entry
 
+        # `verbose_template` should have `component` field as second entry, but
+        # since it gets discarded for compatibility with previous verbose
+        # outputs, it's not in the final version of the string.
+        # Restore `component` when the least compatible library version's
+        # verbose output will contain it.
         verbose_template = (
             "onednn_verbose,operation,engine,primitive,"
             + "implementation,prop_kind,memory_descriptors,attributes,"
@@ -333,20 +418,25 @@ class LogParser:
             if marker == "onednn_verbose":
                 if l_raw[1].split(".")[0].isdigit():
                     l_raw.pop(1)
-                if (l_raw[1] == "primitive"):
+                # Skip graph component as not supported
+                if l_raw[1] == "graph":
+                    continue
+                # Remove a component from the line if presented
+                if l_raw[1] == "primitive":
                     l_raw.pop(1)
-                    event = l_raw[1].split(":")[0]
-                    if event == "info":
-                        opt = l_raw[2]
-                        if opt == "template":
-                            verbose_template = "onednn_verbose," + line.split(":")[1]
-                    if event in ["exec", "create"]:
-                        l_converted = convert_primitive(
-                            l_raw, verbose_template + ",exec_time"
-                        )
-                        if l_converted:
-                            self.__data[i] = l_converted
-                            i = i + 1
+
+                event = l_raw[1].split(":")[0]
+                if event == "info":
+                    opt = l_raw[2]
+                    if opt == "template":
+                        verbose_template = "onednn_verbose," + line.split(":")[1]
+                if event in ["exec", "create"]:
+                    l_converted = convert_primitive(
+                        l_raw, verbose_template + ",exec_time"
+                    )
+                    if l_converted:
+                        self.__data[i] = l_converted
+                        i = i + 1
 
     def get_data(self):
         """

@@ -16,6 +16,7 @@ __all__ = [
     "IR_VERSION_2019_9_19",
     "IR_VERSION_2020_5_8",
     "IR_VERSION_2021_7_30",
+    "IR_VERSION_2023_5_5",
     "EXPERIMENTAL",
     "STABLE",
     # Modules
@@ -93,6 +94,7 @@ from onnx.onnx_pb import (
     IR_VERSION_2019_9_19,
     IR_VERSION_2020_5_8,
     IR_VERSION_2021_7_30,
+    IR_VERSION_2023_5_5,
     ModelProto,
     NodeProto,
     OperatorSetIdProto,
@@ -186,7 +188,7 @@ def _get_serializer(
 
 def load_model(
     f: IO[bytes] | str | os.PathLike,
-    format: _SupportedFormat | None = None,
+    format: _SupportedFormat | None = None,  # noqa: A002
     load_external_data: bool = True,
 ) -> ModelProto:
     """Loads a serialized ModelProto into memory.
@@ -218,7 +220,7 @@ def load_model(
 
 def load_tensor(
     f: IO[bytes] | str | os.PathLike,
-    format: _SupportedFormat | None = None,
+    format: _SupportedFormat | None = None,  # noqa: A002
 ) -> TensorProto:
     """Loads a serialized TensorProto into memory.
 
@@ -237,7 +239,7 @@ def load_tensor(
 
 def load_model_from_string(
     s: bytes | str,
-    format: _SupportedFormat = _DEFAULT_FORMAT,
+    format: _SupportedFormat = _DEFAULT_FORMAT,  # noqa: A002
 ) -> ModelProto:
     """Loads a binary string (bytes) that contains serialized ModelProto.
 
@@ -256,7 +258,7 @@ def load_model_from_string(
 
 def load_tensor_from_string(
     s: bytes,
-    format: _SupportedFormat = _DEFAULT_FORMAT,
+    format: _SupportedFormat = _DEFAULT_FORMAT,  # noqa: A002
 ) -> TensorProto:
     """Loads a binary string (bytes) that contains serialized TensorProto.
 
@@ -276,7 +278,7 @@ def load_tensor_from_string(
 def save_model(
     proto: ModelProto | bytes,
     f: IO[bytes] | str | os.PathLike,
-    format: _SupportedFormat | None = None,
+    format: _SupportedFormat | None = None,  # noqa: A002
     *,
     save_as_external_data: bool = False,
     all_tensors_to_one_file: bool = True,
@@ -284,8 +286,7 @@ def save_model(
     size_threshold: int = 1024,
     convert_attribute: bool = False,
 ) -> None:
-    """
-    Saves the ModelProto to the specified path and optionally, serialize tensors with raw data as external data before saving.
+    """Saves the ModelProto to the specified path and optionally, serialize tensors with raw data as external data before saving.
 
     Args:
         proto: should be a in-memory ModelProto
@@ -330,10 +331,9 @@ def save_model(
 def save_tensor(
     proto: TensorProto,
     f: IO[bytes] | str | os.PathLike,
-    format: _SupportedFormat | None = None,
+    format: _SupportedFormat | None = None,  # noqa: A002
 ) -> None:
-    """
-    Saves the TensorProto to the specified path.
+    """Saves the TensorProto to the specified path.
 
     Args:
         proto: should be a in-memory TensorProto

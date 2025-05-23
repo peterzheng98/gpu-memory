@@ -1,7 +1,11 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
+
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#define __USE_MINGW_ANSI_STDIO
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,7 +27,6 @@
 #else
 #include <unistd.h>
 #include <sys/types.h>
-#include <signal.h>
 #endif
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
@@ -87,9 +90,23 @@ xuint128 add128(xuint128 x, xuint128 y) {
   return r;
 }
 
+static xuint128 cmpcnv(xuint128 cx) {
+  if ((cx.h & 0x8000000000000000ULL) != 0) {
+    cx.h ^= 0x7fffffffffffffffULL;
+    cx.l = ~cx.l;
+    cx.l++;
+    if (cx.l == 0) cx.h++;
+  }
+
+  cx.h ^= 0x8000000000000000ULL;
+
+  return cx;
+}
+
 int lt128(xuint128 x, xuint128 y) {
-  if (x.h < y.h) return 1;
-  if (x.h == y.h && x.l < y.l) return 1;
+  xuint128 cx = cmpcnv(x), cy = cmpcnv(y);
+  if (cx.h < cy.h) return 1;
+  if (cx.h == cy.h && cx.l < cy.l) return 1;
   return 0;
 }
 
@@ -158,17 +175,14 @@ void memrand(void *p, int size) {
   for(;i<size;i++) *r++ = xrand() & 0xff;
 }
 
-Sleef_quad rndf128(Sleef_quad min, Sleef_quad max) {
+Sleef_quad rndf128(Sleef_quad min, Sleef_quad max, int setSignRandomly) {
   cnv_t cmin = { .q = min }, cmax = { .q = max }, c;
-  uint64_t enablesign = cmin.h & cmax.h & UINT64_C(0x8000000000000000), sign = 0;
-  cmin.h &= UINT64_C(0x7fffffffffffffff);
-  cmax.h &= UINT64_C(0x7fffffffffffffff);
   do {
     memrand(&c.q, sizeof(Sleef_quad));
-    sign = c.h;
-    c.h &= UINT64_C(0x7fffffffffffffff);
   } while(isnonnumberf128(c.q) || lt128(c.x, cmin.x) || lt128(cmax.x, c.x));
-  c.h |= sign & enablesign;
+
+  if (setSignRandomly && (xrand() & 1)) c.h ^= UINT64_C(0x8000000000000000);
+
   return c.q;
 }
 
@@ -268,7 +282,7 @@ char *sprintfr(mpfr_t fr) {
 
 //
 
-#if MPFR_VERSION_MAJOR >= 4 && defined(ENABLEFLOAT128) && !defined(__APPLE__) && !defined(__PPC64__) && !defined(__i386__)
+#if MPFR_VERSION_MAJOR >= 4 && defined(SLEEF_FLOAT128_IS_IEEEQP) && !defined(__PPC64__) && !defined(__i386__) && !(defined(__APPLE__) && defined(__MACH__))
 void mpfr_set_f128(mpfr_t frx, Sleef_quad q, mpfr_rnd_t rnd) {
   int mpfr_set_float128(mpfr_t rop, __float128 op, mpfr_rnd_t rnd);
   union {
@@ -288,7 +302,7 @@ Sleef_quad mpfr_get_f128(mpfr_t m, mpfr_rnd_t rnd) {
   c.f = mpfr_get_float128(m, rnd);
   return c.q;
 }
-#elif defined(__SIZEOF_LONG_DOUBLE__) && defined(__aarch64__)
+#elif defined(SLEEF_LONGDOUBLE_IS_IEEEQP)
 void mpfr_set_f128(mpfr_t frx, Sleef_quad q, mpfr_rnd_t rnd) {
   union {
     Sleef_quad q;

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,22 +43,43 @@ using namespace cute;
 //////////////////////////////////////////////////////////////////////////////
 
 //
-// Policies for categorical dispatch of mainloop against kernel grid schedules
+// Kernel schedule policies (the base class tags, one for each kernel layer file)
 //
 struct KernelMultistage { };
+struct KernelCpAsyncWarpSpecialized { };
+struct KernelCpAsyncWarpSpecializedPingpong { };
+struct KernelCpAsyncWarpSpecializedCooperative { };
 struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpong { };
 struct KernelTmaWarpSpecializedCooperative { };
+struct KernelPtrArrayTmaWarpSpecializedCooperative { };
+
+//////////////////////////////////////////////////////////////////////////////
+
+//
+// Builder dispatch policies (not a part of the main CUTLASS layers, simply used to opt into 
+// specific collective builder dispatches)
+//
 
 // FP8 related policies (including Fast Accumulation)
 struct KernelTmaWarpSpecializedFP8FastAccum : KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpongFP8FastAccum : KernelTmaWarpSpecializedPingpong { };
 struct KernelTmaWarpSpecializedCooperativeFP8FastAccum: KernelTmaWarpSpecializedCooperative { };
+struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum : KernelPtrArrayTmaWarpSpecializedCooperative { };
+
+// Policies to opt into mixed type GEMMs
+struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
+struct KernelTmaWarpSpecializedPingpongMixedInput : KernelTmaWarpSpecializedPingpong { };
+struct KernelTmaWarpSpecializedCooperativeMixedInput: KernelTmaWarpSpecializedCooperative { };
+
+//////////////////////////////////////////////////////////////////////////////
 
 // Policies for dispatch of epilogue
 struct EpilogueDefault { };
 struct EpilogueTransposed { };
+
+//////////////////////////////////////////////////////////////////////////////
 
 //
 // Collective Mainloop Policies
@@ -98,28 +119,30 @@ struct MainloopSm80CpAsync {
   using ClusterShape = Shape<_1,_1,_1>;
 };
 
-// n-buffer in smem (cp.async), pipelined with Hopper GMMA, WITHOUT predicated gmem loads
+// n-buffer in smem (cp.async), pipelined with Hopper GMMA, with predicated gmem loads, warp specialized dynamic schedule
 template<
   int Stages_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelCpAsyncWarpSpecialized
 >
-struct MainloopSm90CpAsyncGmmaUnpredicated {
+struct MainloopSm90CpAsyncGmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
   using ArchTag = arch::Sm90;
-  using Schedule = KernelMultistage;
+  using Schedule = KernelSchedule;
 };
 
-// n-buffer in smem (cp.async), pipelined with Hopper GMMA, with predicated gmem loads
+// n-buffer in smem (cp.async), pipelined with Hopper GMMA, with predicated gmem loads, warp specialized dynamic schedule
 template<
   int Stages_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelCpAsyncWarpSpecialized
 >
-struct MainloopSm90CpAsyncGmma {
+struct MainloopSm90CpAsyncGmmaRmemAWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
   using ArchTag = arch::Sm90;
-  using Schedule = KernelMultistage;
+  using Schedule = KernelSchedule;
 };
 
 // n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, static schedule between TMA and GMMA
@@ -154,19 +177,37 @@ struct MainloopSm90TmaGmmaWarpSpecialized {
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelTmaWarpSpecialized,
-  int PipelineAsyncMmaStages_ = 0
+  class KernelSchedule = KernelTmaWarpSpecialized
 >
 struct MainloopSm90TmaGmmaRmemAWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  constexpr static int PipelineAsyncMmaStages = PipelineAsyncMmaStages_;
   using ArchTag = arch::Sm90;
   using Schedule = KernelSchedule;
   static_assert(
     cute::is_same_v<Schedule, KernelTmaWarpSpecialized> ||
     cute::is_same_v<Schedule, KernelTmaWarpSpecializedPingpong> ||
     cute::is_same_v<Schedule, KernelTmaWarpSpecializedCooperative>,
+    "KernelSchedule must be one of the warp specialized policies");
+};
+
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelTmaWarpSpecialized
+>
+struct MainloopSm90TmaGmmaRmemAWarpSpecializedMixedInput {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Sm90;
+  using Schedule = KernelSchedule;
+  static_assert(
+    cute::is_same_v<Schedule, KernelTmaWarpSpecialized> ||
+    cute::is_same_v<Schedule, KernelTmaWarpSpecializedMixedInput> ||
+    cute::is_same_v<Schedule, KernelTmaWarpSpecializedPingpong> ||
+    cute::is_same_v<Schedule, KernelTmaWarpSpecializedPingpongMixedInput> ||
+    cute::is_same_v<Schedule, KernelTmaWarpSpecializedCooperative> ||
+    cute::is_same_v<Schedule, KernelTmaWarpSpecializedCooperativeMixedInput>,
     "KernelSchedule must be one of the warp specialized policies");
 };
 
@@ -184,6 +225,22 @@ struct MainloopSm90TmaGmmaWarpSpecializedFP8
     cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedPingpong> ||
     cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperative>,
     "KernelSchedule must be one of the warp specialized policies");
+};
+
+// n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule for Ptr-Array and Grouped Gemm
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperative
+>
+struct MainloopSm90ArrayTmaGmmaWarpSpecialized {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Sm90;
+  using Schedule = KernelSchedule;
+  static_assert(
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, KernelSchedule>,
+    "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative policies");
 };
 
 //////////////////////////////////////////////////////////////////////////////

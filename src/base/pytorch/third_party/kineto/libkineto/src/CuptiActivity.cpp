@@ -10,8 +10,8 @@
 
 #include <fmt/format.h>
 
-#include "CudaDeviceProperties.h"
 #include "Demangle.h"
+#include "DeviceProperties.h"
 #include "output_base.h"
 
 namespace KINETO_NAMESPACE {
@@ -29,6 +29,10 @@ inline const std::string GpuActivity<CUpti_ActivityKernel4>::name() const {
 template<>
 inline ActivityType GpuActivity<CUpti_ActivityKernel4>::type() const {
   return ActivityType::CONCURRENT_KERNEL;
+}
+
+inline bool isWaitEventSync(CUpti_ActivitySynchronizationType type) {
+  return (type == CUPTI_ACTIVITY_SYNCHRONIZATION_TYPE_STREAM_WAIT_EVENT);
 }
 
 inline bool isEventSync(CUpti_ActivitySynchronizationType type) {
@@ -65,7 +69,7 @@ inline int64_t CudaSyncActivity::resourceId() const {
   // set to CUPTI_SYNCHRONIZATION_INVALID_VALUE (-1)
   // converting to an integer will automatically wrap the number to -1
   // in the trace.
-  return int32_t(raw().streamId);
+  return static_cast<int32_t>(raw().streamId);
 }
 
 inline void CudaSyncActivity::log(ActivityLogger& logger) const {
@@ -81,8 +85,10 @@ inline const std::string CudaSyncActivity::metadataJson() const {
       "device": {}, "context": {})JSON",
       syncTypeString(sync.type),
       isEventSync(raw().type) ? eventSyncInfo(raw(), srcStream_, srcCorrId_) : "",
-      sync.streamId, sync.correlationId,
-      deviceId(), sync.contextId);
+      static_cast<int32_t>(sync.streamId),
+      sync.correlationId,
+      deviceId(),
+      sync.contextId);
   // clang-format on
   return "";
 }
@@ -101,7 +107,11 @@ constexpr int64_t us(int64_t timestamp) {
 template<>
 inline const std::string GpuActivity<CUpti_ActivityKernel4>::metadataJson() const {
   const CUpti_ActivityKernel4& kernel = raw();
+  float blocksPerSmVal = blocksPerSm(kernel);
+  float warpsPerSmVal = warpsPerSm(kernel);
+
   // clang-format off
+
   return fmt::format(R"JSON(
       "queued": {}, "device": {}, "context": {},
       "stream": {}, "correlation": {},
@@ -112,12 +122,12 @@ inline const std::string GpuActivity<CUpti_ActivityKernel4>::metadataJson() cons
       "grid": [{}, {}, {}],
       "block": [{}, {}, {}],
       "est. achieved occupancy %": {})JSON",
-      us(kernel.queued), kernel.deviceId, kernel.contextId,
+      kernel.queued, kernel.deviceId, kernel.contextId,
       kernel.streamId, kernel.correlationId,
       kernel.registersPerThread,
       kernel.staticSharedMemory + kernel.dynamicSharedMemory,
-      blocksPerSm(kernel),
-      warpsPerSm(kernel),
+      std::isinf(blocksPerSmVal) ? "\"inf\"" : std::to_string(blocksPerSmVal),
+      std::isinf(warpsPerSmVal) ? "\"inf\"" : std::to_string(warpsPerSmVal),
       kernel.gridX, kernel.gridY, kernel.gridZ,
       kernel.blockX, kernel.blockY, kernel.blockZ,
       (int) (0.5 + kernelOccupancy(kernel) * 100.0));
@@ -261,8 +271,16 @@ inline const std::string RuntimeActivity::metadataJson() const {
       activity_.cbid, activity_.correlationId);
 }
 
+inline bool isKernelLaunchApi(const CUpti_ActivityAPI& activity_) {
+  return activity_.cbid == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 11060
+    || activity_.cbid == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernelEx
+#endif
+    ;
+}
+
 inline bool DriverActivity::flowStart() const {
-  return activity_.cbid == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel;
+  return isKernelLaunchApi(activity_);
 }
 
 inline const std::string DriverActivity::metadataJson() const {
@@ -272,9 +290,18 @@ inline const std::string DriverActivity::metadataJson() const {
 }
 
 inline const std::string DriverActivity::name() const {
-  // currently only cuLaunchKernel is expected
-  assert(activity_.cbid == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel);
-  return "cuLaunchKernel";
+  // currently only cuLaunchKernel/cuLaunchKernelEx is expected
+  assert(isKernelLaunchApi(activity_));
+  // not yet implementing full name matching
+  if (activity_.cbid == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel) {
+    return "cuLaunchKernel";
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 11060
+  } else if (activity_.cbid == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernelEx) {
+    return "cuLaunchKernelEx";
+#endif
+  } else {
+    return "Unknown"; // should not reach here
+  }
 }
 
 template<class T>

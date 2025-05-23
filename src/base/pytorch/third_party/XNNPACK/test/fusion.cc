@@ -3,11 +3,15 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#include <limits>
+#include <vector>
+
+#include <gtest/gtest.h>
+
 #include <xnnpack.h>
 #include <xnnpack/subgraph.h>
 
 #include "runtime-tester.h"
-#include <gtest/gtest.h>
 
 namespace xnnpack {
 
@@ -286,6 +290,42 @@ TEST(FULLY_CONNECTED_2D_THEN_CLAMP, fusion) {
   ASSERT_EQ(unoptimized_output, optimized_output);
 }
 
+TEST(FULLY_CONNECTED_2D_THEN_COPY_THEN_FULLY_CONNECTED, fusion) {
+  auto tester = RuntimeTester(11);
+  uint32_t fc1_input_id = 0;
+  uint32_t fc1_filter_id = 1;
+  uint32_t fc1_bias_id = 2;
+  uint32_t fc1_output_id = 4;
+  uint32_t reshape_output_id = 5;
+  uint32_t fc2_filter_id = 7;
+  uint32_t fc2_bias_id = 8;
+  uint32_t output_id = 9;
+  tester
+    .AddInputTensorF32({5, 3}, fc1_input_id)
+    .AddStaticTensorF32({7, 3}, TensorType::kDense, fc1_filter_id)
+    .AddStaticTensorF32({7}, TensorType::kDense, fc1_bias_id)
+    .AddDynamicTensorF32({5, 7}, fc1_output_id)
+    .AddDynamicTensorF32({5, 7}, reshape_output_id)
+    .AddStaticTensorF32({9, 7}, TensorType::kDense, fc2_filter_id)
+    .AddStaticTensorF32({9}, TensorType::kDense, fc2_bias_id)
+    .AddOutputTensorF32({5, 9}, output_id)
+    .AddFullyConnected(fc1_input_id, fc1_filter_id, fc1_bias_id, fc1_output_id)
+    .AddCopy(fc1_output_id, reshape_output_id)
+    .AddFullyConnected(reshape_output_id, fc2_filter_id, fc2_bias_id, output_id);
+
+  std::vector<float> unoptimized_output = tester.RunWithoutFusion<float>();
+  ASSERT_EQ(tester.NumOperators(), 3);
+
+  std::vector<float> optimized_output = tester.RunWithFusion<float>();
+
+  ASSERT_EQ(tester.NumOperators(), 2);
+  // Copy is optimized away.
+  ASSERT_EQ(tester.Node(0)->outputs[0], reshape_output_id);
+  ASSERT_EQ(tester.Node(1)->compute_type, xnn_compute_type_invalid);
+
+  ASSERT_EQ(unoptimized_output, optimized_output);
+}
+
 TEST(MULTIPLY_THEN_CLAMP, fusion) {
   auto tester = RuntimeTester(4);
   float output_min = -0.5f;
@@ -460,7 +500,7 @@ TEST(CONSTANT_PAD_THEN_CONVOLUTION, not_fused_due_to_padding_value_not_zero) {
   uint32_t filter_id = 2;
   uint32_t bias_id = 3;
   uint32_t output_id = 4;
-  size_t pre_paddings[4] = {0, 2, 4, 0};
+  size_t pre_paddings[4] = {1, 2, 4, 0};
   size_t post_paddings[4] = {0, 6, 8, 0};
   float padding_value = 1.0f;
 

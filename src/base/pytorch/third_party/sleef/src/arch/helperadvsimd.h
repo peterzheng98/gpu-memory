@@ -1,11 +1,11 @@
 /*********************************************************************/
-/*          Copyright ARM Ltd. 2010 - 2019.                          */
+/*          Copyright ARM Ltd. 2010 - 2024.                          */
 /* Distributed under the Boost Software License, Version 1.0.        */
 /*    (See accompanying file LICENSE.txt or copy at                  */
 /*          http://www.boost.org/LICENSE_1_0.txt)                    */
 /*********************************************************************/
 
-#ifndef __ARM_NEON
+#if !defined(__ARM_NEON) && !defined(SLEEF_GENHEADER)
 #error Please specify advsimd flags.
 #endif
 
@@ -61,9 +61,9 @@ typedef uint64x2_t vuint64;
 
 typedef struct {
   vmask x, y;
-} vmask2;
+} vquad;
 
-typedef vmask2 vargquad;
+typedef vquad vargquad;
 
 #define DFTPRIORITY 10
 
@@ -140,9 +140,6 @@ static INLINE VECTOR_CC vfloat vreinterpret_vf_vi2(vint2 vm) {
 static INLINE VECTOR_CC vint2 vreinterpret_vi2_vf(vfloat vf) {
   return vreinterpretq_s32_f32(vf);
 }
-static INLINE VECTOR_CC vint2 vreinterpret_vi2_vd(vdouble vd) {
-  return vreinterpretq_s32_f64(vd);
-}
 
 /****************************************/
 /* Single precision FP operations */
@@ -198,7 +195,7 @@ static INLINE VECTOR_CC vfloat vfmapn_vf_vf_vf_vf(vfloat x, vfloat y, vfloat z) 
 
 // Reciprocal 1/x, Division, Square root
 static INLINE VECTOR_CC vfloat vdiv_vf_vf_vf(vfloat n, vfloat d) {
-#ifndef ENABLE_ALTDIV
+#ifndef SLEEF_ENABLE_ALTDIV
   return vdivq_f32(n, d);
 #else
   // Finite numbers (including denormal) only, gives mostly correctly rounded result
@@ -219,7 +216,7 @@ static INLINE VECTOR_CC vfloat vdiv_vf_vf_vf(vfloat n, vfloat d) {
 #endif
 }
 static INLINE VECTOR_CC vfloat vrec_vf_vf(vfloat d) {
-#ifndef ENABLE_ALTDIV
+#ifndef SLEEF_ENABLE_ALTDIV
   return vdiv_vf_vf_vf(vcast_vf_f(1.0f), d);
 #else
   return vbslq_f32(vceqq_f32(vabs_vf_vf(d), vcast_vf_f(SLEEF_INFINITYf)),
@@ -228,7 +225,7 @@ static INLINE VECTOR_CC vfloat vrec_vf_vf(vfloat d) {
 }
 
 static INLINE VECTOR_CC vfloat vsqrt_vf_vf(vfloat d) {
-#ifndef ENABLE_ALTSQRT
+#ifndef SLEEF_ENABLE_ALTSQRT
   return vsqrtq_f32(d);
 #else
   // Gives correctly rounded result for all input range
@@ -410,7 +407,7 @@ static INLINE VECTOR_CC vdouble vfmapn_vd_vd_vd_vd(vdouble x, vdouble y, vdouble
 
 // Reciprocal 1/x, Division, Square root
 static INLINE VECTOR_CC vdouble vdiv_vd_vd_vd(vdouble n, vdouble d) {
-#ifndef ENABLE_ALTDIV
+#ifndef SLEEF_ENABLE_ALTDIV
   return vdivq_f64(n, d);
 #else
   // Finite numbers (including denormal) only, gives mostly correctly rounded result
@@ -432,7 +429,7 @@ static INLINE VECTOR_CC vdouble vdiv_vd_vd_vd(vdouble n, vdouble d) {
 #endif
 }
 static INLINE VECTOR_CC vdouble vrec_vd_vd(vdouble d) {
-#ifndef ENABLE_ALTDIV
+#ifndef SLEEF_ENABLE_ALTDIV
   return vdiv_vd_vd_vd(vcast_vd_d(1.0f), d);
 #else
   return vbslq_f64(vceqq_f64(vabs_vd_vd(d), vcast_vd_d(SLEEF_INFINITY)),
@@ -441,7 +438,7 @@ static INLINE VECTOR_CC vdouble vrec_vd_vd(vdouble d) {
 }
 
 static INLINE VECTOR_CC vdouble vsqrt_vd_vd(vdouble d) {
-#ifndef ENABLE_ALTSQRT
+#ifndef SLEEF_ENABLE_ALTSQRT
   return vsqrtq_f64(d);
 #else
   // Gives correctly rounded result for all input range
@@ -655,6 +652,9 @@ static INLINE VECTOR_CC vopmask vcast_vo32_vo64(vopmask m) {
 static INLINE VECTOR_CC vopmask vcast_vo64_vo32(vopmask m) {
   return vzipq_u32(m, m).val[0];
 }
+static INLINE VECTOR_CC vopmask vcast_vo_i(int i) {
+  return vreinterpretq_u32_u64(vdupq_n_u64((uint64_t)(i ? -1 : 0)));
+}
 
 static INLINE VECTOR_CC vopmask vand_vo_vo_vo(vopmask x, vopmask y) {
   return vandq_u32(x, y);
@@ -709,6 +709,13 @@ static INLINE VECTOR_CC vmask vcast_vm_i_i(int i0, int i1) {
   return vreinterpretq_u32_u64(vdupq_n_u64((0xffffffff & (uint64_t)i1) | (((uint64_t)i0) << 32)));
 }
 
+static INLINE vmask vcast_vm_i64(int64_t i) {
+  return vreinterpretq_u32_u64(vdupq_n_u64((uint64_t)i));
+}
+static INLINE vmask vcast_vm_u64(uint64_t i) {
+  return vreinterpretq_u32_u64(vdupq_n_u64(i));
+}
+
 static INLINE VECTOR_CC vopmask veq64_vo_vm_vm(vmask x, vmask y) {
   return vreinterpretq_u32_u64(vceqq_s64(vreinterpretq_s64_u32(x), vreinterpretq_s64_u32(y)));
 }
@@ -726,14 +733,11 @@ static INLINE VECTOR_CC vint vand_vi_vo_vi(vopmask x, vint y) {
   return vand_s32(vreinterpret_s32_u32(vget_low_u32(x)), y);
 }
 
-static INLINE VECTOR_CC vint2 vcastu_vi2_vi(vint vi) {
-  return vreinterpretq_s32_u32(vrev64q_u32(vreinterpretq_u32_u64(vmovl_u32(vreinterpret_u32_s32(vi)))));
+static INLINE VECTOR_CC vmask vcastu_vm_vi(vint vi) {
+  return vrev64q_u32(vreinterpretq_u32_u64(vmovl_u32(vreinterpret_u32_s32(vi))));
 }
-static INLINE VECTOR_CC vint vcastu_vi_vi2(vint2 vi2) {
-  return vreinterpret_s32_u32(vmovn_u64(vreinterpretq_u64_u32(vrev64q_u32(vreinterpretq_u32_s32(vi2)))));
-}
-static INLINE VECTOR_CC vdouble vreinterpret_vd_vi2(vint2 vi) {
-  return vreinterpretq_f64_s32(vi);
+static INLINE VECTOR_CC vint vcastu_vi_vm(vmask vi2) {
+  return vreinterpret_s32_u32(vmovn_u64(vreinterpretq_u64_u32(vrev64q_u32(vi2))));
 }
 static INLINE VECTOR_CC vdouble vtruncate_vd_vd(vdouble vd) { return vrndq_f64(vd); }
 
@@ -763,7 +767,6 @@ static INLINE VECTOR_CC void vsscatter2_v_p_i_i_vd(double *ptr, int offset, int 
 
 static INLINE VECTOR_CC vfloat vrev21_vf_vf(vfloat d0) { return vrev64q_f32(d0); }
 static INLINE VECTOR_CC vfloat vreva2_vf_vf(vfloat d0) { return vcombine_f32(vget_high_f32(d0), vget_low_f32(d0)); }
-static INLINE VECTOR_CC vint2 vrev21_vi2_vi2(vint2 i) { return vreinterpret_vi2_vf(vrev21_vf_vf(vreinterpret_vf_vi2(i))); }
 
 static INLINE VECTOR_CC void vstream_v_p_vf(float *ptr, vfloat v) { vstore_v_p_vf(ptr, v); }
 
@@ -779,14 +782,23 @@ static INLINE VECTOR_CC void vsscatter2_v_p_i_i_vf(float *ptr, int offset, int s
 
 //
 
-static vmask2 vloadu_vm2_p(void *p) {
-  vmask2 vm2;
-  memcpy(&vm2, p, VECTLENDP * 16);
-  return vm2;
+static vquad loadu_vq_p(void *p) {
+  vquad vq;
+  memcpy(&vq, p, VECTLENDP * 16);
+  return vq;
 }
 
-static INLINE vmask2 vcast_vm2_aq(vargquad aq) { return aq; }
-static INLINE vargquad vcast_aq_vm2(vmask2 vm2) { return vm2; }
+static INLINE vquad cast_vq_aq(vargquad aq) {
+  vquad vq;
+  memcpy(&vq, &aq, VECTLENDP * 16);
+  return vq;
+}
+
+static INLINE vargquad cast_aq_vq(vquad vq) {
+  vargquad aq;
+  memcpy(&aq, &vq, VECTLENDP * 16);
+  return aq;
+}
 
 static INLINE int vtestallzeros_i_vo64(vopmask g) {
   uint32x2_t x0 = vorr_u32(vget_low_u32(g), vget_high_u32(g));
@@ -815,7 +827,7 @@ static INLINE vopmask vgt64_vo_vm_vm(vmask x, vmask y) {
 
 static INLINE vmask vcast_vm_vi(vint vi) {
   vmask m = vreinterpretq_u32_u64(vmovl_u32(vreinterpret_u32_s32(vi)));
-  return vor_vm_vm_vm(vcast_vm_vi2(vcastu_vi2_vi(vreinterpret_s32_u32(vget_low_u32(vgt_vo_vi_vi(vcast_vi_i(0), vi))))), m);
+  return vor_vm_vm_vm(vcastu_vm_vi(vreinterpret_s32_u32(vget_low_u32(vgt_vo_vi_vi(vcast_vi_i(0), vi)))), m);
 }
 static INLINE vint vcast_vi_vm(vmask vm) { return vreinterpret_s32_u32(vmovn_u64(vreinterpretq_u64_u32(vm))); }
 

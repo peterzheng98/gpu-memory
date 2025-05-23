@@ -139,6 +139,12 @@ __all__ = [
     "vmap",
 ]
 
+parameter_check_state = {
+    "bad_parameter": False,
+    "lock": threading.Lock(),
+}
+
+
 # Please keep this list sorted
 assert __all__ == sorted(__all__)
 
@@ -2558,7 +2564,8 @@ else:
         # Lazy modules
         if name in _lazy_modules:
             return importlib.import_module(f".{name}", __name__)
-
+        if 'user_save' in name:
+            return importlib.import_module(f".{name}", __name__)
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2022-2023 Intel Corporation
+ * Copyright 2022-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,8 @@ public:
 
     int64_t get_axis() { return axis_; }
 
+    void set_format_and_axis();
+
     // For each input tensor, concat optimization pass will try to make the
     // parent op directly write it into the output of concat; If so, we mark the
     // corresponding input as invalid (false). For the input tensor that cannot
@@ -57,6 +59,8 @@ public:
     }
 
 protected:
+    // plain_axis_ is with respect to plain dims.
+    int64_t plain_axis_;
     // axis_ is with respect to blocking format.
     int64_t axis_;
     // To make sense, the axis_ should be combined with a fixed format.
@@ -107,8 +111,7 @@ private:
  *    dimension expansion (e.g. [a, b] --> [1, 1, a, b])
  * */
 class tensor_view_op_t : public movement_op_t,
-                         public op_traits::auto_copyable_t,
-                         public op_traits::batchwise_shrinkable_t {
+                         public op_traits::auto_copyable_t {
 public:
     DECLARE_QUERY_AND_COMPUTE();
 
@@ -123,13 +126,12 @@ public:
     sc_dims get_shapes() const;
     std::vector<expr> get_shapes_expr();
     bool try_penetrate(sc_data_format_t &new_output_format) const;
+    // the dim change is [a, b] --> [1, 1, a, b] or [1, 1, a, b] --> [a, b]
+    bool is_only_expand_or_penetrate() const;
     shape_rl_vec get_dynamic_shape_relations() const override;
-    sc_dims get_bwise_fuse_shrink_dims() override;
-    sc_op_ptr bw_shrinked_copy(
-            gt2gt_map &bw_lt_map, sc_graph_t &shrinked_graph) override;
 
-    void infer_binding_axis(bound_axis_map &bdax_map) override;
-    void pre_binding_axis(bound_axis_map &bdax_map) override;
+    void infer_binding_axis(binding_axis_map &bdax_map) override;
+    void pre_infer_binding_axis(binding_axis_map &bdax_map) override;
 
 private:
     sc_dims shapes_;
@@ -176,9 +178,7 @@ private:
     sc_dims shapes_;
 };
 
-class reorder_op_t : public movement_op_t,
-                     public op_traits::auto_copyable_t,
-                     public op_traits::batchwise_shrinkable_t {
+class reorder_op_t : public movement_op_t, public op_traits::auto_copyable_t {
 public:
     DECLARE_QUERY_AND_COMPUTE();
 
@@ -213,12 +213,8 @@ public:
     bool support_output_loop() const;
     bool support_optimized_kernel(const context_ptr &ctx) const;
     bool meet_vnni_reorder_require(const context_ptr &ctx) const;
-    sc_dims get_bwise_fuse_shrink_dims() override;
-    void collect_shrinked_lt_map(int bw_size, gt2gt_map &bw_lt_map) override;
-    void collect_shrinked_axis_map(
-            int bw_size, gt2axis_map &bw_axis_map) override;
-    void infer_binding_axis(bound_axis_map &bdax_map) override;
-    void pre_binding_axis(bound_axis_map &bdax_map) override;
+    void infer_binding_axis(binding_axis_map &bdax_map) override;
+    void pre_infer_binding_axis(binding_axis_map &bdax_map) override;
 
 private:
     sc_dims plain_dims_;

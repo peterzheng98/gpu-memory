@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -23,6 +23,10 @@
 
 #include "oneapi/dnnl/dnnl_graph_sycl.h"
 #include "oneapi/dnnl/dnnl_graph_types.h"
+
+#if DNNL_GPU_RUNTIME == DNNL_RUNTIME_OCL
+#include "oneapi/dnnl/dnnl_graph_ocl.h"
+#endif
 
 namespace dnnl {
 namespace impl {
@@ -57,6 +61,8 @@ const data_type_t s32 = dnnl_s32;
 const data_type_t s8 = dnnl_s8;
 const data_type_t u8 = dnnl_u8;
 const data_type_t boolean = dnnl_boolean;
+const data_type_t f8_e5m2 = dnnl_f8_e5m2;
+const data_type_t f8_e4m3 = dnnl_f8_e4m3;
 } // namespace data_type
 
 using partition_policy_t = dnnl_graph_partition_policy_t;
@@ -258,6 +264,10 @@ const op_attr_t mode = dnnl_graph_op_attr_mode;
 const op_attr_t qtype = dnnl_graph_op_attr_qtype;
 const op_attr_t rounding_type = dnnl_graph_op_attr_rounding_type;
 
+// Used to indicate the end of all external attributes, note all the new
+// attribute should be added above this one.
+const op_attr_t end = dnnl_graph_op_attr_end;
+
 // internal attributes
 const op_attr_t matched = 0x100;
 const op_attr_t backend = 0x101;
@@ -297,6 +307,10 @@ using host_allocate_f = dnnl_graph_host_allocate_f;
 using host_deallocate_f = dnnl_graph_host_deallocate_f;
 using sycl_allocate_f = dnnl_graph_sycl_allocate_f;
 using sycl_deallocate_f = dnnl_graph_sycl_deallocate_f;
+#if DNNL_GPU_RUNTIME == DNNL_RUNTIME_OCL
+using ocl_allocate_f = dnnl_graph_ocl_allocate_f;
+using ocl_deallocate_f = dnnl_graph_ocl_deallocate_f;
+#endif
 using inplace_pair_t = dnnl_graph_inplace_pair_t;
 
 using graph_t = dnnl_graph_graph;

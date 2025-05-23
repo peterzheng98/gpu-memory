@@ -1,5 +1,7 @@
 import os
 from os.path import abspath, expanduser
+from pathlib import Path
+
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
@@ -13,7 +15,7 @@ class WIDERFace(VisionDataset):
     """`WIDERFace <http://shuoyang1213.me/WIDERFACE/>`_ Dataset.
 
     Args:
-        root (string): Root directory where images and annotations are downloaded to.
+        root (str or ``pathlib.Path``): Root directory where images and annotations are downloaded to.
             Expects the following folder structure if download=False:
 
             .. code::
@@ -26,13 +28,17 @@ class WIDERFace(VisionDataset):
                         └── WIDER_test ('WIDER_test.zip' if compressed)
         split (string): The dataset split to use. One of {``train``, ``val``, ``test``}.
             Defaults to ``train``.
-        transform (callable, optional): A function/transform that  takes in a PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
         download (bool, optional): If true, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
+
+            .. warning::
+
+                To download the dataset `gdown <https://github.com/wkentaro/gdown>`_ is required.
 
     """
 
@@ -51,7 +57,7 @@ class WIDERFace(VisionDataset):
 
     def __init__(
         self,
-        root: str,
+        root: Union[str, Path],
         split: str = "train",
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
@@ -86,7 +92,7 @@ class WIDERFace(VisionDataset):
         """
 
         # stay consistent with other datasets and return a PIL Image
-        img = Image.open(self.img_info[index]["img_path"])
+        img = Image.open(self.img_info[index]["img_path"])  # type: ignore[arg-type]
 
         if self.transform is not None:
             img = self.transform(img)

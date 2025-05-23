@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2022 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -21,15 +21,14 @@
 #include <string>
 #include <vector>
 
-#include "gpu/compute/kernel.hpp"
+#include "gpu/intel/compute/kernel.hpp"
 #include "sycl/sycl_compat.hpp"
 
 namespace dnnl {
 namespace impl {
 namespace sycl {
 
-using device_uuid_t = std::tuple<uint64_t, uint64_t>;
-device_uuid_t get_device_uuid(const ::sycl::device &dev);
+gpu::intel::compute::device_uuid_t get_device_uuid(const ::sycl::device &dev);
 
 // including sycl_engine_base.hpp leads to circular dependencies, w/a for now.
 class sycl_engine_base_t;
@@ -37,9 +36,12 @@ class sycl_engine_base_t;
 status_t sycl_create_kernel_with_level_zero(
         std::unique_ptr<::sycl::kernel> &sycl_kernel,
         const std::string &kernel_name, const sycl_engine_base_t *sycl_engine,
-        const gpu::compute::binary_t &binary);
+        const gpu::intel::compute::binary_t &binary);
 
 bool compare_ze_devices(const ::sycl::device &lhs, const ::sycl::device &rhs);
+
+status_t func_zeModuleGetNativeBinary(ze_module_handle_t hModule, size_t *pSize,
+        uint8_t *pModuleNativeBinary);
 
 } // namespace sycl
 } // namespace impl

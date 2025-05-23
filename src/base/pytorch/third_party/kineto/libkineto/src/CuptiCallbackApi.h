@@ -16,6 +16,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <set>
 
 // TODO(T90238193)
@@ -25,6 +26,7 @@
 namespace KINETO_NAMESPACE {
 
 using namespace libkineto;
+
 
 
 /* CuptiCallbackApi : Provides an abstraction over CUPTI callback
@@ -53,6 +55,7 @@ class CuptiCallbackApi {
     // can possibly support more callback ids per domain
     //
     __RUNTIME_CB_DOMAIN_START = CUDA_LAUNCH_KERNEL,
+    CUDA_LAUNCH_KERNEL_EXC,  // Used in H100
 
     // Callbacks under Resource CB domain
     RESOURCE_CONTEXT_CREATED,
@@ -143,9 +146,15 @@ class CuptiCallbackApi {
   // As an implementation detail, cbid == 0xffffffff means enable the domain.
   std::set<std::pair<CUpti_CallbackDomain, CUpti_CallbackId>> enabledCallbacks_;
 
+
+  // Reader Writer lock types
+  using ReaderWriterLock = std::shared_timed_mutex;
+  using ReaderLockGuard = std::shared_lock<ReaderWriterLock>;
+  using WriteLockGuard = std::unique_lock<ReaderWriterLock>;
+  ReaderWriterLock callbackLock_;
 #ifdef HAS_CUPTI
   CUptiResult lastCuptiStatus_;
-  CUpti_SubscriberHandle subscriber_ {0};
+  CUpti_SubscriberHandle subscriber_ {nullptr};
 #endif
 };
 

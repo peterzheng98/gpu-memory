@@ -54,6 +54,8 @@ namespace stmt_attr_key {
 // Boolean. If true, for_loop_node_t will be merged as possible
 constexpr const char *merge_loop = "merge_loop";
 
+constexpr const char *skip_axis_binding_check = "skip_axis_binding_check";
+
 // for_loop_node_t. It represents the root loop invloving reduce computation
 constexpr const char *reduce_root_loop = "reduce_root_loop";
 
@@ -72,9 +74,6 @@ constexpr const char *parallel_merge_loop_granularity
 // Boolean. If true, there is no need to insert one pre barrier, please ensure
 // data dependency first when enable this flag.
 constexpr const char *no_post_barrier = "no_post_barrier";
-
-// Bound_axis. Give the hint of axis binding for loop
-constexpr const char *loop_axis_hint = "loop_axis_hint";
 
 // Boolean. If true, the certain loop could not be fused.
 constexpr const char *no_loop_fuse = "no_loop_fuse";

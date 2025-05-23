@@ -17,8 +17,9 @@
 #include <xnnpack/params.h>
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -31,8 +32,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -46,8 +48,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_input_stride) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_input_scale) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       for (float input_scale = 0.01f; input_scale < 100.0f; input_scale *= 3.14159265f) {
@@ -63,8 +66,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_input_scale) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_input_zero_point) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       for (int32_t input_zero_point = 0; input_zero_point <= 255; input_zero_point += 51) {
@@ -80,8 +84,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_input_zero_poin
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_output_scale) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       for (float output_scale = 0.01f; output_scale < 100.0f; output_scale *= 3.14159265f) {
@@ -97,8 +102,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_output_scale) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_output_zero_point) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       for (int32_t output_zero_point = 0; output_zero_point <= 255; output_zero_point += 51) {
@@ -114,8 +120,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_output_zero_poi
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_qmin) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -129,8 +136,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_qmin) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_qmax) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -144,8 +152,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_small_width_with_qmax) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -158,8 +167,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -173,8 +183,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_input_stride) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_input_scale) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       for (float input_scale = 0.01f; input_scale < 100.0f; input_scale *= 3.14159265f) {
@@ -190,8 +201,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_input_scale) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_input_zero_point) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       for (int32_t input_zero_point = 0; input_zero_point <= 255; input_zero_point += 51) {
@@ -207,8 +219,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_input_zero_poin
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_output_scale) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       for (float output_scale = 0.01f; output_scale < 100.0f; output_scale *= 3.14159265f) {
@@ -224,8 +237,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_output_scale) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_output_zero_point) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       for (int32_t output_zero_point = 0; output_zero_point <= 255; output_zero_point += 51) {
@@ -241,8 +255,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_output_zero_poi
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_qmin) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -256,8 +271,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_qmin) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_qmax) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -271,8 +287,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, unit_batch_large_width_with_qmax) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_small_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -285,8 +302,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_small_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_small_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -300,8 +318,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_small_width_with_input_stride) 
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_small_width_with_output_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -315,8 +334,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_small_width_with_output_stride)
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_large_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -329,8 +349,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_large_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_large_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -344,8 +365,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_large_width_with_input_stride) 
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_large_width_with_output_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qu8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -358,9 +380,22 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, small_batch_large_width_with_output_stride)
   }
 }
 
+TEST(GLOBAL_AVERAGE_POOLING_NWC_QU8, large_width_multithreaded) {
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qu8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
+  GlobalAveragePoolingOperatorTester()
+    .batch_size(5)
+    .width(spatial_tile * 3)
+    .channels(15)
+    .multithreaded(true)
+    .TestNWCxQU8();
+}
+
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -373,8 +408,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -388,8 +424,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_input_stride) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_input_scale) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       for (float input_scale = 0.01f; input_scale < 100.0f; input_scale *= 3.14159265f) {
@@ -405,8 +442,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_input_scale) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_input_zero_point) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       for (int32_t input_zero_point = 0; input_zero_point <= 255; input_zero_point += 51) {
@@ -422,8 +460,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_input_zero_poin
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_output_scale) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       for (float output_scale = 0.01f; output_scale < 100.0f; output_scale *= 3.14159265f) {
@@ -439,8 +478,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_output_scale) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_output_zero_point) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       for (int32_t output_zero_point = 0; output_zero_point <= 255; output_zero_point += 51) {
@@ -456,8 +496,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_output_zero_poi
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_qmin) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -471,8 +512,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_qmin) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_qmax) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -486,8 +528,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_small_width_with_qmax) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -500,8 +543,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -515,8 +559,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_input_stride) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_input_scale) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       for (float input_scale = 0.01f; input_scale < 100.0f; input_scale *= 3.14159265f) {
@@ -532,8 +577,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_input_scale) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_input_zero_point) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       for (int32_t input_zero_point = 0; input_zero_point <= 255; input_zero_point += 51) {
@@ -549,8 +595,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_input_zero_poin
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_output_scale) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       for (float output_scale = 0.01f; output_scale < 100.0f; output_scale *= 3.14159265f) {
@@ -566,8 +613,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_output_scale) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_output_zero_point) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       for (int32_t output_zero_point = 0; output_zero_point <= 255; output_zero_point += 51) {
@@ -583,8 +631,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_output_zero_poi
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_qmin) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -598,8 +647,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_qmin) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_qmax) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -613,8 +663,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, unit_batch_large_width_with_qmax) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_small_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -627,8 +678,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_small_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_small_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -642,8 +694,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_small_width_with_input_stride) 
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_small_width_with_output_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -657,8 +710,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_small_width_with_output_stride)
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_large_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -671,8 +725,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_large_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_large_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -686,8 +741,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_large_width_with_input_stride) 
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_large_width_with_output_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.qs8.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -700,9 +756,24 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, small_batch_large_width_with_output_stride)
   }
 }
 
+TEST(GLOBAL_AVERAGE_POOLING_NWC_QS8, large_width_multithreaded) {
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_qs8_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
+  GlobalAveragePoolingOperatorTester()
+    .batch_size(5)
+    .width(spatial_tile * 3)
+    .channels(15)
+    .multithreaded(true)
+    .TestNWCxQS8();
+}
+
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_small_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -715,8 +786,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_small_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_small_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -730,8 +804,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_small_width_with_input_stride) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_small_width_with_qmin) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -745,8 +822,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_small_width_with_qmin) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_small_width_with_qmax) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -760,8 +840,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_small_width_with_qmax) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_large_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -774,8 +857,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_large_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_large_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -789,8 +875,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_large_width_with_input_stride) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_large_width_with_qmin) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -804,8 +893,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_large_width_with_qmin) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_large_width_with_qmax) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -819,8 +911,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, unit_batch_large_width_with_qmax) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_small_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -833,8 +928,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_small_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_small_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -848,8 +946,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_small_width_with_input_stride) 
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_small_width_with_output_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -863,8 +964,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_small_width_with_output_stride)
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_large_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -877,8 +981,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_large_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_large_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -892,8 +999,11 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_large_width_with_input_stride) 
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_large_width_with_output_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f16.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -906,9 +1016,24 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, small_batch_large_width_with_output_stride)
   }
 }
 
+TEST(GLOBAL_AVERAGE_POOLING_NWC_F16, large_width_multithreaded) {
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f16_gavgpool_config();
+  if (gavgpool_config == nullptr) {
+    GTEST_SKIP();  // F16 unsupported.
+  }
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
+  GlobalAveragePoolingOperatorTester()
+    .batch_size(5)
+    .width(spatial_tile * 3)
+    .channels(15)
+    .multithreaded(true)
+    .TestNWCxF16();
+}
+
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_small_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -921,8 +1046,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_small_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_small_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -936,8 +1062,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_small_width_with_input_stride) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_small_width_with_qmin) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -951,8 +1078,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_small_width_with_qmin) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_small_width_with_qmax) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -966,8 +1094,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_small_width_with_qmax) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_large_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -980,8 +1109,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_large_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_large_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -995,8 +1125,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_large_width_with_input_stride) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_large_width_with_qmin) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -1010,8 +1141,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_large_width_with_qmin) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_large_width_with_qmax) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -1025,8 +1157,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, unit_batch_large_width_with_qmax) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_small_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -1039,8 +1172,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_small_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_small_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -1054,8 +1188,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_small_width_with_input_stride) 
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_small_width_with_output_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = 1; width <= spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -1069,8 +1204,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_small_width_with_output_stride)
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_large_width) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -1083,8 +1219,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_large_width) {
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_large_width_with_input_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -1098,8 +1235,9 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_large_width_with_input_stride) 
 }
 
 TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_large_width_with_output_stride) {
-  ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
-  const uint32_t spatial_tile = std::max<uint32_t>(xnn_params.f32.gavgpool.row_tile, 1);
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
   for (size_t channels = 1; channels <= 100; channels += 15) {
     for (size_t width = spatial_tile; width <= 4 * spatial_tile; width++) {
       GlobalAveragePoolingOperatorTester()
@@ -1110,4 +1248,16 @@ TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, small_batch_large_width_with_output_stride)
         .TestNWCxF32();
     }
   }
+}
+
+TEST(GLOBAL_AVERAGE_POOLING_NWC_F32, large_width_multithreaded) {
+  const struct xnn_gavgpool_config* gavgpool_config = xnn_init_f32_gavgpool_config();
+  ASSERT_NE(gavgpool_config, nullptr);
+  const uint32_t spatial_tile = std::max<uint32_t>(gavgpool_config->row_tile, 1);
+  GlobalAveragePoolingOperatorTester()
+    .batch_size(5)
+    .width(spatial_tile * 3)
+    .channels(15)
+    .multithreaded(true)
+    .TestNWCxF32();
 }

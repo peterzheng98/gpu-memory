@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2023 Intel Corporation
+* Copyright 2019-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -17,10 +17,8 @@
 #ifndef GPU_SYCL_SYCL_OCL_GPU_KERNEL_HPP
 #define GPU_SYCL_SYCL_OCL_GPU_KERNEL_HPP
 
-#include <assert.h>
 #include <string>
 
-#include "gpu/compute/compute.hpp"
 #include "sycl/sycl_utils.hpp"
 
 namespace dnnl {
@@ -28,28 +26,34 @@ namespace impl {
 namespace gpu {
 namespace sycl {
 
-class sycl_interop_gpu_kernel_t : public gpu::compute::kernel_impl_t {
+class sycl_interop_gpu_kernel_t : public gpu::intel::compute::kernel_impl_t {
 public:
     sycl_interop_gpu_kernel_t(const ::sycl::kernel &sycl_kernel,
-            const std::vector<gpu::compute::scalar_type_t> &arg_types)
+            const std::vector<gpu::intel::compute::scalar_type_t> &arg_types)
         : sycl_kernel_(new ::sycl::kernel(sycl_kernel))
         , arg_types_(arg_types) {}
 
     ::sycl::kernel sycl_kernel() const { return *sycl_kernel_; }
 
     status_t parallel_for(stream_t &stream,
-            const gpu::compute::nd_range_t &range,
-            const gpu::compute::kernel_arg_list_t &arg_list,
-            const gpu::compute::event_t &deps,
-            gpu::compute::event_t &out_dep) override;
+            const gpu::intel::compute::nd_range_t &range,
+            const gpu::intel::compute::kernel_arg_list_t &arg_list,
+            const gpu::intel::compute::event_t &deps,
+            gpu::intel::compute::event_t &out_dep) override;
 
-    const std::vector<gpu::compute::scalar_type_t> &arg_types() const override {
+    const std::vector<gpu::intel::compute::scalar_type_t> &
+    arg_types() const override {
         return arg_types_;
+    }
+
+    status_t dump() const override;
+    std::string name() const override {
+        return sycl_kernel_->get_info<::sycl::info::kernel::function_name>();
     }
 
 private:
     std::unique_ptr<::sycl::kernel> sycl_kernel_;
-    std::vector<gpu::compute::scalar_type_t> arg_types_;
+    std::vector<gpu::intel::compute::scalar_type_t> arg_types_;
 };
 
 } // namespace sycl

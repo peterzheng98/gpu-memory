@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -68,6 +68,12 @@ typedef enum {
     dnnl_sparse_encoding_undef = 0,
     /// Compressed Sparse Row (CSR) encoding.
     dnnl_csr,
+    /// An encoding that is used for an opaque storage schema for
+    /// tensors with unstructured sparsity. A memory descriptor with the
+    /// packed encoding cannot be used to create a memory object. It can
+    /// only be used to create a primitive descriptor to query the
+    /// actual memory descriptor (similar to the format tag `any`).
+    dnnl_packed,
 } dnnl_sparse_encoding_t;
 #endif
 
@@ -958,6 +964,77 @@ typedef enum {
     dnnl_ABcde16a4b,
     dnnl_defcbA16a,
     dnnl_defcbA8a,
+    dnnl_AcB16b64a,
+    dnnl_AcdB16b64a,
+    dnnl_AcdeB16b64a,
+    dnnl_AcB16b48a,
+    dnnl_AcdB16b48a,
+    dnnl_AcdeB16b48a,
+    dnnl_AcB16b32a,
+    dnnl_AcdB16b32a,
+    dnnl_AcdeB16b32a,
+    dnnl_AcB16b16a,
+    dnnl_AcdB16b16a,
+    dnnl_AcdeB16b16a,
+    dnnl_AcB8b32a,
+    dnnl_AcdB8b32a,
+    dnnl_AcdeB8b32a,
+    dnnl_AcB8b24a,
+    dnnl_AcdB8b24a,
+    dnnl_AcdeB8b24a,
+    dnnl_AcB8b16a,
+    dnnl_AcdB8b16a,
+    dnnl_AcdeB8b16a,
+    dnnl_AcB8b8a,
+    dnnl_AcdB8b8a,
+    dnnl_AcdeB8b8a,
+    dnnl_AcB8b64a2b,
+    dnnl_AcdB8b64a2b,
+    dnnl_AcdeB8b64a2b,
+    dnnl_AcB8b32a2b,
+    dnnl_AcdB8b32a2b,
+    dnnl_AcdeB8b32a2b,
+    dnnl_AcB8b24a2b,
+    dnnl_AcdB8b24a2b,
+    dnnl_AcdeB8b24a2b,
+    dnnl_AcB8b16a2b,
+    dnnl_AcdB8b16a2b,
+    dnnl_AcdeB8b16a2b,
+    dnnl_AcB8b8a2b,
+    dnnl_AcdB8b8a2b,
+    dnnl_AcdeB8b8a2b,
+    dnnl_AcB4b64a4b,
+    dnnl_AcdB4b64a4b,
+    dnnl_AcdeB4b64a4b,
+    dnnl_AcB4b32a4b,
+    dnnl_AcdB4b32a4b,
+    dnnl_AcdeB4b32a4b,
+    dnnl_AcB4b24a4b,
+    dnnl_AcdB4b24a4b,
+    dnnl_AcdeB4b24a4b,
+    dnnl_AcB4b16a4b,
+    dnnl_AcdB4b16a4b,
+    dnnl_AcdeB4b16a4b,
+    dnnl_AcB4b8a4b,
+    dnnl_AcdB4b8a4b,
+    dnnl_AcdeB4b8a4b,
+    dnnl_Ab4a,
+    dnnl_Ab8a,
+    dnnl_BA4b4a,
+    dnnl_BA8b4a,
+    dnnl_BA2a24b,
+    dnnl_aCB2b24c,
+    dnnl_BA2a8b,
+    dnnl_aCB2b8c,
+    dnnl_BA8a24b,
+    dnnl_aCB8b24c,
+    dnnl_BA8a16b,
+    dnnl_aCB8b16c,
+    dnnl_BA8a8b,
+    dnnl_aCB8b8c,
+    dnnl_bcad,
+    dnnl_cabd,
+    dnnl_dabc,
 
     /// Just a sentinel, not real memory format tag. Must be changed after new
     /// format tag is added.
@@ -1181,16 +1258,25 @@ typedef enum {
     dnnl_IOw16o16i = dnnl_BAc16a16b,
     dnnl_IOw16i16o = dnnl_BAc16b16a,
     dnnl_OIw16i16o = dnnl_ABc16b16a,
+    dnnl_OwI16i16o = dnnl_AcB16b16a,
     dnnl_OIw16i32o = dnnl_ABc16b32a,
+    dnnl_OwI16i32o = dnnl_AcB16b32a,
     dnnl_OIw16i48o = dnnl_ABc16b48a,
+    dnnl_OwI16i48o = dnnl_AcB16b48a,
     dnnl_OIw16i64o = dnnl_ABc16b64a,
+    dnnl_OwI16i64o = dnnl_AcB16b64a,
     dnnl_OIw16o16i = dnnl_ABc16a16b,
     dnnl_Oiw16o = dnnl_Abc16a,
     dnnl_OIw4i8o4i = dnnl_ABc4b8a4b,
+    dnnl_OwI4i8o4i = dnnl_AcB4b8a4b,
     dnnl_OIw4i16o4i = dnnl_ABc4b16a4b,
+    dnnl_OwI4i16o4i = dnnl_AcB4b16a4b,
     dnnl_OIw4i24o4i = dnnl_ABc4b24a4b,
+    dnnl_OwI4i24o4i = dnnl_AcB4b24a4b,
     dnnl_OIw4i32o4i = dnnl_ABc4b32a4b,
+    dnnl_OwI4i32o4i = dnnl_AcB4b32a4b,
     dnnl_OIw4i64o4i = dnnl_ABc4b64a4b,
+    dnnl_OwI4i64o4i = dnnl_AcB4b64a4b,
     dnnl_OIw2i8o4i = dnnl_ABc2b8a4b,
     dnnl_OIw16i16o4i = dnnl_ABc16b16a4b,
     dnnl_OIw16i16o2i = dnnl_ABc16b16a2b,
@@ -1199,11 +1285,17 @@ typedef enum {
     dnnl_OIw4o4i = dnnl_ABc4a4b,
     dnnl_Oiw4o = dnnl_Abc4a,
     dnnl_OIw8i8o2i = dnnl_ABc8b8a2b,
+    dnnl_OwI8i8o2i = dnnl_AcB8b8a2b,
     dnnl_OIw8i16o2i = dnnl_ABc8b16a2b,
+    dnnl_OwI8i16o2i = dnnl_AcB8b16a2b,
     dnnl_OIw8i24o2i = dnnl_ABc8b24a2b,
+    dnnl_OwI8i24o2i = dnnl_AcB8b24a2b,
     dnnl_OIw8i32o2i = dnnl_ABc8b32a2b,
+    dnnl_OwI8i32o2i = dnnl_AcB8b32a2b,
     dnnl_OIw8i64o2i = dnnl_ABc8b64a2b,
+    dnnl_OwI8i64o2i = dnnl_AcB8b64a2b,
     dnnl_OIw8i8o = dnnl_ABc8b8a,
+    dnnl_OwI8i8o = dnnl_AcB8b8a,
     dnnl_OIw8o16i2o = dnnl_ABc8a16b2a,
     dnnl_IOw8o16i2o = dnnl_BAc8a16b2a,
     dnnl_OIw8o8i = dnnl_ABc8a8b,
@@ -1224,8 +1316,11 @@ typedef enum {
     dnnl_Owi8o = dnnl_Acb8a,
     dnnl_OwI8o2i = dnnl_AcB8a2b,
     dnnl_OIw8i32o = dnnl_ABc8b32a,
+    dnnl_OwI8i32o = dnnl_AcB8b32a,
     dnnl_OIw8i24o = dnnl_ABc8b24a,
+    dnnl_OwI8i24o = dnnl_AcB8b24a,
     dnnl_OIw8i16o = dnnl_ABc8b16a,
+    dnnl_OwI8i16o = dnnl_AcB8b16a,
     dnnl_OwI8o4i = dnnl_AcB8a4b,
 
     // weights, 4D
@@ -1250,16 +1345,25 @@ typedef enum {
     dnnl_OhwI8o2i = dnnl_AcdB8a2b,
     dnnl_OhwI8o4i = dnnl_AcdB8a4b,
     dnnl_OIhw16i16o = dnnl_ABcd16b16a,
+    dnnl_OhwI16i16o = dnnl_AcdB16b16a,
     dnnl_OIhw16i32o = dnnl_ABcd16b32a,
+    dnnl_OhwI16i32o = dnnl_AcdB16b32a,
     dnnl_OIhw16i48o = dnnl_ABcd16b48a,
+    dnnl_OhwI16i48o = dnnl_AcdB16b48a,
     dnnl_OIhw16i64o = dnnl_ABcd16b64a,
+    dnnl_OhwI16i64o = dnnl_AcdB16b64a,
     dnnl_OIhw16o16i = dnnl_ABcd16a16b,
     dnnl_Oihw16o = dnnl_Abcd16a,
     dnnl_OIhw4i8o4i = dnnl_ABcd4b8a4b,
+    dnnl_OhwI4i8o4i = dnnl_AcdB4b8a4b,
     dnnl_OIhw4i16o4i = dnnl_ABcd4b16a4b,
+    dnnl_OhwI4i16o4i = dnnl_AcdB4b16a4b,
     dnnl_OIhw4i24o4i = dnnl_ABcd4b24a4b,
+    dnnl_OhwI4i24o4i = dnnl_AcdB4b24a4b,
     dnnl_OIhw4i32o4i = dnnl_ABcd4b32a4b,
+    dnnl_OhwI4i32o4i = dnnl_AcdB4b32a4b,
     dnnl_OIhw4i64o4i = dnnl_ABcd4b64a4b,
+    dnnl_OhwI4i64o4i = dnnl_AcdB4b64a4b,
     dnnl_OIhw16i16o4i = dnnl_ABcd16b16a4b,
     dnnl_OIhw16i16o2i = dnnl_ABcd16b16a2b,
     dnnl_OIhw16o16i2o = dnnl_ABcd16a16b2a,
@@ -1267,11 +1371,17 @@ typedef enum {
     dnnl_OIhw4o4i = dnnl_ABcd4a4b,
     dnnl_Oihw4o = dnnl_Abcd4a,
     dnnl_OIhw8i8o2i = dnnl_ABcd8b8a2b,
+    dnnl_OhwI8i8o2i = dnnl_AcdB8b8a2b,
     dnnl_OIhw8i16o2i = dnnl_ABcd8b16a2b,
+    dnnl_OhwI8i16o2i = dnnl_AcdB8b16a2b,
     dnnl_OIhw8i32o2i = dnnl_ABcd8b32a2b,
+    dnnl_OhwI8i32o2i = dnnl_AcdB8b32a2b,
     dnnl_OIhw8i24o2i = dnnl_ABcd8b24a2b,
+    dnnl_OhwI8i24o2i = dnnl_AcdB8b24a2b,
     dnnl_OIhw8i64o2i = dnnl_ABcd8b64a2b,
+    dnnl_OhwI8i64o2i = dnnl_AcdB8b64a2b,
     dnnl_OIhw8i8o = dnnl_ABcd8b8a,
+    dnnl_OhwI8i8o = dnnl_AcdB8b8a,
     dnnl_OIhw8o16i2o = dnnl_ABcd8a16b2a,
     dnnl_OIhw2i8o4i = dnnl_ABcd2b8a4b,
     dnnl_IOhw8o16i2o = dnnl_BAcd8a16b2a,
@@ -1279,8 +1389,11 @@ typedef enum {
     dnnl_OIhw8o4i = dnnl_ABcd8a4b,
     dnnl_Owhi16o = dnnl_Adcb16a,
     dnnl_OIhw8i32o = dnnl_ABcd8b32a,
+    dnnl_OhwI8i32o = dnnl_AcdB8b32a,
     dnnl_OIhw8i24o = dnnl_ABcd8b24a,
+    dnnl_OhwI8i24o = dnnl_AcdB8b24a,
     dnnl_OIhw8i16o = dnnl_ABcd8b16a,
+    dnnl_OhwI8i16o = dnnl_AcdB8b16a,
 
     // weights, 5D
     dnnl_Odhwi16o = dnnl_Acdeb16a,
@@ -1301,27 +1414,42 @@ typedef enum {
     dnnl_OdhwI8o4i = dnnl_AcdeB8a4b,
     dnnl_Odwhi16o = dnnl_Acedb16a,
     dnnl_OIdhw16i16o = dnnl_ABcde16b16a,
+    dnnl_OdhwI16i16o = dnnl_AcdeB16b16a,
     dnnl_OIdhw16i32o = dnnl_ABcde16b32a,
+    dnnl_OdhwI16i32o = dnnl_AcdeB16b32a,
     dnnl_OIdhw16i48o = dnnl_ABcde16b48a,
+    dnnl_OdhwI16i48o = dnnl_AcdeB16b48a,
     dnnl_OIdhw16i64o = dnnl_ABcde16b64a,
+    dnnl_OdhwI16i64o = dnnl_AcdeB16b64a,
     dnnl_OIdhw16o16i = dnnl_ABcde16a16b,
     dnnl_Oidhw16o = dnnl_Abcde16a,
     dnnl_OIdhw4i4o = dnnl_ABcde4b4a,
     dnnl_OIdhw4o4i = dnnl_ABcde4a4b,
     dnnl_Oidhw4o = dnnl_Abcde4a,
     dnnl_OIdhw8i8o2i = dnnl_ABcde8b8a2b,
+    dnnl_OdhwI8i8o2i = dnnl_AcdeB8b8a2b,
     dnnl_OIdhw8i16o2i = dnnl_ABcde8b16a2b,
+    dnnl_OdhwI8i16o2i = dnnl_AcdeB8b16a2b,
     dnnl_OIdhw8i32o2i = dnnl_ABcde8b32a2b,
+    dnnl_OdhwI8i32o2i = dnnl_AcdeB8b32a2b,
     dnnl_OIdhw8i24o2i = dnnl_ABcde8b24a2b,
+    dnnl_OdhwI8i24o2i = dnnl_AcdeB8b24a2b,
     dnnl_OIdhw8i64o2i = dnnl_ABcde8b64a2b,
+    dnnl_OdhwI8i64o2i = dnnl_AcdeB8b64a2b,
     dnnl_OIdhw8i8o = dnnl_ABcde8b8a,
+    dnnl_OdhwI8i8o = dnnl_AcdeB8b8a,
     dnnl_OIdhw8o16i2o = dnnl_ABcde8a16b2a,
     dnnl_IOdhw8o16i2o = dnnl_BAcde8a16b2a,
     dnnl_OIdhw4i8o4i = dnnl_ABcde4b8a4b,
+    dnnl_OdhwI4i8o4i = dnnl_AcdeB4b8a4b,
     dnnl_OIdhw4i16o4i = dnnl_ABcde4b16a4b,
+    dnnl_OdhwI4i16o4i = dnnl_AcdeB4b16a4b,
     dnnl_OIdhw4i24o4i = dnnl_ABcde4b24a4b,
+    dnnl_OdhwI4i24o4i = dnnl_AcdeB4b24a4b,
     dnnl_OIdhw4i32o4i = dnnl_ABcde4b32a4b,
+    dnnl_OdhwI4i32o4i = dnnl_AcdeB4b32a4b,
     dnnl_OIdhw4i64o4i = dnnl_ABcde4b64a4b,
+    dnnl_OdhwI4i64o4i = dnnl_AcdeB4b64a4b,
     dnnl_OIdhw16i16o4i = dnnl_ABcde16b16a4b,
     dnnl_OIdhw16i16o2i = dnnl_ABcde16b16a2b,
     dnnl_OIdhw2i8o4i = dnnl_ABcde2b8a4b,
@@ -1332,8 +1460,11 @@ typedef enum {
     dnnl_IOdhw16o16i = dnnl_BAcde16a16b,
     dnnl_OIdhw16o16i2o = dnnl_ABcde16a16b2a,
     dnnl_OIdhw8i32o = dnnl_ABcde8b32a,
+    dnnl_OdhwI8i32o = dnnl_AcdeB8b32a,
     dnnl_OIdhw8i24o = dnnl_ABcde8b24a,
+    dnnl_OdhwI8i24o = dnnl_AcdeB8b24a,
     dnnl_OIdhw8i16o = dnnl_ABcde8b16a,
+    dnnl_OdhwI8i16o = dnnl_AcdeB8b16a,
 
     // weights w/ groups, 3D
     dnnl_Goiw16g = dnnl_Abcd16a,
@@ -2170,14 +2301,6 @@ typedef struct dnnl_memory *dnnl_memory_t;
 /// A constant memory handle.
 typedef const struct dnnl_memory *const_dnnl_memory_t;
 
-/// Special pointer value that indicates that a memory object should not have
-/// an underlying buffer.
-#define DNNL_MEMORY_NONE (NULL)
-
-/// Special pointer value that indicates that the library needs to allocate an
-/// underlying buffer for a memory object.
-#define DNNL_MEMORY_ALLOCATE ((void *)(size_t)-1)
-
 /// @} dnnl_api_memory
 
 /// @addtogroup dnnl_api_primitives
@@ -2313,6 +2436,8 @@ typedef struct dnnl_primitive *dnnl_primitive_t;
 /// A constant primitive handle.
 typedef const struct dnnl_primitive *const_dnnl_primitive_t;
 
+/// Undefined argument.
+#define DNNL_ARG_UNDEF 0
 /// Source argument #0.
 #define DNNL_ARG_SRC_0 1
 /// A special mnemonic for source argument for primitives that have a
@@ -2708,7 +2833,6 @@ typedef enum {
 
     /// Intel AVX2 and Intel Deep Learning Boost (Intel DL Boost)
     /// with 8-bit integer, float16 and bfloat16 support
-    /// (preview support)
     dnnl_cpu_isa_avx2_vnni_2 = 0x1f,
 
     /// Intel AVX-512 subset for Intel Xeon Scalable processor family
@@ -2728,16 +2852,24 @@ typedef enum {
     /// Intel AVX-512 with float16, Intel DL Boost and bfloat16 support
     /// for Intel Xeon Scalable processor family
     /// and Intel Core processor family.
-    dnnl_cpu_isa_avx512_core_fp16 = 0x1ef,
+    // TODO: Align avx10_1 values to internal representation.
+    dnnl_cpu_isa_avx10_1_512 = 0x1ef,
+    /// @copydoc dnnl_cpu_isa_avx10_1_512
+    dnnl_cpu_isa_avx512_core_fp16 = dnnl_cpu_isa_avx10_1_512,
 
     /// Intel AVX-512 with float16, Intel DL Boost and bfloat16 support and
     /// Intel AMX with 8-bit integer and bfloat16 support
-    dnnl_cpu_isa_avx512_core_amx = 0xfef,
+    // TODO: Align avx10_1 values to internal representation.
+    dnnl_cpu_isa_avx10_1_512_amx = 0xfef,
+    /// @copydoc dnnl_cpu_isa_avx10_1_512_amx
+    dnnl_cpu_isa_avx512_core_amx = dnnl_cpu_isa_avx10_1_512_amx,
 
     /// Intel AVX-512 with float16, Intel DL Boost and bfloat16 support and
     /// Intel AMX with 8-bit integer, bfloat16 and float16 support
-    /// (preview support)
-    dnnl_cpu_isa_avx512_core_amx_fp16 = 0x1fef,
+    // TODO: Align avx10_1 values to internal representation.
+    dnnl_cpu_isa_avx10_1_512_amx_fp16 = 0x1fef,
+    /// @copydoc dnnl_cpu_isa_avx10_1_512_amx_fp16
+    dnnl_cpu_isa_avx512_core_amx_fp16 = dnnl_cpu_isa_avx10_1_512_amx_fp16,
 } dnnl_cpu_isa_t;
 
 /// CPU ISA hints flags

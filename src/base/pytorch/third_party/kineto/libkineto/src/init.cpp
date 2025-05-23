@@ -13,23 +13,43 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-RelativeInclude
 #include "ActivityProfilerProxy.h"
 #include "Config.h"
+#include "ConfigLoader.h"
 #include "DaemonConfigLoader.h"
+#include "DeviceUtil.h"
 #ifdef HAS_CUPTI
 #include "CuptiCallbackApi.h"
 #include "CuptiActivityApi.h"
 #include "CuptiRangeProfiler.h"
 #include "EventProfilerController.h"
 #endif
-#include "cupti_call.h"
+#ifdef HAS_XPUPTI
+#include "plugin/xpupti/XpuptiActivityApi.h"
+#include "plugin/xpupti/XpuptiActivityProfiler.h"
+#endif
 #include "libkineto.h"
 
 #include "Logger.h"
 
 namespace KINETO_NAMESPACE {
 
-#ifdef HAS_CUPTI
+#if __linux__ || defined(HAS_CUPTI)
 static bool initialized = false;
-static std::mutex initMutex;
+
+static void initProfilersCPU() {
+  if (!initialized) {
+    libkineto::api().initProfilerIfRegistered();
+    initialized = true;
+    VLOG(0) << "libkineto profilers activated";
+  }
+}
+
+#endif // __linux__ || defined(HAS_CUPTI)
+
+#ifdef HAS_CUPTI
+static std::mutex& initEventMutex() {
+  static std::mutex initMutex_;
+  return initMutex_;
+}
 
 bool enableEventProfiler() {
   if (getenv("KINETO_ENABLE_EVENT_PROFILER") != nullptr) {
@@ -44,24 +64,20 @@ static void initProfilers(
     CUpti_CallbackId /*cbid*/,
     const CUpti_CallbackData* cbInfo) {
   VLOG(0) << "CUDA Context created";
-  std::lock_guard<std::mutex> lock(initMutex);
-
-  if (!initialized) {
-    libkineto::api().initProfilerIfRegistered();
-    initialized = true;
-    VLOG(0) << "libkineto profilers activated";
-  }
+  initProfilersCPU();
 
   if (!enableEventProfiler()) {
     VLOG(0) << "Kineto EventProfiler disabled, skipping start";
     return;
   } else {
+    std::lock_guard<std::mutex> lock(initEventMutex());
     CUpti_ResourceData* d = (CUpti_ResourceData*)cbInfo;
     CUcontext ctx = d->context;
     ConfigLoader& config_loader = libkineto::api().configLoader();
     config_loader.initBaseConfig();
     auto config = config_loader.getConfigCopy();
     if (config->eventProfilerEnabled()) {
+      // This function needs to be called under lock.
       EventProfilerController::start(ctx, config_loader);
       LOG(INFO) << "Kineto EventProfiler started";
     }
@@ -86,14 +102,12 @@ static void stopProfiler(
     CUpti_CallbackId /*cbid*/,
     const CUpti_CallbackData* cbInfo) {
   VLOG(0) << "CUDA Context destroyed";
-  std::lock_guard<std::mutex> lock(initMutex);
-
-  if (enableEventProfiler()) {
-    CUpti_ResourceData* d = (CUpti_ResourceData*)cbInfo;
-    CUcontext ctx = d->context;
-    EventProfilerController::stopIfEnabled(ctx);
-    LOG(INFO) << "Kineto EventProfiler stopped";
-  }
+  std::lock_guard<std::mutex> lock(initEventMutex());
+  CUpti_ResourceData* d = (CUpti_ResourceData*)cbInfo;
+  CUcontext ctx = d->context;
+  // This function needs to be called under lock.
+  EventProfilerController::stopIfEnabled(ctx);
+  LOG(INFO) << "Kineto EventProfiler stopped";
 }
 
 static std::unique_ptr<CuptiRangeProfilerInit> rangeProfilerInit;
@@ -118,7 +132,8 @@ void libkineto_init(bool cpuOnly, bool logOnError) {
   // Factory to connect to open source daemon if present
 #if __linux__
   if (getenv(kUseDaemonEnvVar) != nullptr) {
-    LOG(INFO) << "Registering daemon config loader";
+    LOG(INFO) << "Registering daemon config loader, cpuOnly =  "
+              << cpuOnly;
     DaemonConfigLoader::registerFactory();
   }
 #endif
@@ -137,14 +152,22 @@ void libkineto_init(bool cpuOnly, bool logOnError) {
       const CUpti_CallbackDomain domain = CUPTI_CB_DOMAIN_RESOURCE;
       status = cbapi->registerCallback(
           domain, CuptiCallbackApi::RESOURCE_CONTEXT_CREATED, initProfilers);
-      status = status && cbapi->registerCallback(
-          domain, CuptiCallbackApi::RESOURCE_CONTEXT_DESTROYED, stopProfiler);
-
       if (status) {
         status = cbapi->enableCallback(
             domain, CuptiCallbackApi::RESOURCE_CONTEXT_CREATED);
-        status = status && cbapi->enableCallback(
-            domain, CuptiCallbackApi::RESOURCE_CONTEXT_DESTROYED);
+      }
+
+      // Register stopProfiler callback only for event profiler.
+      // This callback is not required for activities tracing.
+      if (enableEventProfiler()) {
+        if (status) {
+          status = cbapi->registerCallback(
+              domain, CuptiCallbackApi::RESOURCE_CONTEXT_DESTROYED, stopProfiler);
+        }
+        if (status) {
+          status = cbapi->enableCallback(
+              domain, CuptiCallbackApi::RESOURCE_CONTEXT_DESTROYED);
+        }
       }
     }
 
@@ -175,6 +198,30 @@ void libkineto_init(bool cpuOnly, bool logOnError) {
   libkineto::api().registerProfiler(
       std::make_unique<ActivityProfilerProxy>(cpuOnly, config_loader));
 
+#ifdef HAS_XPUPTI
+  // register xpu pti profiler
+  libkineto::api().registerProfilerFactory([]() -> std::unique_ptr<IActivityProfiler> {
+    auto returnCode = ptiViewGPULocalAvailable();
+    if (returnCode != PTI_SUCCESS) {
+      std::string errCode = std::to_string(returnCode);
+      std::string errMsg(
+          "Fail to enable Kineto Profiler on XPU due to error code: ");
+      throw std::runtime_error(errMsg + errCode);
+    }
+    return std::make_unique<XPUActivityProfiler>();
+  });
+#endif // HAS_XPUPTI
+
+#if __linux__
+  // When CUDA/GPU is used the profiler initialization happens on the
+  // creation of the first CUDA stream (see initProfilers()).
+  // This section bootstraps the profiler and its connection to a profiling daemon
+  // in the CPU only case.
+  if (cpuOnly && getenv(kUseDaemonEnvVar) != nullptr) {
+    initProfilersCPU();
+    libkineto::api().configLoader().initBaseConfig();
+  }
+#endif
 }
 
 // The cuda driver calls this function if the CUDA_INJECTION64_PATH environment
@@ -185,10 +232,16 @@ int InitializeInjection(void) {
   return 1;
 }
 
+bool hasTestEnvVar() {
+  return getenv("GTEST_OUTPUT") != nullptr || getenv("FB_TEST") != nullptr
+     || getenv("PYTORCH_TEST") != nullptr || getenv("TEST_PILOT") != nullptr;
+}
+
 void suppressLibkinetoLogMessages() {
   // Only suppress messages if explicit override wasn't provided
   const char* logLevelEnv = getenv("KINETO_LOG_LEVEL");
-  if (!logLevelEnv || !*logLevelEnv) {
+  // For unit tests, don't suppress log verbosity.
+  if (!hasTestEnvVar() && (!logLevelEnv || !*logLevelEnv)) {
     SET_LOG_SEVERITY_LEVEL(ERROR);
   }
 }

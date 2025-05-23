@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2022-2023 Intel Corporation
+ * Copyright 2022-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ constexpr const char *kernel = "kernel";
 constexpr const char *exclude_pad = "exclude_pad";
 constexpr const char *rounding_type = "rounding_type";
 constexpr const char *auto_pad = "auto_pad";
-constexpr const char *input_shape = "input_shape";
+constexpr const char *src_shape = "src_shape";
 constexpr const char *data_format = "data_format";
 } // namespace pooling_attr_key
 
@@ -86,6 +86,12 @@ public:
     std::vector<int> get_real_pooling_axis() const;
 
     std::vector<int> get_channel_axis() const;
+
+    shape_rl_vec get_dynamic_shape_relations() const override;
+
+    reflection::shared_general_object_t get_dynamic_runtime_info() override;
+
+    void calculate_dynamic_shape_expression() override;
 
 private:
     sc_dims _calculate_output_dims(bool rounding_floor, bool channel_last);

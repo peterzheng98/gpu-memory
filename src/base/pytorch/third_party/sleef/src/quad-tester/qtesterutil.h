@@ -1,7 +1,9 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
+
+#include "quaddef.h"
 
 typedef struct {
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
@@ -19,7 +21,7 @@ int lt128(xuint128 x, xuint128 y);
 void xsrand(uint64_t s);
 uint64_t xrand();
 void memrand(void *p, int size);
-Sleef_quad rndf128(Sleef_quad min, Sleef_quad max);
+Sleef_quad rndf128(Sleef_quad min, Sleef_quad max, int setSignRandomly);
 Sleef_quad rndf128x();
 
 int readln(int fd, char *buf, int cnt);

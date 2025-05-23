@@ -38,8 +38,9 @@ struct key_impl_t {
     virtual size_t hash() const = 0;
 };
 
-// Key
-struct key_t {
+// The kernel-cache implementation relies on the copy-constructor. This class is
+// marked final to prevent object slicing.
+struct key_t final {
     key_t(const std::shared_ptr<key_impl_t> &impl,
             bool has_runtime_dependencies = false)
         : impl_(impl)
@@ -50,12 +51,13 @@ struct key_t {
         : impl_(std::move(impl))
         , thread_id_(std::this_thread::get_id())
         , has_runtime_dependencies_(has_runtime_dependencies) {}
-    virtual ~key_t() = default;
 
     bool operator==(const key_t &other) const {
         return impl_->compare(other.impl_.get());
     };
     size_t hash() const { return impl_->hash(); };
+
+    key_impl_t *impl() const { return impl_.get(); }
 
     const std::thread::id &thread_id() const { return thread_id_; }
     bool has_runtime_dependencies() const { return has_runtime_dependencies_; }
@@ -82,12 +84,13 @@ struct value_impl_t {
     value_impl_t &operator=(const value_impl_t &) = delete;
 };
 
-struct value_t {
+// The kernel-cache implementation relies on the copy-constructor. This class is
+// marked final to prevent object slicing.
+struct value_t final {
     value_t() = default;
     value_t(std::nullptr_t) : value_t() {};
     value_t(const std::shared_ptr<value_impl_t> &impl) : impl_(impl) {}
     value_t(std::shared_ptr<value_impl_t> &&impl) : impl_(std::move(impl)) {}
-    virtual ~value_t() = default;
     const std::shared_ptr<value_impl_t> &impl() const { return impl_; }
     std::shared_ptr<value_impl_t> &impl() { return impl_; }
     std::shared_ptr<value_impl_t> release() {

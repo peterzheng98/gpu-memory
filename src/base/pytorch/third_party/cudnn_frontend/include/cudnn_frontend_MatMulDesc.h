@@ -29,9 +29,6 @@
 #include <sstream>
 #include <utility>
 
-#include <cudnn.h>
-#include <cudnn_backend.h>
-
 #include "cudnn_frontend_utils.h"
 
 namespace cudnn_frontend {
@@ -50,14 +47,17 @@ class MatMulDesc_v8 : public BackendDescriptor {
     std::string
     describe() const override {
         std::stringstream ss;
-        ss << "CUDNN_BACKEND_MATMUL_DESCRIPTOR :"
-           << " Math precision " << (compute_type);
+#ifndef CUDNN_FRONTEND_SKIP_JSON_LIB
+        ss << "CUDNN_BACKEND_MATMUL_DESCRIPTOR :" << " Math precision " << json{compute_type};
+#else
+        ss << "CUDNN_BACKEND_MATMUL_DESCRIPTOR :" << " Math precision " << int(compute_type);
+#endif
         return ss.str();
     }
 
     MatMulDesc_v8(MatMulDesc_v8 &&from) = default;
     MatMulDesc_v8 &
-    operator= (MatMulDesc_v8 &&from) = default;
+    operator=(MatMulDesc_v8 &&from) = default;
 
     ~MatMulDesc_v8() = default;
 
@@ -67,9 +67,9 @@ class MatMulDesc_v8 : public BackendDescriptor {
     MatMulDesc_v8 &
     operator=(MatMulDesc_v8 const &) = delete;
 
-    cudnnDataType_t compute_type = CUDNN_DATA_FLOAT;
-    bool isPadded = false;
-    double paddingValue = 0.0;
+    DataType_t compute_type = DataType_t::NOT_SET;
+    bool isPadded           = false;
+    double paddingValue     = 0.0;
 };
 
 ////
@@ -83,8 +83,13 @@ class MatMulDescBuilder_v8 {
      */
     //! Set Math Precision Data Type for the Matmul Operation
     auto
-    setComputeType(cudnnDataType_t data_type_) -> MatMulDescBuilder_v8 & {
+    setComputeType(DataType_t data_type_) -> MatMulDescBuilder_v8 & {
         m_matMulDesc.compute_type = data_type_;
+        return *this;
+    }
+    auto
+    setComputeType(cudnnDataType_t data_type_) -> MatMulDescBuilder_v8 & {
+        m_matMulDesc.compute_type = detail::convert_from_cudnn_type(data_type_);
         return *this;
     }
     /** @} */
@@ -98,7 +103,7 @@ class MatMulDescBuilder_v8 {
     //! Set padding value for matmul descriptor
     auto
     setPaddingValue(double paddingValue) -> MatMulDescBuilder_v8 & {
-        m_matMulDesc.isPadded = true;
+        m_matMulDesc.isPadded     = true;
         m_matMulDesc.paddingValue = paddingValue;
         return *this;
     }
@@ -115,11 +120,20 @@ class MatMulDescBuilder_v8 {
         }
 
         // Once Created lets set the descriptor parameters.
-        status = cudnnBackendSetAttribute(m_matMulDesc.pointer->get_backend_descriptor(),
-                                          CUDNN_ATTR_MATMUL_COMP_TYPE,
-                                          CUDNN_TYPE_DATA_TYPE,
-                                          1,
-                                          &m_matMulDesc.compute_type);
+        cudnnDataType_t cudnn_data_type;
+        status = detail::convert_to_cudnn_type(m_matMulDesc.compute_type, cudnn_data_type);
+        if (status != CUDNN_STATUS_SUCCESS) {
+            set_error_and_throw_exception(
+                &m_matMulDesc,
+                status,
+                "CUDNN_BACKEND_MATMUL_DESCRIPTOR: SetAttribute CUDNN_ATTR_MATMUL_COMP_TYPE Failed");
+            return std::move(m_matMulDesc);
+        }
+        status = detail::set_attribute(m_matMulDesc.pointer->get_backend_descriptor(),
+                                       CUDNN_ATTR_MATMUL_COMP_TYPE,
+                                       CUDNN_TYPE_DATA_TYPE,
+                                       1,
+                                       &cudnn_data_type);
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
                 &m_matMulDesc,
@@ -128,14 +142,18 @@ class MatMulDescBuilder_v8 {
             return std::move(m_matMulDesc);
         }
 
-        #if (CUDNN_VERSION >= 8900)
+#if (CUDNN_VERSION >= 8900)
         // Setting padding value if matmul desc is padded
+        NV_CUDNN_FE_DYNAMIC_CHECK_BACKEND_DESCRIPTOR(
+            8900,
+            m_matMulDesc,
+            "CUDNN_BACKEND_MATMUL_DESCRIPTOR: SetAttribute CUDNN_ATTR_MATMUL_PADDING_VALUE requires cudnn 8.9.0");
         if (m_matMulDesc.isPadded) {
-            status = cudnnBackendSetAttribute(m_matMulDesc.pointer->get_backend_descriptor(),
-                                          CUDNN_ATTR_MATMUL_PADDING_VALUE,
-                                          CUDNN_TYPE_DOUBLE,
-                                          1,
-                                          &m_matMulDesc.paddingValue);
+            status = detail::set_attribute(m_matMulDesc.pointer->get_backend_descriptor(),
+                                           CUDNN_ATTR_MATMUL_PADDING_VALUE,
+                                           CUDNN_TYPE_DOUBLE,
+                                           1,
+                                           &m_matMulDesc.paddingValue);
             if (status != CUDNN_STATUS_SUCCESS) {
                 set_error_and_throw_exception(
                     &m_matMulDesc,
@@ -144,16 +162,17 @@ class MatMulDescBuilder_v8 {
                 return std::move(m_matMulDesc);
             }
         }
-        #endif
-        
+#endif
+
         // Finalizing the descriptor
-        status = cudnnBackendFinalize(m_matMulDesc.pointer->get_backend_descriptor());
+        status = detail::finalize(m_matMulDesc.pointer->get_backend_descriptor());
         if (status != CUDNN_STATUS_SUCCESS) {
-            set_error_and_throw_exception(&m_matMulDesc, status, "CUDNN_BACKEND_MATMUL_DESCRIPTOR: cudnnFinalize Failed");
+            set_error_and_throw_exception(
+                &m_matMulDesc, status, "CUDNN_BACKEND_MATMUL_DESCRIPTOR: cudnnFinalize Failed");
             return std::move(m_matMulDesc);
         }
 
-        getLogger() << "[cudnn_frontend] " << m_matMulDesc << std::endl;
+        CUDNN_FE_LOG_LABEL_ENDL(m_matMulDesc);
         return std::move(m_matMulDesc);
     }
 
@@ -167,6 +186,6 @@ class MatMulDescBuilder_v8 {
    private:
     MatMulDesc_v8 m_matMulDesc;
 };
-using MatMulDesc                = MatMulDesc_v8;
-using MatMulDescBuilder         = MatMulDescBuilder_v8;
-}
+using MatMulDesc        = MatMulDesc_v8;
+using MatMulDescBuilder = MatMulDescBuilder_v8;
+}  // namespace cudnn_frontend

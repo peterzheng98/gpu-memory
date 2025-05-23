@@ -14,8 +14,11 @@
 #include <cstdlib>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <random>
 #include <vector>
+
+#include <fp16/fp16.h>
 
 #include <xnnpack.h>
 
@@ -127,6 +130,148 @@ class TanhOperatorTester {
     return this->iterations_;
   }
 
+  void TestF16() const {
+    std::random_device random_device;
+    auto rng = std::mt19937(random_device());
+    std::uniform_real_distribution<float> f32dist(-5.0f, 5.0f);
+
+    std::vector<uint16_t> input((batch_size() - 1) * input_stride() + channels() + XNN_EXTRA_BYTES / sizeof(uint16_t));
+    std::vector<uint16_t> output((batch_size() - 1) * output_stride() + channels());
+    std::vector<float> output_ref(batch_size() * channels());
+    for (size_t iteration = 0; iteration < iterations(); iteration++) {
+      std::generate(input.begin(), input.end(), [&]() { return fp16_ieee_from_fp32_value(f32dist(rng)); });
+      std::fill(output.begin(), output.end(), UINT16_C(0x7E00) /* NaN */);
+
+      // Compute reference results.
+      for (size_t i = 0; i < batch_size(); i++) {
+        for (size_t c = 0; c < channels(); c++) {
+          const float x = fp16_ieee_to_fp32_value(input[i * input_stride() + c]);
+          output_ref[i * channels() + c] = std::tanh(x);
+        }
+      }
+
+      // Create, setup, run, and destroy Sigmoid operator.
+      ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
+      xnn_operator_t tanh_op = nullptr;
+
+      const xnn_status status = xnn_create_tanh_nc_f16(
+          0, &tanh_op);
+      if (status == xnn_status_unsupported_hardware) {
+        GTEST_SKIP();
+      }
+      ASSERT_EQ(xnn_status_success, status);
+      ASSERT_NE(nullptr, tanh_op);
+
+      // Smart pointer to automatically delete tanh_op.
+      std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_tanh_op(tanh_op, xnn_delete_operator);
+
+      ASSERT_EQ(xnn_status_success, xnn_reshape_tanh_nc_f16(tanh_op, batch_size(),
+          channels(), input_stride(), output_stride(), /*threadpool=*/nullptr));
+      ASSERT_EQ(xnn_status_success, xnn_setup_tanh_nc_f16(tanh_op, input.data(), output.data()));
+      ASSERT_EQ(xnn_status_success, xnn_run_operator(tanh_op, /*threadpool=*/nullptr));
+
+      // Verify results.
+      for (size_t i = 0; i < batch_size(); i++) {
+        for (size_t c = 0; c < channels(); c++) {
+          ASSERT_NEAR(
+              fp16_ieee_to_fp32_value(output[i * output_stride() + c]),
+              output_ref[i * channels() + c],
+              std::max(1.0e-4f, std::abs(output_ref[i * channels() + c]) * 5.0e-3f));
+        }
+      }
+    }
+  }
+
+  void TestF32() const {
+    std::random_device random_device;
+    auto rng = std::mt19937(random_device());
+    std::uniform_real_distribution<float> f32dist(-10.0f, 10.0f);
+
+    std::vector<float> input((batch_size() - 1) * input_stride() + channels() + XNN_EXTRA_BYTES / sizeof(float));
+    std::vector<float> output((batch_size() - 1) * output_stride() + channels());
+    std::vector<double> output_ref(batch_size() * channels());
+    for (size_t iteration = 0; iteration < iterations(); iteration++) {
+      std::generate(input.begin(), input.end(), [&]() { return f32dist(rng); });
+      std::fill(output.begin(), output.end(), std::nanf(""));
+
+      // Compute reference results.
+      for (size_t i = 0; i < batch_size(); i++) {
+        for (size_t c = 0; c < channels(); c++) {
+          const double x = input[i * input_stride() + c];
+          output_ref[i * channels() + c] = std::tanh(x);
+        }
+      }
+
+      // Create, setup, run, and destroy Tanh operator.
+      ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
+      xnn_operator_t tanh_op = nullptr;
+
+      xnn_status status = xnn_create_tanh_nc_f32(
+          0, &tanh_op);
+      ASSERT_EQ(xnn_status_success, status);
+      ASSERT_NE(nullptr, tanh_op);
+
+      // Smart pointer to automatically delete tanh_op.
+      std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_tanh_op(tanh_op, xnn_delete_operator);
+
+      ASSERT_EQ(xnn_status_success, xnn_reshape_tanh_nc_f32(tanh_op, batch_size(),
+          channels(), input_stride(), output_stride(), /*threadpool=*/nullptr));
+      ASSERT_EQ(xnn_status_success, xnn_setup_tanh_nc_f32(tanh_op, input.data(), output.data()));
+      ASSERT_EQ(xnn_status_success, xnn_run_operator(tanh_op, /*threadpool=*/nullptr));
+
+      // Verify results.
+      for (size_t i = 0; i < batch_size(); i++) {
+        for (size_t c = 0; c < channels(); c++) {
+          ASSERT_NEAR(
+            output[i * output_stride() + c],
+            output_ref[i * channels() + c],
+            5.0e-6);
+        }
+      }
+    }
+  }
+
+  void TestRunF32() const {
+    std::random_device random_device;
+    auto rng = std::mt19937(random_device());
+    std::uniform_real_distribution<float> f32dist(-10.0f, 10.0f);
+
+    std::vector<float> input((batch_size() - 1) * input_stride() + channels() + XNN_EXTRA_BYTES / sizeof(float));
+    std::vector<float> output((batch_size() - 1) * output_stride() + channels());
+    std::vector<double> output_ref(batch_size() * channels());
+    for (size_t iteration = 0; iteration < iterations(); iteration++) {
+      std::generate(input.begin(), input.end(), [&]() { return f32dist(rng); });
+      std::fill(output.begin(), output.end(), std::nanf(""));
+
+      // Compute reference results.
+      for (size_t i = 0; i < batch_size(); i++) {
+        for (size_t c = 0; c < channels(); c++) {
+          const double x = input[i * input_stride() + c];
+          output_ref[i * channels() + c] = std::tanh(x);
+        }
+      }
+
+      ASSERT_EQ(xnn_status_success,
+        xnn_run_tanh_nc_f32(
+          channels(),
+          input_stride(),
+          output_stride(),
+          batch_size(),
+          input.data(), output.data(),
+          0, /*threadpool=*/nullptr));
+
+      // Verify results.
+      for (size_t i = 0; i < batch_size(); i++) {
+        for (size_t c = 0; c < channels(); c++) {
+          ASSERT_NEAR(
+            output[i * output_stride() + c],
+            output_ref[i * channels() + c],
+            5.0e-6);
+        }
+      }
+    }
+  }
+
   void TestQS8() const {
     std::random_device random_device;
     auto rng = std::mt19937(random_device());
@@ -161,7 +306,6 @@ class TanhOperatorTester {
 
       ASSERT_EQ(xnn_status_success,
         xnn_create_tanh_nc_qs8(
-          channels(), input_stride(), output_stride(),
           int8_t(input_zero_point() - 0x80), input_scale(),
           int8_t(output_zero_point() - 0x80), output_scale(),
           int8_t(qmin() - 0x80), int8_t(qmax() - 0x80),
@@ -171,15 +315,10 @@ class TanhOperatorTester {
       // Smart pointer to automatically delete tanh_op.
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_tanh_op(tanh_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success,
-        xnn_setup_tanh_nc_qs8(
-          tanh_op,
-          batch_size(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
-
-      ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(tanh_op, nullptr /* thread pool */));
+      ASSERT_EQ(xnn_status_success, xnn_reshape_tanh_nc_qs8(tanh_op, batch_size(),
+          channels(), input_stride(), output_stride(), /*threadpool=*/nullptr));
+      ASSERT_EQ(xnn_status_success, xnn_setup_tanh_nc_qs8(tanh_op, input.data(), output.data()));
+      ASSERT_EQ(xnn_status_success, xnn_run_operator(tanh_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -222,7 +361,6 @@ class TanhOperatorTester {
 
       ASSERT_EQ(xnn_status_success,
         xnn_create_tanh_nc_qu8(
-          channels(), input_stride(), output_stride(),
           input_zero_point(), input_scale(),
           output_zero_point(), output_scale(),
           qmin(), qmax(),
@@ -232,15 +370,10 @@ class TanhOperatorTester {
       // Smart pointer to automatically delete tanh_op.
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_tanh_op(tanh_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success,
-        xnn_setup_tanh_nc_qu8(
-          tanh_op,
-          batch_size(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
-
-      ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(tanh_op, nullptr /* thread pool */));
+      ASSERT_EQ(xnn_status_success, xnn_reshape_tanh_nc_qu8(tanh_op, batch_size(),
+          channels(), input_stride(), output_stride(), /*threadpool=*/nullptr));
+      ASSERT_EQ(xnn_status_success, xnn_setup_tanh_nc_qu8(tanh_op, input.data(), output.data()));
+      ASSERT_EQ(xnn_status_success, xnn_run_operator(tanh_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {

@@ -1,5 +1,5 @@
 #===============================================================================
-# Copyright 2018-2023 Intel Corporation
+# Copyright 2018-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,10 @@ if(options_cmake_included)
     return()
 endif()
 set(options_cmake_included true)
+
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    set(DNNL_IS_MAIN_PROJECT TRUE)
+endif()
 
 # ========
 # Features
@@ -60,8 +64,9 @@ option(ONEDNN_ENABLE_GRAPH_DUMP "enables control of dumping graph artifacts via
 
 set(DNNL_LIBRARY_TYPE "SHARED" CACHE STRING
     "specifies whether oneDNN library should be SHARED or STATIC")
-option(DNNL_BUILD_EXAMPLES "builds examples"  ON)
-option(DNNL_BUILD_TESTS "builds tests" ON)
+option(DNNL_BUILD_DOC "builds documentation" ${DNNL_IS_MAIN_PROJECT})
+option(DNNL_BUILD_EXAMPLES "builds examples" ${DNNL_IS_MAIN_PROJECT})
+option(DNNL_BUILD_TESTS "builds tests" ${DNNL_IS_MAIN_PROJECT})
 option(DNNL_BUILD_FOR_CI
     "specifies whether oneDNN library will use special testing environment for
     internal testing processes"
@@ -70,16 +75,10 @@ option(DNNL_DEV_MODE "Enables internal tracing capabilities" OFF)
 option(DNNL_WERROR "treat warnings as errors" OFF)
 
 set(DNNL_TEST_SET "CI" CACHE STRING
-    "specifies testing targets coverage. Supports SMOKE, CI, CI_NO_CORR,
-    NIGHTLY.
-
-    When SMOKE option is set, it enables a subset of test targets which verify
-        that basic library functionality works as expected.
-    When CI option is set, it enables a subset of test targets to run.
-    When CI_NO_CORR option is set, it enables same coverage as for CI option,
-        but switches off correctness validation for benchdnn targets.
-    When NIGHTLY option is set, it enables a broader set of test targets to
-        run.")
+    "specifies the testing coverage. The variable consists of two parts:
+    the set value defining the number of test cases, and the modifiers for
+    testing commands. The input is expected in the CMake list style - a
+    semicolon separated string, e.g., DNNL_TEST_SET=CI;NO_CORR.")
 
 set(DNNL_INSTALL_MODE "DEFAULT" CACHE STRING
     "specifies installation mode; supports DEFAULT, BUNDLE and BUNDLE_V2.
@@ -148,7 +147,7 @@ set(DNNL_ENABLE_PRIMITIVE_GPU_ISA "ALL" CACHE STRING
     implementations will always be available. Valid values:
     - ALL (the default). Includes all ISA to be enabled.
     - <ISA_NAME>;<ISA_NAME>;... Includes only selected ISA to be enabled.
-      Possible values are: GEN9, GEN11, XELP, XEHP, XEHPG, XEHPC.")
+      Possible values are: GEN9, GEN11, XELP, XEHP, XEHPG, XEHPC, XE2.")
 
 set(ONEDNN_ENABLE_GEMM_KERNELS_ISA "ALL" CACHE STRING
     "Specifies an ISA set of GeMM kernels residing in x64/gemm folder to be
@@ -196,6 +195,11 @@ option(DNNL_EXPERIMENTAL
 
 option(DNNL_EXPERIMENTAL_SPARSE
     "Enable experimental functionality for sparse domain. This option works
+    independetly from DNNL_EXPERIMENTAL."
+    OFF) # disabled by default
+
+option(DNNL_EXPERIMENTAL_UKERNEL
+    "Enable experimental functionality for ukernels. This option works
     independetly from DNNL_EXPERIMENTAL."
     OFF) # disabled by default
 
@@ -372,6 +376,8 @@ set(DNNL_BLAS_VENDOR "NONE" CACHE STRING
         (https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html)
       - OPENBLAS
         (https://www.openblas.net)
+      - ACCELERATE
+        (https://developer.apple.com/documentation/accelerate/blas)
       - ARMPL
         Arm Performance Libraries
         (https://developer.arm.com/tools-and-software/server-and-hpc/downloads/arm-performance-libraries)

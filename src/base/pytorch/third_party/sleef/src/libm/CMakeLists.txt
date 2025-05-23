@@ -16,6 +16,7 @@ if (SLEEF_ARCH_X86)
     AVX512FNOFMA
     PUREC_SCALAR
     PURECFMA_SCALAR
+    DSP_SCALAR
   )
 elseif(SLEEF_ARCH_AARCH64)
   set(SLEEF_HEADER_LIST
@@ -26,6 +27,7 @@ elseif(SLEEF_ARCH_AARCH64)
     SVENOFMA
     PUREC_SCALAR
     PURECFMA_SCALAR
+    DSP_SCALAR
   )
 elseif(SLEEF_ARCH_AARCH32)
   set(SLEEF_HEADER_LIST
@@ -34,6 +36,7 @@ elseif(SLEEF_ARCH_AARCH32)
     NEON32VFPV4
     PUREC_SCALAR
     PURECFMA_SCALAR
+    DSP_SCALAR
   )
 elseif(SLEEF_ARCH_PPC64)
   set(SLEEF_HEADER_LIST
@@ -44,6 +47,7 @@ elseif(SLEEF_ARCH_PPC64)
     VSX3NOFMA
     PUREC_SCALAR
     PURECFMA_SCALAR
+    DSP_SCALAR
   )
 elseif(SLEEF_ARCH_S390X)
   set(SLEEF_HEADER_LIST
@@ -54,47 +58,63 @@ elseif(SLEEF_ARCH_S390X)
     VXE2NOFMA
     PUREC_SCALAR
     PURECFMA_SCALAR
+    DSP_SCALAR
   )
+elseif(SLEEF_ARCH_RISCV64)
+  set(SLEEF_HEADER_LIST
+    RVVM1
+    RVVM1NOFMA
+    RVVM2
+    RVVM2NOFMA
+    PUREC_SCALAR
+    PURECFMA_SCALAR
+    )
 endif()
 
 # HEADER_PARAMS
 
-command_arguments(HEADER_PARAMS_SSE_            cinz_ 2 4 __m128d __m128 __m128i __m128i __SSE2__)
+command_arguments(HEADER_PARAMS_SSE_            -     2 4 __m128d __m128 __m128i __m128i __SSE2__)
 command_arguments(HEADER_PARAMS_SSE2            cinz_ 2 4 __m128d __m128 __m128i __m128i __SSE2__ sse2)
 command_arguments(HEADER_PARAMS_SSE4            cinz_ 2 4 __m128d __m128 __m128i __m128i __SSE2__ sse4)
-command_arguments(HEADER_PARAMS_AVX_            cinz_ 4 8 __m256d __m256 __m128i "struct { __m128i x, y$<SEMICOLON> }" __AVX__)
+command_arguments(HEADER_PARAMS_AVX_            -     4 8 __m256d __m256 __m128i "struct { __m128i x, y$<SEMICOLON> }" __AVX__)
 command_arguments(HEADER_PARAMS_AVX             cinz_ 4 8 __m256d __m256 __m128i "struct { __m128i x, y$<SEMICOLON> }" __AVX__ avx)
 command_arguments(HEADER_PARAMS_FMA4            finz_ 4 8 __m256d __m256 __m128i "struct { __m128i x, y$<SEMICOLON> }" __AVX__ fma4)
 command_arguments(HEADER_PARAMS_AVX2            finz_ 4 8 __m256d __m256 __m128i __m256i __AVX__ avx2)
 command_arguments(HEADER_PARAMS_AVX2128         finz_ 2 4 __m128d __m128 __m128i __m128i __SSE2__ avx2128)
-command_arguments(HEADER_PARAMS_AVX512F_        finz_ 8 16 __m512d __m512 __m256i __m512i __AVX512F__)
+command_arguments(HEADER_PARAMS_AVX512F_        -     8 16 __m512d __m512 __m256i __m512i __AVX512F__)
 command_arguments(HEADER_PARAMS_AVX512F         finz_ 8 16 __m512d __m512 __m256i __m512i __AVX512F__ avx512f)
 command_arguments(HEADER_PARAMS_AVX512FNOFMA    cinz_ 8 16 __m512d __m512 __m256i __m512i __AVX512F__ avx512fnofma)
 
-command_arguments(HEADER_PARAMS_ADVSIMD_        finz_ 2 4 float64x2_t float32x4_t int32x2_t int32x4_t __ARM_NEON)
+command_arguments(HEADER_PARAMS_ADVSIMD_        -     2 4 float64x2_t float32x4_t int32x2_t int32x4_t __ARM_NEON)
 command_arguments(HEADER_PARAMS_ADVSIMD         finz_ 2 4 float64x2_t float32x4_t int32x2_t int32x4_t __ARM_NEON advsimd)
 command_arguments(HEADER_PARAMS_ADVSIMDNOFMA    cinz_ 2 4 float64x2_t float32x4_t int32x2_t int32x4_t __ARM_NEON advsimdnofma)
 command_arguments(HEADER_PARAMS_SVE             finz_ x x svfloat64_t svfloat32_t svint32_t svint32_t __ARM_FEATURE_SVE sve)
 command_arguments(HEADER_PARAMS_SVENOFMA        cinz_ x x svfloat64_t svfloat32_t svint32_t svint32_t __ARM_FEATURE_SVE svenofma)
 
-command_arguments(HEADER_PARAMS_NEON32_         cinz_ 2 4 - float32x4_t int32x2_t int32x4_t __ARM_NEON__)
+command_arguments(HEADER_PARAMS_NEON32_         -     2 4 - float32x4_t int32x2_t int32x4_t __ARM_NEON__)
 command_arguments(HEADER_PARAMS_NEON32          cinz_ 2 4 - float32x4_t int32x2_t int32x4_t __ARM_NEON__ neon)
 command_arguments(HEADER_PARAMS_NEON32VFPV4     finz_ 2 4 - float32x4_t int32x2_t int32x4_t __ARM_NEON__ neonvfpv4)
 
-command_arguments(HEADER_PARAMS_VSX_            finz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VSX__)
+command_arguments(HEADER_PARAMS_VSX_            -     2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VSX__)
 command_arguments(HEADER_PARAMS_VSX             finz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VSX__ vsx)
 command_arguments(HEADER_PARAMS_VSXNOFMA        cinz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VSX__ vsxnofma)
 command_arguments(HEADER_PARAMS_VSX3            finz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VSX__ vsx3)
 command_arguments(HEADER_PARAMS_VSX3NOFMA       cinz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VSX__ vsx3nofma)
 
-command_arguments(HEADER_PARAMS_VXE_            finz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VEC__)
+command_arguments(HEADER_PARAMS_VXE_            -     2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VEC__)
 command_arguments(HEADER_PARAMS_VXE             finz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VEC__ vxe)
 command_arguments(HEADER_PARAMS_VXENOFMA        cinz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VEC__ vxenofma)
 command_arguments(HEADER_PARAMS_VXE2            finz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VEC__ vxe2)
 command_arguments(HEADER_PARAMS_VXE2NOFMA       cinz_ 2 4 "SLEEF_VECTOR_DOUBLE" "SLEEF_VECTOR_FLOAT" "SLEEF_VECTOR_INT" "SLEEF_VECTOR_INT" __VEC__ vxe2nofma)
 
+command_arguments(HEADER_PARAMS_RVVM1           finz_ x x vfloat64m1_t vfloat32m1_t vint32mf2_t vint32m1_t __riscv_v rvvm1)
+command_arguments(HEADER_PARAMS_RVVM1NOFMA      cinz_ x x vfloat64m1_t vfloat32m1_t vint32mf2_t vint32m1_t __riscv_v rvvm1nofma)
+command_arguments(HEADER_PARAMS_RVVM2           finz_ x x vfloat64m2_t vfloat32m2_t vint32m1_t vint32m2_t __riscv_v rvvm2)
+command_arguments(HEADER_PARAMS_RVVM2NOFMA      cinz_ x x vfloat64m2_t vfloat32m2_t vint32m1_t vint32m2_t __riscv_v rvvm2nofma)
+
+command_arguments(HEADER_PARAMS_DSP_SCALAR      -     1 1 double float int32_t int32_t __STDC__)
 command_arguments(HEADER_PARAMS_PUREC_SCALAR    cinz_ 1 1 double float int32_t int32_t __STDC__ purec)
-command_arguments(HEADER_PARAMS_PURECFMA_SCALAR finz_ 1 1 double float int32_t int32_t FP_FAST_FMA purecfma)
+command_arguments(HEADER_PARAMS_PURECFMA_SCALAR finz_ 1 1 double float int32_t int32_t __STDC__ purecfma)
 
 # RENAME_PARAMS
 
@@ -138,6 +158,11 @@ command_arguments(RENAME_PARAMS_GNUABI_ADVSIMD  advsimd n 2 4 float64x2_t float3
 # the "x" token of VLA SVE vector functions.
 command_arguments(RENAME_PARAMS_GNUABI_SVE sve s x x svfloat64_t svfloat32_t svint32_t svint32_t __ARM_SVE)
 
+command_arguments(RENAME_PARAMS_RVVM1           finz_ x x rvvm1)
+command_arguments(RENAME_PARAMS_RVVM1NOFMA      cinz_ x x rvvm1nofma)
+command_arguments(RENAME_PARAMS_RVVM2           finz_ x x rvvm2)
+command_arguments(RENAME_PARAMS_RVVM2NOFMA      cinz_ x x rvvm2nofma)
+
 # ALIAS_PARAMS
 
 command_arguments(ALIAS_PARAMS_AVX512F_DP   8 __m512d __m256i e avx512f)
@@ -148,13 +173,6 @@ command_arguments(ALIAS_PARAMS_ADVSIMD_SP -4 float32x4_t int32x4_t n advsimd)
 
 command_arguments(ALIAS_PARAMS_NEON32_SP  -4 float32x4_t int32x4_t - neon)
 command_arguments(ALIAS_PARAMS_NEON32_DP   0)
-
-command_arguments(ALIAS_PARAMS_PUREC_SCALAR_DP     1 double int32_t purec cinz_)
-command_arguments(ALIAS_PARAMS_PUREC_SCALAR_SP    -1 float  int32_t purec cinz_)
-command_arguments(ALIAS_PARAMS_PURECFMA_SCALAR_DP  1 double int32_t purecfma finz_)
-command_arguments(ALIAS_PARAMS_PURECFMA_SCALAR_SP -1 float  int32_t purecfma finz_)
-
-#
 
 set(EXT_ENABLE_ALIAS AVX512F ADVSIMD NEON32)
 
@@ -176,26 +194,21 @@ set(SLEEF_INCLUDE_HEADER ${sleef_BINARY_DIR}/include/sleef.h)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/sleeflibm_header.h.org.in ${SLEEF_ORG_HEADER})
 
-set(SLEEF_HEADER_COMMANDS "")
-list(APPEND SLEEF_HEADER_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy ${SLEEF_ORG_HEADER} ${SLEEF_INCLUDE_HEADER})
+set(SLEEF_HEADER_SIMD_SECTIONS "")
 foreach(SIMD ${SLEEF_HEADER_LIST})
-  list(APPEND SLEEF_HEADER_COMMANDS COMMAND echo Generating sleef.h: ${TARGET_MKRENAME} ${HEADER_PARAMS_${SIMD}})
-  list(APPEND SLEEF_HEADER_COMMANDS COMMAND $<TARGET_FILE:${TARGET_MKRENAME}> ${HEADER_PARAMS_${SIMD}} >> ${SLEEF_INCLUDE_HEADER})
+  set(SIMD_SECTION_FILE ${CMAKE_CURRENT_BINARY_DIR}/sleeflibm_${SIMD}.h.tmp)
+  list(APPEND SLEEF_HEADER_SIMD_SECTIONS ${SIMD_SECTION_FILE})
+  add_custom_command(
+    OUTPUT ${SIMD_SECTION_FILE}
+    COMMAND $<TARGET_FILE:${TARGET_MKRENAME}> ${HEADER_PARAMS_${SIMD}} > ${SIMD_SECTION_FILE}
+    DEPENDS ${TARGET_MKRENAME}
+  )
 endforeach()
 
-if((MSVC OR MINGW AND WIN32) OR SLEEF_CLANG_ON_WINDOWS)
-  string(REPLACE "/" "\\" sleef_footer_input_file "${SLEEF_ORG_FOOTER}")
-  list(APPEND SLEEF_HEADER_COMMANDS COMMAND type ${sleef_footer_input_file} >> ${SLEEF_INCLUDE_HEADER})
-else()
-  list(APPEND SLEEF_HEADER_COMMANDS COMMAND cat ${SLEEF_ORG_FOOTER} >> ${SLEEF_INCLUDE_HEADER})
-endif()
-
-add_custom_command(OUTPUT ${SLEEF_INCLUDE_HEADER}
-  ${SLEEF_HEADER_COMMANDS}
-  DEPENDS
-    ${SLEEF_ORG_HEADER}
-    ${SLEEF_ORG_FOOTER}
-    ${TARGET_MKRENAME}
+file(MAKE_DIRECTORY ${sleef_BINARY_DIR}/include)
+sleef_concat_files(
+  OUTPUT ${SLEEF_INCLUDE_HEADER}
+  SOURCES ${SLEEF_ORG_HEADER} ${SLEEF_HEADER_SIMD_SECTIONS} ${SLEEF_ORG_FOOTER}
 )
 
 # --------------------------------------------------------------------
@@ -286,7 +299,6 @@ if(ENABLE_GNUABI)
 	list(APPEND HEADER_GENERATED ${HEADER_MASKED_${SIMD}_${T}_GNUABI})
 
 	add_custom_command(OUTPUT ${HEADER_MASKED_${SIMD}_${T}_GNUABI}
-          COMMAND echo Generating ${HEADER_MASKED_${SIMD}_${T}_GNUABI}
           COMMAND $<TARGET_FILE:${TARGET_MKMASKED_GNUABI}> ${MKMASKED_PARAMS_GNUABI_${SIMD}_${T}} > ${HEADER_MASKED_${SIMD}_${T}_GNUABI}
           DEPENDS ${TARGET_MKMASKED_GNUABI}
 	  )
@@ -340,17 +352,12 @@ if (BUILD_SHARED_LIBS)
   list(APPEND COMMON_TARGET_PROPERTIES POSITION_INDEPENDENT_CODE ON)   # -fPIC
 endif()
 
-if (ENABLE_LTO)
+if (SLEEF_ENABLE_LTO)
   list(APPEND COMMON_TARGET_PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)  # -flto
 endif()
 
 # Original sleef sources
-set(STANDARD_SOURCES sleefdp.c sleefsp.c rempitab.c)
-
-# Check for different precision support and add sources accordingly
-if(COMPILER_SUPPORTS_LONG_DOUBLE)
-  list(APPEND STANDARD_SOURCES sleefld.c)
-endif()
+set(STANDARD_SOURCES rempitab.c)
 
 add_library(${TARGET_LIBSLEEF} ${STANDARD_SOURCES})
 add_dependencies(${TARGET_LIBSLEEF} ${TARGET_HEADERS})
@@ -364,13 +371,6 @@ set_target_properties(${TARGET_LIBSLEEF} PROPERTIES
 target_compile_definitions(${TARGET_LIBSLEEF}
   PRIVATE DORENAME=1 ${COMMON_TARGET_DEFINITIONS}
 )
-
-if(COMPILER_SUPPORTS_FLOAT128)
-  # TODO: Not supported for LLVM bitcode gen as it has a specific compilation flags
-  target_sources(${TARGET_LIBSLEEF} PRIVATE sleefqp.c)
-  target_compile_definitions(${TARGET_LIBSLEEF}
-    PRIVATE ENABLEFLOAT128=1 ${COMMON_TARGET_DEFINITIONS})
-endif()
 
 if(COMPILER_SUPPORTS_BUILTIN_MATH)
   target_compile_definitions(${TARGET_LIBSLEEF} PRIVATE ENABLE_BUILTIN_MATH=1)
@@ -402,14 +402,14 @@ foreach(SIMD ${SLEEF_SUPPORTED_LIBM_EXTENSIONS})
       target_compile_definitions(${OBJECTDET_${SIMD}} PRIVATE ENABLE_BUILTIN_MATH=1)
     endif()
 
-    if(ENABLE_ALTDIV)
-      target_compile_definitions(${OBJECT_${SIMD}} PRIVATE ENABLE_ALTDIV=1)
-      target_compile_definitions(${OBJECTDET_${SIMD}} PRIVATE ENABLE_ALTDIV=1)
+    if(SLEEF_ENABLE_ALTDIV)
+      target_compile_definitions(${OBJECT_${SIMD}} PRIVATE SLEEF_ENABLE_ALTDIV=1)
+      target_compile_definitions(${OBJECTDET_${SIMD}} PRIVATE SLEEF_ENABLE_ALTDIV=1)
     endif()
 
-    if(ENABLE_ALTSQRT)
-      target_compile_definitions(${OBJECT_${SIMD}} PRIVATE ENABLE_ALTSQRT=1)
-      target_compile_definitions(${OBJECTDET_${SIMD}} PRIVATE ENABLE_ALTSQRT=1)
+    if(SLEEF_ENABLE_ALTSQRT)
+      target_compile_definitions(${OBJECT_${SIMD}} PRIVATE SLEEF_ENABLE_ALTSQRT=1)
+      target_compile_definitions(${OBJECTDET_${SIMD}} PRIVATE SLEEF_ENABLE_ALTSQRT=1)
     endif()
 
     if (INDEX_ALIAS EQUAL -1)
@@ -425,11 +425,18 @@ foreach(SIMD ${SLEEF_SUPPORTED_LIBM_EXTENSIONS})
 	)
     else()
       add_custom_command(
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/alias_${SIMD}_dp.h.tmp
+	COMMAND $<TARGET_FILE:${TARGET_MKALIAS}> ${ALIAS_PARAMS_${SIMD}_DP} > ${CMAKE_CURRENT_BINARY_DIR}/alias_${SIMD}_dp.h.tmp
+	DEPENDS ${TARGET_MKALIAS}
+	)
+      add_custom_command(
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/alias_${SIMD}_sp.h.tmp
+	COMMAND $<TARGET_FILE:${TARGET_MKALIAS}> ${ALIAS_PARAMS_${SIMD}_SP} > ${CMAKE_CURRENT_BINARY_DIR}/alias_${SIMD}_sp.h.tmp
+	DEPENDS ${TARGET_MKALIAS}
+	)
+      sleef_concat_files(
 	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include/alias_${SIMDLC}.h
-       	COMMENT "Generating alias_${SIMDLC}.h"
-       	COMMAND $<TARGET_FILE:${TARGET_MKALIAS}> ${ALIAS_PARAMS_${SIMD}_SP} >  ${CMAKE_CURRENT_BINARY_DIR}/include/alias_${SIMDLC}.h
-       	COMMAND $<TARGET_FILE:${TARGET_MKALIAS}> ${ALIAS_PARAMS_${SIMD}_DP} >> ${CMAKE_CURRENT_BINARY_DIR}/include/alias_${SIMDLC}.h
-       	DEPENDS ${TARGET_MKALIAS}
+	SOURCES ${CMAKE_CURRENT_BINARY_DIR}/alias_${SIMD}_sp.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/alias_${SIMD}_dp.h.tmp
        	)
       add_custom_target(alias_${SIMDLC}.h_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/include/alias_${SIMDLC}.h)
       add_dependencies(${OBJECT_${SIMD}} alias_${SIMDLC}.h_generated)
@@ -478,173 +485,184 @@ endforeach()
 
 #
 
-if(BUILD_INLINE_HEADERS)
+if(SLEEF_BUILD_INLINE_HEADERS)
   if(CMAKE_C_COMPILER_ID MATCHES "Intel")
-    message(FATAL_ERROR "BUILD_INLINE_HEADERS is not supported with Intel Compiler")
+    message(FATAL_ERROR "SLEEF_BUILD_INLINE_HEADERS is not supported with Intel Compiler")
   endif()
 
   file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/include/)
   set(INLINE_HEADER_FILES_GENERATED "")
 
   if (SED_COMMAND)
-    foreach(SIMD ${SLEEF_SUPPORTED_LIBM_EXTENSIONS})
-      if(COMPILER_SUPPORTS_${SIMD})
+    foreach(SIMD ${SLEEF_SUPPORTED_LIBM_EXTENSIONS} CUDA)
+      if(COMPILER_SUPPORTS_${SIMD} OR ${SIMD} STREQUAL "CUDA")
 	string(TOLOWER ${SIMD} SIMDLC)
+
+        if(CMAKE_CROSSCOMPILING AND CMAKE_C_COMPILER_ID MATCHES "Clang" AND CMAKE_C_COMPILER_TARGET AND NOT "${SIMD}" STREQUAL "CUDA" )
+          set(FLAG_TARGET --target=${CMAKE_C_COMPILER_TARGET})
+        endif()
+
+	if ("${SIMD}" STREQUAL "CUDA")
+	  set(TARGET_PP_FLAGS ${FLAG_DEFINE}SLEEF_ALWAYS_INLINE=__device__
+	                      ${FLAG_DEFINE}SLEEF_INLINE=__device__
+	                      ${FLAG_DEFINE}SLEEF_CONST=__device__
+	                      ${FLAG_DEFINE}static=__device__)
+          set(INLINE_HEADER_ORG ${CMAKE_CURRENT_SOURCE_DIR}/sleefinline_cuda_header.h.org)
+	  # Remove redundant __device__
+	  set(TARGET_REPLACEMENTS -e "s/__device__ __device__/__device__/g" -e "s/__device__ __device__/__device__/g")
+	  set(TARGET_ADDSUFFIX_KEYWORDS double2 double3 float2)
+	else()
+	  set(TARGET_ADDSUFFIX_KEYWORDS Sleef_rempitabdp Sleef_rempitabsp)
+          set(INLINE_HEADER_ORG ${CMAKE_CURRENT_SOURCE_DIR}/sleefinline_header.h.org)
+	endif()
 
 	set(INLINE_HEADER_FILE ${PROJECT_BINARY_DIR}/include/sleefinline_${SIMDLC}.h)
 	add_custom_command(
-	  OUTPUT ${INLINE_HEADER_FILE} 
+	  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sleefsimddp${SIMD}.h.tmp
 
-	  COMMAND echo Generating sleefinline_${SIMDLC}.h
-  
 	  # Preprocess sleefsimddp.c with SLEEF_GENHEADER defined, comments are preserved
 	  COMMAND "${CMAKE_C_COMPILER}"  ${FLAG_PREPROCESS} ${FLAG_PRESERVE_COMMENTS}                      # gcc -E -C 
-	    ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/common ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/arch  # -I/sleef/src/common -I/sleef/src/arch
-	    ${FLAG_INCLUDE}${CMAKE_CURRENT_BINARY_DIR}/include/                                            # -I/build/src/libm/include
-	    ${FLAG_DEFINE}SLEEF_GENHEADER ${FLAG_DEFINE}ENABLE_${SIMD} ${FLAG_DEFINE}DORENAME              # -DSLEEF_GENHEADER -DENABLE_SSE2 -DDORENAME
-	    ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimddp.c > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp1    # /sleef/src/libm/sleefsimddp.c > /build/libm/sleefSSE2.h.tmp1
+	  ${FLAG_TARGET} ${FLAGS_ENABLE_${SIMD}}                                                           # -msse2
+	  ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/common ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/arch    # -I/sleef/src/common -I/sleef/src/arch
+	  ${FLAG_INCLUDE}${CMAKE_CURRENT_BINARY_DIR}/include/                                              # -I/build/src/libm/include
+	  ${FLAG_DEFINE}SLEEF_GENHEADER ${FLAG_DEFINE}ENABLE_${SIMD} ${FLAG_DEFINE}DORENAME                # -DSLEEF_GENHEADER -DENABLE_SSE2 -DDORENAME
+	  ${TARGET_PP_FLAGS}
+	  ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimddp.c > ${CMAKE_CURRENT_BINARY_DIR}/sleefsimddp${SIMD}.h.tmp # /sleef/src/libm/sleefsimddp.c > /build/libm/sleefsimddpSSE2.h.tmp
 
-	  # Remove all lines except those begin with "//@"
-	  COMMAND ${SED_COMMAND} -n -e "/^\\/\\/@#.*$/p" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp1   # sed -n -e "/^\\/\\/@#.*$/p" /build/src/libm/sleefSSE2.h.tmp1
-	    > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp2                                              # > /build/src/libm/sleefSSE2.h.tmp2
+	  # ${HEADER_${SIMD}} listed here as sleefsimddp.c includes it for renaming
+	  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimddp.c ${HEADER_${SIMD}}
+	  )
 
-	  # Remove "//@"
-	  COMMAND ${SED_COMMAND} -e "s/^\\/\\/@#/#/g" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp2      # sed -e "s/^\\/\\/@#/#/g" /build/src/libm/sleefSSE2.h.tmp2
-	    > ${CMAKE_CURRENT_BINARY_DIR}/include/macroonly${SIMD}.h                                       # > /build/src/libm/include/macroonlySSE2.h
+	add_custom_command(
+	  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include/macroonly${SIMD}.h
+
+	  # Remove all lines except those begin with "//@", then remove "//@"
+	  COMMAND ${SED_COMMAND} -e "/^\\/\\/@#.*$/!d"
+	                         -e "s/^\\/\\/@#/#/g"
+	    ${CMAKE_CURRENT_BINARY_DIR}/sleefsimddp${SIMD}.h.tmp
+	  > ${CMAKE_CURRENT_BINARY_DIR}/include/macroonly${SIMD}.h
+
+	  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sleefsimddp${SIMD}.h.tmp
+	  VERBATIM
+	  )
+
+	add_custom_command(
+	  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sleefsimdsp${SIMD}.h.tmp
 
 	  # Preprocess sleefsimdsp.c with SLEEF_GENHEADER defined. Include macroonly*.h instead of helper*.h.
 	  COMMAND "${CMAKE_C_COMPILER}" ${FLAG_PREPROCESS} ${FLAG_PRESERVE_COMMENTS}                       # gcc -E -C 
-	    ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/common ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/arch  # -I/sleef/src/common -I/sleef/src/arch
-	    ${FLAG_INCLUDE}${CMAKE_CURRENT_BINARY_DIR}/include/                                            # -I/build/src/libm/include
-	    ${FLAG_DEFINE}SLEEF_GENHEADER ${FLAG_DEFINE}ENABLE_${SIMD} ${FLAG_DEFINE}DORENAME              # -DSLEEF_GENHEADER -DENABLE_SSE2 -DDORENAME
-	    ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimdsp.c >> ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp1   # /sleef/src/libm/sleefsimdsp.c >> /build/libm/sleefSSE2.h.tmp1
+	  ${FLAG_TARGET} ${FLAGS_ENABLE_${SIMD}}                                                           # -msse2
+	  ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/common ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/arch    # -I/sleef/src/common -I/sleef/src/arch
+	  ${FLAG_INCLUDE}${CMAKE_CURRENT_BINARY_DIR}/include/                                              # -I/build/src/libm/include
+	  ${FLAG_DEFINE}SLEEF_GENHEADER ${FLAG_DEFINE}ENABLE_${SIMD} ${FLAG_DEFINE}DORENAME                # -DSLEEF_GENHEADER -DENABLE_SSE2 -DDORENAME
+	  ${TARGET_PP_FLAGS}
+	  ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimdsp.c > ${CMAKE_CURRENT_BINARY_DIR}/sleefsimdsp${SIMD}.h.tmp # /sleef/src/libm/sleefsimdsp.c > /build/libm/sleefsimdspSSE2.h.tmp
+
+	  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/include/macroonly${SIMD}.h ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimdsp.c
+	  )
+
+	add_custom_command(
+	  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.c
 
 	  # Remove lines beginning with "#" so that the resulting file can be preprocessed again.
-	  COMMAND ${SED_COMMAND} -e "s/^#.*//g" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp1            # sed -e "s/^#.*//g" /build/src/libm/sleefSSE2.h.tmp1
-	    > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.c                                                 # > /build/src/libm/sleefSSE2.h.c
+	  COMMAND ${CMAKE_COMMAND} -E cat ${CMAKE_CURRENT_BINARY_DIR}/sleefsimddp${SIMD}.h.tmp
+	                                  ${CMAKE_CURRENT_BINARY_DIR}/sleefsimdsp${SIMD}.h.tmp
+                | ${SED_COMMAND} -e "s/^#.*//g" > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.c
+
+	  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sleefsimdsp${SIMD}.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/sleefsimddp${SIMD}.h.tmp
+	  VERBATIM
+	  )
+
+	add_custom_command(
+	  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp3
 
 	  # Preprocess the intemediate file again to remove comments
-	  COMMAND "${CMAKE_C_COMPILER}" ${FLAG_PREPROCESS}                                                 # gcc -E
-	    ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.c                                                   # /build/src/libm/sleefSSE2.h.c
-	    > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp3                                              # > /build/src/libm/sleefSSE2.h.tmp3
+	  COMMAND "${CMAKE_C_COMPILER}" ${FLAG_PREPROCESS} ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.c
+	   # Remove lines beginning with "#"
+	   | ${SED_COMMAND} -e "s/^#.*//g"
+	   > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp3
 
-	  # Embed version number into the header
-	  COMMAND ${SED_COMMAND} -e                                                                        # sed -e
-	    "s/%VERSION%/${SLEEF_VERSION_MAJOR}.${SLEEF_VERSION_MINOR}.${SLEEF_VERSION_PATCHLEVEL}/g"      # "s/%VERSION%/3.5.0/g"
-	    ${CMAKE_CURRENT_SOURCE_DIR}/sleefinline_header.h.org                                           # /sleef/src/libm/sleefinline_header.h.org
-	    > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4                                              # > /build/src/libm/sleefSSE2.h.tmp4
+	  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.c
+	  VERBATIM
+	  )
 
-	  # Remove lines beginning with "#"
-	  COMMAND ${SED_COMMAND} -e "s/^#.*//g" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp3            # sed -e "s/^#.*//g" /build/src/libm/sleefSSE2.h.tmp3
-	    >> ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4                                             # >> /build/src/libm/sleefSSE2.h.tmp4
+	add_custom_command(
+	  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4
 
-	  # Replace multiple empty lines with a single empty line
-	  COMMAND ${SED_COMMAND} -e "s/^[[:space:]]*$//g" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4  # sed -e "s/^[[:space:]]*$//g" /build/src/libm/sleefSSE2.h.tmp4
-	    > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp5                                              # > /build/src/libm/sleefSSE2.h.tmp5
-	  COMMAND ${SED_COMMAND} "/^$/N;/^\\n$/D" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp5          # sed -e "/^$/N;/^\n$/D" /build/src/libm/sleefSSE2.h.tmp5
-	    > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp6                                              # > /build/src/libm/sleefSSE2.h.tmp6
+	  COMMAND ${CMAKE_COMMAND} -E cat
+	      ${INLINE_HEADER_ORG}
+	      ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp3
+	    | ${SED_COMMAND}
+	      # Embed version number into the header
+	      -e "s/SLEEF_VERSION_SLEEF/${SLEEF_VERSION_MAJOR}.${SLEEF_VERSION_MINOR}.${SLEEF_VERSION_PATCH}/g"
+	      -e "s/SLEEF_SIMD_SLEEF/${SIMD}/g"
+	      # Substitute "SLEEFSHARP" at the beginning of line with "#"
+	      -e "s/^SLEEFSHARP/#/g"
+	      # Remove SLEEFXXX
+	      -e "s/SLEEFXXX//g"
+	      # Replace multiple empty lines with a single empty line (part 1)
+	      -e "s/^[[:space:]]*$//g"
+	      > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4
 
-	  COMMAND $<TARGET_FILE:addSuffix> ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp6                 # addSuffix /build/src/libm/sleefSSE2.h.tmp6
-	    ${sleef_SOURCE_DIR}/src/common/keywords.txt "_${SIMDLC}_sleef"                                 # keywords.txt "_sse2_sleef"
-            > ${PROJECT_BINARY_DIR}/include/sleefinline_${SIMDLC}.h                                        # > /build/include/sleefinline_sse2.h
+	    DEPENDS ${INLINE_HEADER_ORG} ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp3
+	    VERBATIM
+	 )
 
-	  MAIN_DEPENDENCY ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimddp.c ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimdsp.c ${HEADER_${SIMD}}
-	  DEPENDS ${HEADER_${SIMD}} addSuffix
+         add_custom_command(
+	   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp5
+
+	   # Replace multiple empty lines with a single empty line
+	   # (part 2 - cannot occur in same command as part 1)
+	   COMMAND ${SED_COMMAND} -e "/^$/N" -e "/^\\n$/D" ${TARGET_REPLACEMENTS} ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4
+	   > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp5
+
+	   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4
+	   VERBATIM
+	   )
+
+	add_custom_command(
+	  OUTPUT ${INLINE_HEADER_FILE}
+
+	  COMMAND $<TARGET_FILE:addSuffix> ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp5                 # addSuffix /build/src/libm/sleefSSE2.h.tmp5
+	  ${sleef_SOURCE_DIR}/src/common/keywords.txt "_${SIMDLC}_sleef"                                   # keywords.txt "_sse2_sleef"
+	  ${TARGET_ADDSUFFIX_KEYWORDS}
+          > ${PROJECT_BINARY_DIR}/include/sleefinline_${SIMDLC}.h                                          # > /build/include/sleefinline_sse2.h
+
+	  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp5 addSuffix
 	  VERBATIM
 	  )
 
 	list(APPEND INLINE_HEADER_FILES_GENERATED ${INLINE_HEADER_FILE})
-      endif(COMPILER_SUPPORTS_${SIMD})
+      endif(COMPILER_SUPPORTS_${SIMD} OR ${SIMD} STREQUAL "CUDA")
     endforeach()
 
-    # Generate CUDA header file
-
-    set(SIMD CUDA)
-    string(TOLOWER ${SIMD} SIMDLC)
-
-    set(INLINE_HEADER_FILE ${PROJECT_BINARY_DIR}/include/sleefinline_cuda.h)
-
-    add_custom_command(
-      OUTPUT ${INLINE_HEADER_FILE} 
-
-      COMMAND echo Generating sleefinline_${SIMDLC}.h
-      
-      # Preprocess sleefsimddp.c with SLEEF_GENHEADER defined, comments are preserved
-      COMMAND "${CMAKE_C_COMPILER}"  ${FLAG_PREPROCESS} ${FLAG_PRESERVE_COMMENTS}                      # gcc -E -C 
-      ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/common ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/arch    # -I/sleef/src/common -I/sleef/src/arch
-      ${FLAG_INCLUDE}${CMAKE_CURRENT_BINARY_DIR}/include/                                              # -I/build/src/libm/include
-      ${FLAG_DEFINE}SLEEF_GENHEADER ${FLAG_DEFINE}ENABLE_${SIMD} ${FLAG_DEFINE}DORENAME                # -DSLEEF_GENHEADER -DENABLE_CUDA -DDORENAME
-      ${FLAG_DEFINE}SLEEF_ALWAYS_INLINE=__device__ ${FLAG_DEFINE}SLEEF_INLINE=__device__               # -DSLEEF_ALWAYS_INLINE=__device__ -DSLEEF_INLINE=__device__
-      ${FLAG_DEFINE}SLEEF_CONST=__device__ ${FLAG_DEFINE}static=__device__                             # -DSLEEF_CONST=__device__ -Dstatic=__device__
-      ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimddp.c > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp1      # /sleef/src/libm/sleefsimddp.c > /build/libm/sleefCUDA.h.tmp1
-
-      # Remove all lines except those begin with "//@"
-      COMMAND ${SED_COMMAND} -n -e "/^\\/\\/@#.*$/p" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp1   # sed -n -e "/^\\/\\/@#.*$/p" /build/src/libm/sleefCUDA.h.tmp1
-      > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp2                                                # > /build/src/libm/sleefCUDA.h.tmp2
-
-      # Remove "//@"
-      COMMAND ${SED_COMMAND} -e "s/^\\/\\/@#/#/g" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp2      # sed -e "s/^\\/\\/@#/#/g" /build/src/libm/sleefCUDA.h.tmp2
-      > ${CMAKE_CURRENT_BINARY_DIR}/include/macroonly${SIMD}.h                                         # > /build/src/libm/include/macroonlyCUDA.h
-
-      # Preprocess sleefsimdsp.c with SLEEF_GENHEADER defined. Include macroonly*.h instead of helper*.h.
-      COMMAND "${CMAKE_C_COMPILER}" ${FLAG_PREPROCESS} ${FLAG_PRESERVE_COMMENTS}                       # gcc -E -C 
-      ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/common ${FLAG_INCLUDE}${PROJECT_SOURCE_DIR}/src/arch    # -I/sleef/src/common -I/sleef/src/arch
-      ${FLAG_INCLUDE}${CMAKE_CURRENT_BINARY_DIR}/include/                                              # -I/build/src/libm/include
-      ${FLAG_DEFINE}SLEEF_GENHEADER ${FLAG_DEFINE}ENABLE_${SIMD} ${FLAG_DEFINE}DORENAME                # -DSLEEF_GENHEADER -DENABLE_CUDA -DDORENAME
-      ${FLAG_DEFINE}SLEEF_ALWAYS_INLINE=__device__ ${FLAG_DEFINE}SLEEF_INLINE=__device__               # -DSLEEF_ALWAYS_INLINE=__device__ -DSLEEF_INLINE=__device__
-      ${FLAG_DEFINE}SLEEF_CONST=__device__ ${FLAG_DEFINE}static=__device__                             # -DSLEEF_CONST=__device__ -Dstatic=__device__
-      ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimdsp.c >> ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp1     # /sleef/src/libm/sleefsimdsp.c >> /build/libm/sleefCUDA.h.tmp1
-
-      # Remove lines beginning with "#" so that the resulting file can be preprocessed again.
-      COMMAND ${SED_COMMAND} -e "s/^#.*//g" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp1            # sed -e "s/^#.*//g" /build/src/libm/sleefCUDA.h.tmp1
-      > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.c                                                   # > /build/src/libm/sleefCUDA.h.c
-
-      # Preprocess the intemediate file again to remove comments
-      COMMAND "${CMAKE_C_COMPILER}" ${FLAG_PREPROCESS}                                                 # gcc -E
-      ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.c                                                     # /build/src/libm/sleefCUDA.h.c
-      > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp3                                                # > /build/src/libm/sleefCUDA.h.tmp3
-
-      # Embed version number into the header
-      COMMAND ${SED_COMMAND} -e                                                                        # sed -e
-      "s/%VERSION%/${SLEEF_VERSION_MAJOR}.${SLEEF_VERSION_MINOR}.${SLEEF_VERSION_PATCHLEVEL}/g"        # "s/%VERSION%/3.5.0/g"
-      ${CMAKE_CURRENT_SOURCE_DIR}/sleefinline_cuda_header.h.org                                        # /sleef/src/libm/sleefinline_header.h.org
-      > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4                                                # > /build/src/libm/sleefCUDA.h.tmp4
-
-      # Remove lines beginning with "#"
-      COMMAND ${SED_COMMAND} -e "s/^#.*//g" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp3            # sed -e "s/^#.*//g" /build/src/libm/sleefCUDA.h.tmp3
-      >> ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4                                               # >> /build/src/libm/sleefCUDA.h.tmp4
-
-      # Replace multiple empty lines with a single empty line
-      COMMAND ${SED_COMMAND} -e "s/^[[:space:]]*$//g" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp4  # sed -e "s/^[[:space:]]*$//g" /build/src/libm/sleefCUDA.h.tmp4
-      > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp5                                                # > /build/src/libm/sleefCUDA.h.tmp5
-      COMMAND ${SED_COMMAND} "/^$/N;/^\\n$/D" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp5          # sed -e "/^$/N;/^\n$/D" /build/src/libm/sleefCUDA.h.tmp5
-      > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp6                                                # > /build/src/libm/sleefCUDA.h.tmp6
-
-      # Remove redundant __device__
-      COMMAND ${SED_COMMAND} -e "s/__device__ __device__/__device__/g"                                 # sed -e "s/__device__ __device__/__device__/g"
-      -e "s/__device__ __device__/__device__/g" ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp6        # -e "s/__device__ __device__/__device__/g" /build/src/libm/sleefCUDA.h.tmp6
-      > ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp7                                                # > /build/src/libm/sleefCUDA.h.tmp7
-
-      COMMAND $<TARGET_FILE:addSuffix> ${CMAKE_CURRENT_BINARY_DIR}/sleef${SIMD}.h.tmp7                 # addSuffix /build/src/libm/sleefCUDA.h.tmp7
-      ${sleef_SOURCE_DIR}/src/common/keywords_cuda.txt "_${SIMDLC}_sleef"                              # keywords_cuda.txt "_cuda_sleef"
-      > ${PROJECT_BINARY_DIR}/include/sleefinline_${SIMDLC}.h                                          # > /build/include/sleefinline_cuda.h
-
-      MAIN_DEPENDENCY ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimddp.c ${CMAKE_CURRENT_SOURCE_DIR}/sleefsimdsp.c ${HEADER_${SIMD}}
-      DEPENDS ${HEADER_${SIMD}} addSuffix
-      VERBATIM
-      )
-
-    list(APPEND INLINE_HEADER_FILES_GENERATED ${INLINE_HEADER_FILE})
-
-    #
-
-    add_custom_target(${TARGET_INLINE_HEADERS} ALL
+    add_custom_target(${TARGET_INLINE_HEADERS}_util ALL
       DEPENDS
       ${INLINE_HEADER_FILES_GENERATED}
       )
-    install(FILES ${INLINE_HEADER_FILES_GENERATED} DESTINATION include)
+
+    add_library("${TARGET_INLINE_HEADERS}" INTERFACE)
+    add_dependencies("${TARGET_INLINE_HEADERS}" "${TARGET_INLINE_HEADERS}_util")
+    target_include_directories(
+        "${TARGET_INLINE_HEADERS}"
+        INTERFACE
+        "$<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>"
+    )
+
+    # CMake 3.4 can't have PUBLIC_HEADER property on INTERFACE libraries
+    install(
+        FILES ${INLINE_HEADER_FILES_GENERATED}
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+        COMPONENT sleef_Development
+    )
+
+    install(
+        TARGETS "${TARGET_INLINE_HEADERS}"
+        EXPORT sleefTargets
+        INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    )
   endif(SED_COMMAND)
-endif(BUILD_INLINE_HEADERS)
+endif(SLEEF_BUILD_INLINE_HEADERS)
 
 # On some systems we need to explicitly link libsleef against libm to
 # use some of the math functions used in the scalar code (for example
@@ -657,47 +675,76 @@ target_sources(${TARGET_LIBSLEEF} PRIVATE $<TARGET_OBJECTS:${TARGET_LIBCOMMON_OB
 
 # --------------------------------------------------------------------
 
+# Target dispscalar.c
+
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/dispscalar.c.body
+  COMMAND $<TARGET_FILE:${TARGET_MKDISP}> 1 1 double float int32_t purec purecfma x > ${CMAKE_CURRENT_BINARY_DIR}/dispscalar.c.body
+  DEPENDS ${TARGET_MKDISP}
+  )
+
+sleef_concat_files(
+  OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/dispscalar.c
+  SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/dispscalar.c.org
+          ${CMAKE_CURRENT_BINARY_DIR}/dispscalar.c.body
+	  ${CMAKE_CURRENT_SOURCE_DIR}/dispscalar_footer.c.org
+)
+add_custom_target(dispscalar.c_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/dispscalar.c)
+
+# Target renamedspscalar.h
+
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include/renamedspscalar.h
+  COMMAND $<TARGET_FILE:${TARGET_MKRENAME}> - 1 1 > ${CMAKE_CURRENT_BINARY_DIR}/include/renamedspscalar.h
+  DEPENDS ${TARGET_MKRENAME}
+  )
+add_custom_target(renamedspscalar.h_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/include/renamedspscalar.h)
+
+# Target dispscalar_obj
+
+add_library(dispscalar_obj OBJECT dispscalar.c)
+set_target_properties(dispscalar_obj PROPERTIES ${COMMON_TARGET_PROPERTIES})
+target_compile_definitions(dispscalar_obj PRIVATE ${COMMON_TARGET_DEFINITIONS})
+target_include_directories(dispscalar_obj PRIVATE ${sleef_BINARY_DIR}/include)
+add_dependencies(dispscalar_obj dispscalar.c_generated renamedspscalar.h_generated ${TARGET_HEADERS})
+target_sources(${TARGET_LIBSLEEF} PRIVATE $<TARGET_OBJECTS:dispscalar_obj>)
+
+#
+
+function(sleef_generate_disp_simd simd)
+  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/disp${simd}.c.tmp
+    COMMAND $<TARGET_FILE:${TARGET_MKDISP}> "${ARGN}" > ${CMAKE_CURRENT_BINARY_DIR}/disp${simd}.c.tmp
+    DEPENDS ${TARGET_MKDISP}
+    COMMAND_EXPAND_LISTS
+    )
+  sleef_concat_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/disp${simd}.c
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/disp${simd}.c.org ${CMAKE_CURRENT_BINARY_DIR}/disp${simd}.c.tmp
+    )
+  add_custom_target(disp${simd}.c_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/disp${simd}.c)
+endfunction()
+
+function(sleef_generate_rename_simd simd)
+  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include/renamed${simd}.h
+    COMMAND $<TARGET_FILE:${TARGET_MKRENAME}> "${ARGN}" > ${CMAKE_CURRENT_BINARY_DIR}/include/renamed${simd}.h
+    DEPENDS ${TARGET_MKRENAME}
+    COMMAND_EXPAND_LISTS
+    )
+  add_custom_target(renamed${simd}.h_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/include/renamed${simd}.h)
+  endfunction()
+
 if (SLEEF_ARCH_X86)
   # Target dispsse.c
-
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/dispsse.c
-    COMMENT "Generating dispsse.c"
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/dispsse.c.org ${CMAKE_CURRENT_BINARY_DIR}/dispsse.c
-    COMMAND $<TARGET_FILE:${TARGET_MKDISP}> 2 4 __m128d __m128 __m128i sse2 sse4 avx2128 >> ${CMAKE_CURRENT_BINARY_DIR}/dispsse.c
-    DEPENDS ${TARGET_MKDISP}
-    )
-  add_custom_target(dispsse.c_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/dispsse.c)
+  sleef_generate_disp_simd(sse 2 4 __m128d __m128 __m128i sse2 sse4 avx2128)
 
   # Target renamedsp128.h
-
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp128.h
-    COMMENT "Generating renamedsp128.h"
-    COMMAND $<TARGET_FILE:${TARGET_MKRENAME}> - 2 4 > ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp128.h
-    DEPENDS ${TARGET_MKRENAME}
-    )
-  add_custom_target(renamedsp128.h_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp128.h)
+  sleef_generate_rename_simd(sp128 - 2 4)
 
   # Target dispavx.c
-
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/dispavx.c
-    COMMENT "Generating dispavx.c"
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/dispavx.c.org ${CMAKE_CURRENT_BINARY_DIR}/dispavx.c
-    COMMAND $<TARGET_FILE:${TARGET_MKDISP}> 4 8 __m256d __m256 __m128i avx fma4 avx2 >> ${CMAKE_CURRENT_BINARY_DIR}/dispavx.c
-    DEPENDS ${TARGET_MKDISP}
-    )
-  add_custom_target(dispavx.c_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/dispavx.c)
+  sleef_generate_disp_simd(avx 4 8 __m256d __m256 __m128i avx fma4 avx2)
 
   # Target renamedsp256.h
-
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp256.h
-    COMMENT "Generating renamedsp256.h"
-    COMMAND $<TARGET_FILE:${TARGET_MKRENAME}> - 4 8 > ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp256.h
-    DEPENDS ${TARGET_MKRENAME}
-    )
-  add_custom_target(renamedsp256.h_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp256.h)
+  sleef_generate_rename_simd(sp256 - 4 8)
 
   # Target dispsse_obj
-
   if (COMPILER_SUPPORTS_FMA4)
     set(DISPATCHER_DEFINITIONS ${DISPATCHER_DEFINITIONS} ENABLE_FMA4=1)
   endif()
@@ -731,26 +778,12 @@ endif(SLEEF_ARCH_X86)
 
 if (SLEEF_ARCH_PPC64)
   # Target disppower_128.c
-
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/disppower_128.c
-    COMMENT "Generating disppower_128.c"
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/disppower_128.c.org ${CMAKE_CURRENT_BINARY_DIR}/disppower_128.c
-    COMMAND $<TARGET_FILE:${TARGET_MKDISP}> 2 4 SLEEF_VECTOR_DOUBLE SLEEF_VECTOR_FLOAT SLEEF_VECTOR_INT vsx vsx3 >> ${CMAKE_CURRENT_BINARY_DIR}/disppower_128.c
-    DEPENDS ${TARGET_MKDISP}
-    )
-  add_custom_target(disppower_128.c_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/disppower_128.c)
+  sleef_generate_disp_simd(power_128 2 4 SLEEF_VECTOR_DOUBLE SLEEF_VECTOR_FLOAT SLEEF_VECTOR_INT vsx vsx3 x)
 
   # Target renamedsp128.h
-
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp128.h
-    COMMENT "Generating renamedsp128.h"
-    COMMAND $<TARGET_FILE:${TARGET_MKRENAME}> - 2 4 > ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp128.h
-    DEPENDS ${TARGET_MKRENAME}
-    )
-  add_custom_target(renamedsp128.h_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp128.h)
+  sleef_generate_rename_simd(sp128 - 2 4)
 
   # Target disppower_128_obj
-
   add_library(disppower_128_obj OBJECT disppower_128.c)
   target_compile_options(disppower_128_obj PRIVATE ${FLAGS_ENABLE_VSX})
   if(COMPILER_SUPPORTS_VSX3)
@@ -772,26 +805,12 @@ endif(SLEEF_ARCH_PPC64)
 
 if (SLEEF_ARCH_S390X)
   # Target disps390x_128.c
-
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/disps390x_128.c
-    COMMENT "Generating disps390x_128.c"
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/disps390x_128.c.org ${CMAKE_CURRENT_BINARY_DIR}/disps390x_128.c
-    COMMAND $<TARGET_FILE:${TARGET_MKDISP}> 2 4 SLEEF_VECTOR_DOUBLE SLEEF_VECTOR_FLOAT SLEEF_VECTOR_INT vxe vxe2 >> ${CMAKE_CURRENT_BINARY_DIR}/disps390x_128.c
-    DEPENDS ${TARGET_MKDISP}
-    )
-  add_custom_target(disps390x_128.c_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/disps390x_128.c)
+  sleef_generate_disp_simd(s390x_128 2 4 SLEEF_VECTOR_DOUBLE SLEEF_VECTOR_FLOAT SLEEF_VECTOR_INT vxe vxe2 x)
 
   # Target renamedsp128.h
-
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp128.h
-    COMMENT "Generating renamedsp128.h"
-    COMMAND $<TARGET_FILE:${TARGET_MKRENAME}> - 2 4 > ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp128.h
-    DEPENDS ${TARGET_MKRENAME}
-    )
-  add_custom_target(renamedsp128.h_generated SOURCES ${CMAKE_CURRENT_BINARY_DIR}/include/renamedsp128.h)
+  sleef_generate_rename_simd(sp128 - 2 4)
 
   # Target disps390x_128_obj
-
   add_library(disps390x_128_obj OBJECT disps390x_128.c)
   target_compile_options(disps390x_128_obj PRIVATE ${FLAGS_ENABLE_VXE})
   if(COMPILER_SUPPORTS_VXE2)
@@ -837,12 +856,12 @@ if(ENABLE_GNUABI)
           )
         endif()
 
-	if(ENABLE_ALTDIV)
-	  target_compile_definitions(${OBJECT_${SIMD}_${T}_GNUABI} PRIVATE ENABLE_ALTDIV=1)
+	if(SLEEF_ENABLE_ALTDIV)
+	  target_compile_definitions(${OBJECT_${SIMD}_${T}_GNUABI} PRIVATE SLEEF_ENABLE_ALTDIV=1)
 	endif()
 
-	if(ENABLE_ALTSQRT)
-	  target_compile_definitions(${OBJECT_${SIMD}_${T}_GNUABI} PRIVATE ENABLE_ALTSQRT=1)
+	if(SLEEF_ENABLE_ALTSQRT)
+	  target_compile_definitions(${OBJECT_${SIMD}_${T}_GNUABI} PRIVATE SLEEF_ENABLE_ALTSQRT=1)
 	endif()
 
 	set_target_properties(${OBJECT_${SIMD}_${T}_GNUABI} PROPERTIES
@@ -942,27 +961,94 @@ if(CLANG_EXE_PATH AND SLEEF_ENABLE_LLVM_BITCODE)
   )
   add_dependencies(${TARGET_LLVM_BITCODE} ${TARGET_HEADERS})
 
-  install(FILES ${LLVM_BITCODE_OUTPUTS} DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+  install(
+      FILES ${LLVM_BITCODE_OUTPUTS}
+      DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+      COMPONENT sleef_Development
+  )
+endif()
+
+# --------------------------------------------------------------------
+# TARGET_LIBSLEEFSCALAR
+# --------------------------------------------------------------------
+# Build scalar-only library from sleefdp.c and sleefsp.c
+if(SLEEF_BUILD_SCALAR_LIB)
+  add_library(sleefscalar sleefdp.c sleefsp.c rempitab.c)
+  add_dependencies(sleefscalar ${TARGET_HEADERS})
+  set_target_properties(sleefscalar PROPERTIES
+    VERSION ${SLEEF_VERSION}
+    SOVERSION ${SLEEF_SOVERSION}
+    PUBLIC_HEADER ${SLEEF_INCLUDE_HEADER}
+    ${COMMON_TARGET_PROPERTIES}
+  )
+
+  target_compile_definitions(sleefscalar
+    PRIVATE DORENAME=1 ${COMMON_TARGET_DEFINITIONS}
+  )
+
+  if(COMPILER_SUPPORTS_BUILTIN_MATH)
+    target_compile_definitions(sleefscalar PRIVATE ENABLE_BUILTIN_MATH=1)
+  endif()
+
+  install(
+      TARGETS sleefscalar
+      EXPORT sleefTargets
+      LIBRARY #
+      DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+      COMPONENT sleef_Runtime
+      NAMELINK_COMPONENT sleef_Development
+      ARCHIVE #
+      DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+      COMPONENT sleef_Development
+      RUNTIME #
+      DESTINATION "${CMAKE_INSTALL_BINDIR}"
+      COMPONENT sleef_Runtime
+  )
 endif()
 
 # --------------------------------------------------------------------
 # Install
 # --------------------------------------------------------------------
 # Install libsleef and sleef.h
-install(TARGETS ${TARGET_LIBSLEEF}
-        PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-        RUNTIME DESTINATION bin
+install(
+    TARGETS ${TARGET_LIBSLEEF}
+    EXPORT sleefTargets
+    PUBLIC_HEADER #
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    COMPONENT sleef_Development
+    LIBRARY #
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    COMPONENT sleef_Runtime
+    NAMELINK_COMPONENT sleef_Development
+    ARCHIVE #
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    COMPONENT sleef_Development
+    RUNTIME #
+    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    COMPONENT sleef_Runtime
+    INCLUDES #
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
 )
 configure_file("sleef.pc.in" "${CMAKE_CURRENT_BINARY_DIR}/sleef.pc" @ONLY)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sleef.pc"
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
+install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/sleef.pc"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
+    COMPONENT sleef_Development
+)
 
 if(ENABLE_GNUABI)
-  install(TARGETS ${TARGET_LIBSLEEFGNUABI}
-          LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-          ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-          RUNTIME DESTINATION bin
-          )
+  install(
+      TARGETS ${TARGET_LIBSLEEFGNUABI}
+      EXPORT sleefTargets
+      LIBRARY #
+      DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+      COMPONENT sleef_Runtime
+      NAMELINK_COMPONENT sleef_Development
+      ARCHIVE #
+      DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+      COMPONENT sleef_Development
+      RUNTIME #
+      DESTINATION "${CMAKE_INSTALL_BINDIR}"
+      COMPONENT sleef_Runtime
+  )
 endif()

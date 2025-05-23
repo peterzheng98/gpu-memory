@@ -1,5 +1,5 @@
 #===============================================================================
-# Copyright 2017-2023 Intel Corporation
+# Copyright 2017-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ macro(set_openmp_values_for_old_cmake)
     endif()
 endmacro()
 
-if(DNNL_DPCPP_HOST_COMPILER STREQUAL "DEFAULT")
+if(DPCPP_HOST_COMPILER_KIND STREQUAL "DEFAULT")
     # XXX: workaround: when -fsycl is specified the compiler doesn't define
     # _OPENMP macro causing `find_package(OpenMP)` to fail.
     # Use -fno-sycl option to disable SYCL. The rationale: dpcpp driver sets
@@ -91,11 +91,18 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 if(DNNL_CPU_THREADING_RUNTIME MATCHES "OMP")
-    if(DNNL_WITH_SYCL AND DNNL_DPCPP_HOST_COMPILER MATCHES "g\\+\\+")
+    if(DPCPP_HOST_COMPILER_KIND STREQUAL "")
+        message(FATAL_ERROR "DPCPP_HOST_COMPILER_KIND is undefined. Please make sure that a host compiler identification is performed before this point.")
+    endif()
+
+    if(DNNL_WITH_SYCL AND DPCPP_HOST_COMPILER_KIND STREQUAL "GNU")
         # Tell DPCPP compiler to link against libgomp. By default, it links
         # against libiomp5
         append(CMAKE_SHARED_LINKER_FLAGS "-fopenmp=libgomp")
         append(CMAKE_EXE_LINKER_FLAGS "-fopenmp=libgomp")
+    elseif(DNNL_WITH_SYCL AND DPCPP_HOST_COMPILER_KIND STREQUAL "CLANG")
+        append(CMAKE_SHARED_LINKER_FLAGS "-fopenmp")
+        append(CMAKE_EXE_LINKER_FLAGS "-fopenmp")
     elseif(OpenMP_CXX_FOUND)
         if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
             list(APPEND EXTRA_SHARED_LIBS ${OpenMP_CXX_LIBRARIES})

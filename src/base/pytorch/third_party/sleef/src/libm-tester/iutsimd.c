@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2023.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -18,9 +18,9 @@
 #else
 #include <unistd.h>
 #include <sys/types.h>
-#include <signal.h>
 #endif
 
+#include "quaddef.h"
 #include "misc.h"
 
 #if !defined(USE_INLINE_HEADER)
@@ -55,6 +55,10 @@
 
 #if defined(__ARM_FEATURE_SVE)
 #include <arm_sve.h>
+#endif
+
+#if defined(__riscv) && defined(__riscv_v)
+#include <riscv_vector.h>
 #endif
 
 #if defined(__VSX__)
@@ -224,8 +228,6 @@ typedef Sleef___m128_2 vfloat2;
 #if !defined(USE_INLINE_HEADER)
 #define CONFIG 1
 #include "helpersve.h"
-typedef Sleef_svfloat64_t_2 vdouble2;
-typedef Sleef_svfloat32_t_2 vfloat2;
 #endif
 #endif
 
@@ -234,8 +236,6 @@ typedef Sleef_svfloat32_t_2 vfloat2;
 #if !defined(USE_INLINE_HEADER)
 #define CONFIG 2
 #include "helpersve.h"
-typedef Sleef_svfloat64_t_2 vdouble2;
-typedef Sleef_svfloat32_t_2 vfloat2;
 #endif
 #endif
 
@@ -347,6 +347,38 @@ typedef Sleef_SLEEF_VECTOR_DOUBLE_2 vdouble2;
 typedef Sleef_SLEEF_VECTOR_FLOAT_2 vfloat2;
 #endif
 
+#ifdef ENABLE_RVVM1
+#include "renamervvm1.h"
+#if !defined(USE_INLINE_HEADER)
+#define CONFIG 1
+#include "helperrvv.h"
+#endif
+#endif
+
+#ifdef ENABLE_RVVM1NOFMA
+#include "renamervvm1nofma.h"
+#if !defined(USE_INLINE_HEADER)
+#define CONFIG 2
+#include "helperrvv.h"
+#endif
+#endif
+
+#ifdef ENABLE_RVVM2
+#include "renamervvm2.h"
+#if !defined(USE_INLINE_HEADER)
+#define CONFIG 1
+#include "helperrvv.h"
+#endif
+#endif
+
+#ifdef ENABLE_RVVM2NOFMA
+#include "renamervvm2nofma.h"
+#if !defined(USE_INLINE_HEADER)
+#define CONFIG 2
+#include "helperrvv.h"
+#endif
+#endif
+
 #ifdef ENABLE_PUREC_SCALAR
 #include "renamepurec_scalar.h"
 #if !defined(USE_INLINE_HEADER)
@@ -365,6 +397,14 @@ typedef Sleef_float_2 vfloat2;
 typedef Sleef_double_2 vdouble2;
 typedef Sleef_float_2 vfloat2;
 #endif
+#endif
+
+#ifdef ENABLE_DSP_SCALAR
+#include "renamedspscalar.h"
+#define CONFIG 1
+#include "helperpurec_scalar.h"
+typedef Sleef_double_2 vdouble2;
+typedef Sleef_float_2 vfloat2;
 #endif
 
 #ifdef USE_INLINE_HEADER
@@ -392,46 +432,44 @@ typedef Sleef_float_2 vfloat2;
 
 //
 
+int check_feature(double d, float f) {
 #ifdef ENABLE_DP
-int check_featureDP(double d) {
-  double s[VECTLENDP];
-  int i;
-  for(i=0;i<VECTLENDP;i++) {
-    s[i] = d;
+  {
+    double s[VECTLENDP];
+    int i;
+    for(i=0;i<VECTLENDP;i++) {
+      s[i] = d;
+    }
+    vdouble a = vloadu_vd_p(s);
+    a = xpow(a, a);
+    vstoreu_v_p_vd(s, a);
+    if (s[0] == s[0]) return 1;
   }
-  vdouble a = vloadu_vd_p(s);
-  a = xpow(a, a);
-  vstoreu_v_p_vd(s, a);
-  return s[0] == s[0];
+#endif
+#ifdef ENABLE_SP
+  {
+    float s[VECTLENSP];
+    int i;
+    for(i=0;i<VECTLENSP;i++) {
+      s[i] = d;
+    }
+    vfloat a = vloadu_vf_p(s);
+    a = xpowf(a, a);
+    vstoreu_v_p_vf(s, a);
+    if (s[0] == s[0]) return 1;
+  }
+#endif
+  return 0;
 }
 
-#if !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA) || defined(USE_INLINE_HEADER))
+#if defined(ENABLE_DP) && !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA) || defined(ENABLE_RVVM1) || defined(ENABLE_RVVM1NOFMA) || defined(ENABLE_RVVM2) || defined(ENABLE_RVVM2NOFMA) || defined(USE_INLINE_HEADER))
 static vdouble vd2getx_vd_vd2(vdouble2 v) { return v.x; }
 static vdouble vd2gety_vd_vd2(vdouble2 v) { return v.y; }
 #endif
-#else // #ifdef ENABLE_DP
-int check_featureDP() { return 0; }
-#endif // #ifdef ENABLE_DP
 
-#ifdef ENABLE_SP
-int check_featureSP(float d) {
-  float s[VECTLENSP];
-  int i;
-  for(i=0;i<VECTLENSP;i++) {
-    s[i] = d;
-  }
-  vfloat a = vloadu_vf_p(s);
-  a = xpowf(a, a);
-  vstoreu_v_p_vf(s, a);
-  return s[0] == s[0];
-}
-
-#if !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA) || defined(USE_INLINE_HEADER))
+#if defined(ENABLE_SP) && !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA) || defined(ENABLE_RVVM1) || defined(ENABLE_RVVM1NOFMA) || defined(ENABLE_RVVM2) || defined(ENABLE_RVVM2NOFMA) || defined(USE_INLINE_HEADER))
 static vfloat vf2getx_vf_vf2(vfloat2 v) { return v.x; }
 static vfloat vf2gety_vf_vf2(vfloat2 v) { return v.y; }
-#endif
-#else // #ifdef ENABLE_DP
-int check_featureSP() { return 0; }
 #endif
 
 //
@@ -608,7 +646,7 @@ int check_featureSP() { return 0; }
 
 #define BUFSIZE 1024
 
-int do_test(int argc, char **argv) {
+int main2(int argc, char **argv) {
   xsrand(time(NULL));
 
   {

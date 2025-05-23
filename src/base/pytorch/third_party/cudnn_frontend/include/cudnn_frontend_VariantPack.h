@@ -30,9 +30,6 @@
 #include <sstream>
 #include <utility>
 
-#include <cudnn.h>
-#include <cudnn_backend.h>
-
 #include "cudnn_frontend_utils.h"
 
 namespace cudnn_frontend {
@@ -55,8 +52,7 @@ class VariantPack_v8 : public BackendDescriptor {
     std::string
     describe() const override {
         std::stringstream ss;
-        ss << "CUDNN_BACKEND_VARIANT_PACK_DESCRIPTOR :"
-           << " has " << num_ptrs << " data pointers";
+        ss << "CUDNN_BACKEND_VARIANT_PACK_DESCRIPTOR :" << " has " << num_ptrs << " data pointers";
         return ss.str();
     }
 
@@ -72,10 +68,10 @@ class VariantPack_v8 : public BackendDescriptor {
     VariantPack_v8 &
     operator=(VariantPack_v8 const &) = delete;
 
-    void *workspace         = nullptr;
+    void *workspace = nullptr;
     std::vector<void *> data_pointers;
     std::vector<int64_t> uid;
-    int64_t num_ptrs        = -1;
+    int64_t num_ptrs = -1;
 };
 
 ///
@@ -139,11 +135,11 @@ class VariantPackBuilder_v8 {
             return std::move(m_variant_pack);
         }
 
-        status = cudnnBackendSetAttribute(m_variant_pack.pointer->get_backend_descriptor(),
-                                          CUDNN_ATTR_VARIANT_PACK_DATA_POINTERS,
-                                          CUDNN_TYPE_VOID_PTR,
-                                          m_variant_pack.num_ptrs,
-                                          m_variant_pack.data_pointers.data());
+        status = detail::set_attribute(m_variant_pack.pointer->get_backend_descriptor(),
+                                       CUDNN_ATTR_VARIANT_PACK_DATA_POINTERS,
+                                       CUDNN_TYPE_VOID_PTR,
+                                       m_variant_pack.num_ptrs,
+                                       m_variant_pack.data_pointers.data());
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
                 &m_variant_pack,
@@ -152,11 +148,11 @@ class VariantPackBuilder_v8 {
             return std::move(m_variant_pack);
         }
 
-        status = cudnnBackendSetAttribute(m_variant_pack.pointer->get_backend_descriptor(),
-                                          CUDNN_ATTR_VARIANT_PACK_UNIQUE_IDS,
-                                          CUDNN_TYPE_INT64,
-                                          m_variant_pack.num_ptrs,
-                                          m_variant_pack.uid.data());
+        status = detail::set_attribute(m_variant_pack.pointer->get_backend_descriptor(),
+                                       CUDNN_ATTR_VARIANT_PACK_UNIQUE_IDS,
+                                       CUDNN_TYPE_INT64,
+                                       m_variant_pack.num_ptrs,
+                                       m_variant_pack.uid.data());
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
                 &m_variant_pack,
@@ -165,11 +161,11 @@ class VariantPackBuilder_v8 {
             return std::move(m_variant_pack);
         }
 
-        status = cudnnBackendSetAttribute(m_variant_pack.pointer->get_backend_descriptor(),
-                                          CUDNN_ATTR_VARIANT_PACK_WORKSPACE,
-                                          CUDNN_TYPE_VOID_PTR,
-                                          1,
-                                          &m_variant_pack.workspace);
+        status = detail::set_attribute(m_variant_pack.pointer->get_backend_descriptor(),
+                                       CUDNN_ATTR_VARIANT_PACK_WORKSPACE,
+                                       CUDNN_TYPE_VOID_PTR,
+                                       1,
+                                       &m_variant_pack.workspace);
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
                 &m_variant_pack,
@@ -179,13 +175,13 @@ class VariantPackBuilder_v8 {
         }
 
         // Finalizing the descriptor
-        status = cudnnBackendFinalize(m_variant_pack.pointer->get_backend_descriptor());
+        status = detail::finalize(m_variant_pack.pointer->get_backend_descriptor());
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
                 &m_variant_pack, status, "CUDNN_BACKEND_VARIANT_PACK_DESCRIPTOR: cudnnFinalize Failed");
             return std::move(m_variant_pack);
         }
-        getLogger() << "[cudnn_frontend] "<< m_variant_pack << std::endl;
+        CUDNN_FE_LOG_LABEL_ENDL(m_variant_pack);
         return std::move(m_variant_pack);
     }
 
@@ -199,4 +195,8 @@ class VariantPackBuilder_v8 {
    private:
     VariantPack_v8 m_variant_pack;
 };
-}
+
+using VariantPack        = VariantPack_v8;
+using VariantPackBuilder = VariantPackBuilder_v8;
+
+}  // namespace cudnn_frontend

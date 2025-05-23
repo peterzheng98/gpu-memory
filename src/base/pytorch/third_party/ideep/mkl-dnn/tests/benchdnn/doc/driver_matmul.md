@@ -28,16 +28,6 @@ where *matmul-knobs* are:
             default format of the skipped tensor will be used. As long as
             `--strides` and `--*tag` options refer to different tensors, they
             can be specified together.
- - `--attr-scales=STRING` -- scale primitive attribute. No scale is
-            set by default. Refer to [attributes](knobs_attr.md) for details.
- - `--attr-zero-points=STRING` -- zero points primitive attribute. No zero
-            points are set by default. Refer to [attributes](knobs_attr.md)
-            for details.
- - `--attr-post-ops=STRING` -- post operation primitive attribute. No post
-            operations are set by default. Refer to [attributes](knobs_attr.md)
-            for details.
- - `--attr-fpmath=STRING` -- fpmath mode primitive attribute. `strict` math mode
-            is set by default. Refer to [attributes](knobs_attr.md) for details.
  - `--bia_dt={undef [default], f32, s32, s8, u8}` -- bias data type.
             To run MatMul without bias, use `undef` data type (default).
             Refer to [data types](knobs_dt.md) for details.
@@ -47,7 +37,9 @@ where *matmul-knobs* are:
             `weights` that indicates whether a dimension is
             `DNNL_RUNTIME_DIM_VAL` (indicated as 1-bit in the corresponding
             dimension position). The default is `0` for all dimensions, meaning
-            all tensor dimensions are fully defined at primitive creation.
+            all tensor dimensions are fully defined at primitive creation. For
+            tensors with option values other than `0`, a correspondent memory
+            format tag must be specified.
 - `--encoding=STRING` - sparse encodings and sparsity. No encodings are set by
             default. Refer to [encodings](knobs_encoding.md) for details. This
             is an experimental feature that must be enabled via a build time
@@ -56,6 +48,7 @@ where *matmul-knobs* are:
             `REGEX`. By default no pattern is applied (run everything).
             Note: Windows may interpret only string arguments surrounded by
             double quotation marks.
+ - Any attributes options. Refer to [attributes](knobs_attr.md) for details.
 
 and *matmul-desc* is a problem descriptor. The canonical form is:
 ```
@@ -92,7 +85,7 @@ runtime, but sizes specified at creation time:
     ./benchdnn --matmul \
                --dt=u8:s8:u8 \
                --wtag=any \
-               --attr-zero-points=src:common:1*+dst:common:-2* \
+               --attr-zero-points=src:common:1+dst:common:-2 \
                10x30:30x20
 ```
 

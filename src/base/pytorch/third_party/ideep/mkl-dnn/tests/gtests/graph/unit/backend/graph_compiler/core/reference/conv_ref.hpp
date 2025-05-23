@@ -78,10 +78,14 @@ void compute_ref_direct_fwd(const int64_t MB, const int64_t G, const int64_t OC,
         float *mul_m = nullptr, float *add_m = nullptr, bool bn_relu = false,
         const int64_t OD = 1, const int64_t ID = 1, const int64_t SD = 1,
         const int64_t PD = 0, const int64_t KD = 1, const int64_t DD = 1,
-        const int64_t DH = 1, const int64_t DW = 1, bool qconv = false) {
+        const int64_t DH = 1, const int64_t DW = 1, bool qconv = false,
+        std::vector<int> data_zero_points = {0},
+        std::vector<int> weight_zero_points = {0}) {
     /* help compiler optimize the code */
 
     const int64_t OCG = OC / G, ICG = IC / G;
+    bool data_zps_per_tensor = data_zero_points.size() == 1;
+    bool weight_zps_per_tensor = weight_zero_points.size() == 1;
 
     auto ker = [&](dst_type &d, int64_t g, int64_t mb, int64_t oc, int64_t od,
                        int64_t oh, int64_t ow) {
@@ -102,7 +106,16 @@ void compute_ref_direct_fwd(const int64_t MB, const int64_t G, const int64_t OC,
                     for (int64_t ic = 0; ic < ICG; ++ic) {
                         int64_t src_off = ((ic * ID + id) * IH + ih) * IW + iw;
                         int64_t wei_off = ((ic * KD + kd) * KH + kh) * KW + kw;
-                        d += src_loc[src_off] * wei_loc[wei_off];
+                        auto src_val = dst_type(src_loc[src_off])
+                                - dst_type(data_zero_points[data_zps_per_tensor
+                                                ? 0
+                                                : ic]);
+                        auto wei_val = dst_type(wei_loc[wei_off])
+                                - dst_type(
+                                        weight_zero_points[weight_zps_per_tensor
+                                                        ? 0
+                                                        : ic]);
+                        d += src_val * wei_val;
                     }
                 }
             }
@@ -390,10 +403,12 @@ T NHWC2NCHWcn(T &input, int N, int C, int H, int W, int c, int n,
 template <typename T>
 T any2NCHW(sc::sc_data_format_t input_format, T &input, int N, int C, int H,
         int W, int c) {
-    if (input_format == sc::sc_data_format_t::NCHWc(c)) {
+    if (input_format == sc::sc_data_format_t::NCHWc(c)
+            || input_format == sc::sc_data_format_t::NGCHWc(c)) {
         if (c <= 0) { COMPILE_ASSERT(0, "Invalid blocking dim NCHWc: c <= 0"); }
         return NCHWc2NCHW(input, N, C / c, H, W, c);
-    } else if (input_format == sc::sc_data_format_t::NHWC()) {
+    } else if (input_format == sc::sc_data_format_t::NHWC()
+            || input_format == sc::sc_data_format_t::NHWGC()) {
         return NHWC2NCHW(input, N, H, W, C);
     } else {
         COMPILE_ASSERT(0,

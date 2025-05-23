@@ -1,5 +1,5 @@
 #===============================================================================
-# Copyright 2021-2023 Intel Corporation
+# Copyright 2021-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,18 +14,20 @@
 # limitations under the License.
 #===============================================================================
 
-file(GLOB SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.[ch]pp
+file(GLOB API_SYCL_TEST_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_cpp_api_compiled_partition.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_cpp_api_engine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_cpp_api_tensor.cpp
+)
+
+foreach(TEST_FILE ${API_SYCL_TEST_SOURCES})
+    get_filename_component(exe_name ${TEST_FILE} NAME_WE)
+    string(REPLACE "test_" "test_graph_" exe_name ${exe_name}_sycl)
+    add_executable(${exe_name} ${TEST_FILE} ${COMMON_API_TEST_DEPS})
+    target_link_libraries(${exe_name}
+        dnnl_gtest
+        ${DNNL_LIBRARY_NAME}
+        ${EXTRA_SHARED_LIBS}
     )
-
-set(OBJ_LIB graph_api_test_sycl)
-add_library(${OBJ_LIB} OBJECT ${SOURCES})
-
-include_directories_with_host_compiler(
-    ${PROJECT_SOURCE_DIR}/tests/gtests/graph
-    ${PROJECT_SOURCE_DIR}/tests/gtests/gtest
-    ${PROJECT_SOURCE_DIR}/include
-    )
-
-set_property(GLOBAL APPEND PROPERTY GRAPH_API_TEST_DEPS
-    $<TARGET_OBJECTS:${OBJ_LIB}>)
+    register_graph_api_test_suite(${exe_name}_usm ${exe_name})
+endforeach()

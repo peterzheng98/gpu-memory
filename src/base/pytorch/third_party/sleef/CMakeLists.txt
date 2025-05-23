@@ -1,29 +1,53 @@
+cmake_minimum_required(VERSION 3.18)
+project(SLEEF VERSION 3.6.0 LANGUAGES C)
+
+set(SLEEF_SOVERSION ${SLEEF_VERSION_MAJOR})
 
 # Options
 
-option(BUILD_SHARED_LIBS "Build shared libs" ON)
-option(BUILD_STATIC_TEST_BINS "Build statically linked test executables" OFF)
-option(ENABLE_LTO "Enable LTO on GCC or ThinLTO on clang" OFF)
-option(BUILD_LIBM "libsleef will be built." ON)
-option(BUILD_DFT "libsleefdft will be built." OFF)
-option(BUILD_QUAD "libsleefquad will be built." OFF)
-option(BUILD_GNUABI_LIBS "libsleefgnuabi will be built." ON)
-option(BUILD_TESTS "Tests will be built." ON)
-option(BUILD_INLINE_HEADERS "Build header for inlining whole SLEEF functions" OFF)
+option(SLEEF_BUILD_STATIC_TEST_BINS "Build statically linked test executables" OFF)
+option(SLEEF_ENABLE_LTO "Enable LTO on GCC or ThinLTO on clang" OFF)
+option(SLEEF_BUILD_LIBM "libsleef will be built." ON)
+option(SLEEF_BUILD_DFT "libsleefdft will be built." OFF)
+option(SLEEF_BUILD_QUAD "libsleefquad will be built." OFF)
+option(SLEEF_BUILD_GNUABI_LIBS "libsleefgnuabi will be built." ON)
+option(SLEEF_BUILD_SCALAR_LIB "libsleefscalar will be built." OFF)
+option(SLEEF_BUILD_TESTS "Tests will be built." ON)
+option(SLEEF_BUILD_INLINE_HEADERS "Build header for inlining whole SLEEF functions" OFF)
 
 option(SLEEF_TEST_ALL_IUT "Perform tests on implementations with all vector extensions" OFF)
 option(SLEEF_SHOW_CONFIG "Show SLEEF configuration status messages." ON)
 option(SLEEF_SHOW_ERROR_LOG "Show cmake error log." OFF)
+option(SLEEF_ASAN "Enable address sanitizing on all targets." OFF)
 
-option(ENFORCE_TESTER "Build fails if tester is not available" OFF)
-option(ENFORCE_TESTER3 "Build fails if tester3 is not built" OFF)
+option(SLEEF_ENFORCE_TESTER "Build fails if tester is not available" OFF)
+option(SLEEF_ENFORCE_TESTER3 "Build fails if tester3 is not built" OFF)
 
-option(ENABLE_ALTDIV  "Enable alternative division method (aarch64 only)" OFF)
-option(ENABLE_ALTSQRT "Enable alternative sqrt method (aarch64 only)" OFF)
+option(SLEEF_ENABLE_ALTDIV  "Enable alternative division method (aarch64 only)" OFF)
+option(SLEEF_ENABLE_ALTSQRT "Enable alternative sqrt method (aarch64 only)" OFF)
 
-option(DISABLE_FFTW "Disable testing the DFT library with FFTW" OFF)
+option(SLEEF_DISABLE_FFTW "Disable testing the DFT library with FFTW" OFF)
+option(SLEEF_DISABLE_MPFR "Disable testing with the MPFR library" OFF)
+option(SLEEF_DISABLE_SSL "Disable testing with the SSL library" OFF)
 
-option(ENABLE_CUDA "Enable CUDA" OFF)
+option(SLEEF_ENABLE_CUDA "Enable CUDA" OFF)
+option(SLEEF_ENABLE_CXX "Enable C++" OFF)
+
+#
+
+if (DEFINED SLEEF_BUILD_SHARED_LIBS)
+  set(BUILD_SHARED_LIBS ${SLEEF_BUILD_SHARED_LIBS})
+endif ()
+
+if (SLEEF_SHOW_CONFIG)
+  # Normalize the value of BUILD_SHARED_LIBS so that it displays nicely
+  # in the configuration display
+  if (BUILD_SHARED_LIBS)
+    set(BUILD_SHARED_LIBS ON)
+  else ()
+    set(BUILD_SHARED_LIBS OFF)
+  endif ()
+endif ()
 
 # Function used to generate safe command arguments for add_custom_command
 function(command_arguments PROPNAME)
@@ -34,6 +58,24 @@ function(command_arguments PROPNAME)
   set(${PROPNAME} ${quoted_args} PARENT_SCOPE)
 endfunction()
 
+# Helper function for concatenating several files
+function(sleef_concat_files)
+  cmake_parse_arguments(concat_required "" "OUTPUT" "SOURCES" ${ARGN})
+  if("${concat_required_OUTPUT}" STREQUAL "")
+    message(FATAL_ERROR "Must pass OUTPUT to sleef_concat_files")
+  endif()
+
+  if(NOT concat_required_SOURCES)
+    message(FATAL_ERROR "sleef_concat_files not passed any SOURCES")
+  endif()
+
+  add_custom_command(
+    OUTPUT ${concat_required_OUTPUT}
+    COMMAND ${CMAKE_COMMAND} -E cat ${concat_required_SOURCES} > ${concat_required_OUTPUT}
+    DEPENDS ${concat_required_SOURCES}
+    COMMAND_EXPAND_LISTS)
+endfunction()
+
 # Settings
 
 set(SLEEF_ALL_SUPPORTED_EXTENSIONS
@@ -41,7 +83,8 @@ set(SLEEF_ALL_SUPPORTED_EXTENSIONS
   SVENOFMA SVE ADVSIMDNOFMA ADVSIMD                     # Aarch64
   NEON32 NEON32VFPV4                                    # Aarch32
   VSX VSXNOFMA VSX3 VSX3NOFMA                           # PPC64
-  VXE VXENOFMA VXE2 VXE2NOFMA	                        # IBM Z
+  VXE VXENOFMA VXE2 VXE2NOFMA                           # IBM Z
+  RVVM1NOFMA RVVM1 RVVM2NOFMA RVVM2                     # RISC-V Vectors
   PUREC_SCALAR PURECFMA_SCALAR                          # Generic type
   CACHE STRING "List of SIMD architectures supported by libsleef."
   )
@@ -51,7 +94,8 @@ set(SLEEF_SUPPORTED_LIBM_EXTENSIONS
   SVENOFMA SVE ADVSIMDNOFMA ADVSIMD                     # Aarch64
   NEON32 NEON32VFPV4                                    # Aarch32
   VSX VSXNOFMA VSX3 VSX3NOFMA                           # PPC64
-  VXE VXENOFMA VXE2 VXE2NOFMA	                        # IBM Z
+  VXE VXENOFMA VXE2 VXE2NOFMA                           # IBM Z
+  RVVM1NOFMA RVVM1 RVVM2NOFMA RVVM2                     # RISC-V Vectors
   PUREC_SCALAR PURECFMA_SCALAR                          # Generic type
   CACHE STRING "List of SIMD architectures supported by libsleef."
   )
@@ -61,7 +105,7 @@ set(SLEEF_SUPPORTED_GNUABI_EXTENSIONS
 )
 
 set(SLEEF_SUPPORTED_QUAD_EXTENSIONS
-  PUREC_SCALAR PURECFMA_SCALAR SSE2 AVX2 AVX512F ADVSIMD SVE VSX VSX3 VXE VXE2)
+  PUREC_SCALAR PURECFMA_SCALAR SSE2 AVX2128 AVX2 AVX512F ADVSIMD SVE VSX VSX3 VXE VXE2 RVVM1 RVVM2)
 
 # MKMASKED_PARAMS
 
@@ -73,44 +117,29 @@ command_arguments(MKMASKED_PARAMS_GNUABI_SVE_sp sve s -4)
 
 #
 
-set(COSTOVERRIDE_AVX512F 10.0)
-set(COSTOVERRIDE_AVX512FNOFMA 10.0)
-set(COSTOVERRIDE_AVX2 2.0)
-set(COSTOVERRIDE_AVX 2.0)
-set(COSTOVERRIDE_NEON32 2.0)
-set(COSTOVERRIDE_NEON32VFPV4 2.0)
-set(COSTOVERRIDE_SVE 10.0)
-set(COSTOVERRIDE_SVENOFMA 10.0)
+set(COSTOVERRIDE_AVX512F 10)
+set(COSTOVERRIDE_AVX512FNOFMA 10)
+set(COSTOVERRIDE_AVX2 2)
+set(COSTOVERRIDE_AVX 2)
+set(COSTOVERRIDE_NEON32 2)
+set(COSTOVERRIDE_NEON32VFPV4 2)
+set(COSTOVERRIDE_SVE 10)
+set(COSTOVERRIDE_SVENOFMA 10)
+set(COSTOVERRIDE_RVVM1 10)
+set(COSTOVERRIDE_RVVM1NOFMA 10)
+set(COSTOVERRIDE_RVVM2 20)
+set(COSTOVERRIDE_RVVM2NOFMA 20)
 
 #
 
-cmake_minimum_required(VERSION 3.4.3)
-
-# Set to NEW when updating cmake_minimum_required to VERSION >= 3.7.2
-if(${CMAKE_VERSION} VERSION_GREATER "3.7.1")
-  cmake_policy(SET CMP0066 OLD)
-endif()
-
-if(${CMAKE_VERSION} VERSION_GREATER "3.14.99")
-  cmake_policy(SET CMP0091 NEW)
-endif()
-
 enable_testing()
 
-set(SLEEF_VERSION_MAJOR 3)
-set(SLEEF_VERSION_MINOR 6)
-set(SLEEF_VERSION_PATCHLEVEL 0)
-set(SLEEF_VERSION ${SLEEF_VERSION_MAJOR}.${SLEEF_VERSION_MINOR}.${SLEEF_VERSION_PATCHLEVEL})
-set(SLEEF_SOVERSION ${SLEEF_VERSION_MAJOR})
+if (SLEEF_ENABLE_CXX)
+  enable_language(CXX)
+endif()
 
-if (ENABLE_CUDA)
-  project(SLEEF
-    VERSION ${SLEEF_VERSION}
-    LANGUAGES C CUDA)
-else()
-  project(SLEEF
-    VERSION ${SLEEF_VERSION}
-    LANGUAGES C)
+if (SLEEF_ENABLE_CUDA)
+  enable_language(CUDA)
 endif()
 
 # For specifying installation directories
@@ -127,17 +156,16 @@ endif()
 # Sanity check for in-source builds which we do not want to happen
 if(sleef_SOURCE_DIR STREQUAL sleef_BINARY_DIR)
   message(FATAL_ERROR "SLEEF does not allow in-source builds.
-You can refer to doc/build-with-cmake.md for instructions on how provide a \
+You can refer to docs/build-with-cmake.md for instructions on how provide a \
 separate build directory. Note: Please remove autogenerated file \
 `CMakeCache.txt` and directory `CMakeFiles` in the current directory.")
 endif()
 
-if(ENABLE_LTO AND BUILD_SHARED_LIBS)
-  message(FATAL_ERROR "ENABLE_LTO and BUILD_SHARED_LIBS cannot be specified at the same time")
-endif(ENABLE_LTO AND BUILD_SHARED_LIBS)
+if(SLEEF_ENABLE_LTO AND BUILD_SHARED_LIBS)
+  message(FATAL_ERROR "SLEEF_ENABLE_LTO and BUILD_SHARED_LIBS cannot be specified at the same time")
+endif(SLEEF_ENABLE_LTO AND BUILD_SHARED_LIBS)
 
-if(ENABLE_LTO)
-  cmake_policy(SET CMP0069 NEW)
+if(SLEEF_ENABLE_LTO)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT supported OUTPUT error)
 endif()
@@ -212,7 +240,7 @@ function(add_host_executable TARGETNAME)
       target_link_options(${TARGETNAME} PRIVATE -arch "${CMAKE_HOST_SYSTEM_PROCESSOR}")
     endif()
   else()
-    add_executable(${TARGETNAME} IMPORTED)
+    add_executable(${TARGETNAME} IMPORTED GLOBAL)
     set_property(TARGET ${TARGETNAME} PROPERTY IMPORTED_LOCATION ${NATIVE_BUILD_DIR}/bin/${TARGETNAME})
   endif()
 endfunction()
@@ -229,6 +257,36 @@ set(TARGET_LIBDFT "sleefdft")
 
 # Check subdirectories
 add_subdirectory("src")
+
+# Install the CMake package config
+include(CMakePackageConfigHelpers)
+
+write_basic_package_version_file(
+    sleefConfigVersion.cmake
+    COMPATIBILITY SameMajorVersion
+)
+
+set(
+    SLEEF_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/sleef"
+    CACHE STRING "CMake package config location relative to the install prefix"
+)
+
+mark_as_advanced(SLEEF_INSTALL_CMAKEDIR)
+
+install(
+    FILES
+    "${PROJECT_SOURCE_DIR}/sleefConfig.cmake"
+    "${PROJECT_BINARY_DIR}/sleefConfigVersion.cmake"
+    DESTINATION "${SLEEF_INSTALL_CMAKEDIR}"
+    COMPONENT sleef_Development
+)
+
+install(
+    EXPORT sleefTargets
+    NAMESPACE sleef::
+    DESTINATION "${SLEEF_INSTALL_CMAKEDIR}"
+    COMPONENT sleef_Development
+)
 
 # Extra messages at configuration time. By default is active, it can be
 # turned off by invoking cmake with "-DSLEEF_SHOW_CONFIG=OFF".
@@ -251,7 +309,7 @@ if(SLEEF_SHOW_CONFIG)
   endif(CMAKE_CROSSCOMPILING)
   message(STATUS "Using option `${SLEEF_C_FLAGS}` to compile libsleef")
   message(STATUS "Building shared libs : " ${BUILD_SHARED_LIBS})
-  message(STATUS "Building static test bins: " ${BUILD_STATIC_TEST_BINS})
+  message(STATUS "Building static test bins: " ${SLEEF_BUILD_STATIC_TEST_BINS})
   message(STATUS "MPFR : " ${LIB_MPFR})
   if (MPFR_INCLUDE_DIR)
     message(STATUS "MPFR header file in " ${MPFR_INCLUDE_DIR})
@@ -261,10 +319,9 @@ if(SLEEF_SHOW_CONFIG)
   message(STATUS "FFTW3 : " ${LIBFFTW3})
   message(STATUS "OPENSSL : " ${OPENSSL_VERSION})
   message(STATUS "SDE : " ${SDE_COMMAND})
-  if (BUILD_INLINE_HEADERS)
+  if (SLEEF_BUILD_INLINE_HEADERS)
     message(STATUS "SED : " ${SED_COMMAND})
   endif()
-  message(STATUS "RUNNING_ON_TRAVIS : " ${RUNNING_ON_TRAVIS})
   message(STATUS "COMPILER_SUPPORTS_OPENMP : " ${COMPILER_SUPPORTS_OPENMP})
   if(ENABLE_GNUABI)
     message(STATUS "A version of SLEEF compatible  with libm and libmvec in GNU libc will be produced (${TARGET_LIBSLEEFGNUABI}.so)")
@@ -281,8 +338,3 @@ if(SLEEF_SHOW_CONFIG)
   endif()
 endif(SLEEF_SHOW_CONFIG)
 
-if (NOT CMAKE_MAKE_PROGRAM MATCHES "ninja")
-  message("")
-  message("*** Note: Parallel build is only supported with Ninja ***")
-  message("")
-endif()

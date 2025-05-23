@@ -34,7 +34,7 @@ static void InlineFunctions(ModelProto& model, const char* input, const inliner:
     inliner::InlineLocalFunctions(model, true);
   // std::cout << "After inlining:\n" << ProtoToString(model) << "\n";
 
-  // The following will ensure basic sanity checks hold after inlining, including
+  // The following will ensure basic safety checks hold after inlining, including
   // absence of duplicate names (multiple assignments to same name).
   checker::check_model(model, true, true);
 }
@@ -76,6 +76,46 @@ square (x) => (y) {
   InlineFunctions(model, code);
   auto num_nodes = model.graph().node_size();
   ASSERT_EQ(num_nodes, 4);
+  auto num_functions = model.functions_size();
+  ASSERT_EQ(num_functions, 0);
+}
+
+// Test that inlining processes subgraphs.
+TEST(FunctionInliner, SubgraphTest) {
+  const char* code = R"ONNX(
+<
+  ir_version: 8,
+  opset_import: [ "" : 10, "local" : 1 ]
+>
+agraph (bool cond, float[N] X) => (float[N] Y)
+{
+  Y = If (cond) <
+    then_branch = then_graph () => (y) {
+        y = local.square (X)
+    },
+    else_branch = else_graph () => (y) {
+        y = local.square (X)
+    }
+  >
+}
+
+<
+  opset_import: [ "" : 10 ],
+  domain: "local",
+  doc_string: "Function square."
+>
+square (x) => (y) {
+  y = Mul (x, x)
+}
+)ONNX";
+
+  ModelProto model;
+  InlineFunctions(model, code);
+  auto& if_node = model.graph().node(0);
+  auto& graph1 = if_node.attribute(0).g();
+  ASSERT_EQ(graph1.node(0).op_type(), "Mul");
+  auto& graph2 = if_node.attribute(1).g();
+  ASSERT_EQ(graph2.node(0).op_type(), "Mul");
   auto num_functions = model.functions_size();
   ASSERT_EQ(num_functions, 0);
 }
@@ -130,6 +170,41 @@ foo (x) => (y) {
   // inlined, it will be renamed into something distinct from "temp" and "temp__1" as
   // both these names occur in the main graph.
   InlineFunctions(model, code);
+}
+
+TEST(FunctionInliner, ValueInfoPropagation) {
+  const char* code = R"ONNX(
+<ir_version: 10, opset_import: [ "" : 17, "local" : 1 ]>
+agraph (float[N] X) => (float[N] Y)
+{
+  result = local.foo (X)
+  Y = Abs (result)
+}
+
+<opset_import: [ "" : 17, "local" : 1 ], domain: "local">
+foo (x) => (y)
+<float[N] temp> {
+  temp = Add(x, x)
+  y = Neg (temp)
+}
+)ONNX";
+
+  ModelProto model;
+  InlineFunctions(model, code);
+  // Check that valueinfo is propagated fron function to main graph.
+  auto& graph = model.graph();
+  auto& temp_new_name = graph.node(0).output(0);
+  auto& valueinfos = graph.value_info();
+  for (auto& valueinfo : valueinfos) {
+    if (valueinfo.name() == temp_new_name) {
+      ASSERT_TRUE(valueinfo.has_type());
+      ASSERT_TRUE(valueinfo.type().has_tensor_type());
+      ASSERT_TRUE(valueinfo.type().tensor_type().has_shape());
+      ASSERT_TRUE(valueinfo.type().tensor_type().shape().dim_size() == 1);
+      return;
+    }
+  }
+  ASSERT_TRUE(false) << "ValueInfo not found";
 }
 
 TEST(FunctionInliner, TwoCallsToSameFunction) {

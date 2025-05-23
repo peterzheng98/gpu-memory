@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -61,9 +61,9 @@ typedef __m256i vuint64;
 
 typedef struct {
   vmask x, y;
-} vmask2;
+} vquad;
 
-typedef vmask2 vargquad;
+typedef vquad vargquad;
 
 //
 
@@ -111,8 +111,6 @@ static INLINE int vtestallones_i_vo64(vopmask g) {
 static INLINE vdouble vcast_vd_d(double d) { return _mm256_set1_pd(d); }
 static INLINE vmask vreinterpret_vm_vd(vdouble vd) { return _mm256_castpd_si256(vd); }
 static INLINE vdouble vreinterpret_vd_vm(vmask vm) { return _mm256_castsi256_pd(vm);  }
-static INLINE vint2 vreinterpret_vi2_vd(vdouble vd) { return _mm256_castpd_si256(vd); }
-static INLINE vdouble vreinterpret_vd_vi2(vint2 vi) { return _mm256_castsi256_pd(vi); }
 
 //
 
@@ -151,6 +149,8 @@ static INLINE vopmask vcast_vo64_vo32(vopmask o) {
   return _mm256_permutevar8x32_epi32(o, _mm256_set_epi32(3, 3, 2, 2, 1, 1, 0, 0));
 }
 
+static INLINE vopmask vcast_vo_i(int i) { return _mm256_set1_epi64x(i ? -1 : 0); }
+
 //
 
 static INLINE vint vrint_vi_vd(vdouble vd) { return _mm256_cvtpd_epi32(vd); }
@@ -162,11 +162,11 @@ static INLINE vfloat vtruncate_vf_vf(vfloat vf) { return _mm256_round_ps(vf, _MM
 static INLINE vdouble vcast_vd_vi(vint vi) { return _mm256_cvtepi32_pd(vi); }
 static INLINE vint vcast_vi_i(int i) { return _mm_set1_epi32(i); }
 
-static INLINE vint2 vcastu_vi2_vi(vint vi) {
+static INLINE vmask vcastu_vm_vi(vint vi) {
   return _mm256_slli_epi64(_mm256_cvtepi32_epi64(vi), 32);
 }
 
-static INLINE vint vcastu_vi_vi2(vint2 vi) {
+static INLINE vint vcastu_vi_vm(vmask vi) {
   return _mm_or_si128(_mm_castps_si128(_mm_shuffle_ps(_mm_castsi128_ps(_mm256_castsi256_si128(vi)), _mm_set1_ps(0), 0x0d)),
   		      _mm_castps_si128(_mm_shuffle_ps(_mm_set1_ps(0), _mm_castsi128_ps(_mm256_extractf128_si256(vi, 1)), 0xd0)));
 }
@@ -174,6 +174,9 @@ static INLINE vint vcastu_vi_vi2(vint2 vi) {
 static INLINE vmask vcast_vm_i_i(int i0, int i1) {
   return _mm256_set_epi32(i0, i1, i0, i1, i0, i1, i0, i1);
 }
+
+static INLINE vmask vcast_vm_i64(int64_t i) { return _mm256_set1_epi64x(i); }
+static INLINE vmask vcast_vm_u64(uint64_t i) { return _mm256_set1_epi64x((uint64_t)i); }
 
 static INLINE vopmask veq64_vo_vm_vm(vmask x, vmask y) { return _mm256_cmpeq_epi64(x, y); }
 static INLINE vmask vadd64_vm_vm_vm(vmask x, vmask y) { return _mm256_add_epi64(x, y); }
@@ -423,7 +426,6 @@ static INLINE void vsscatter2_v_p_i_i_vd(double *ptr, int offset, int step, vdou
 
 static INLINE vfloat vrev21_vf_vf(vfloat d0) { return _mm256_shuffle_ps(d0, d0, (2 << 6) | (3 << 4) | (0 << 2) | (1 << 0)); }
 static INLINE vfloat vreva2_vf_vf(vfloat d0) { d0 = _mm256_permute2f128_ps(d0, d0, 1); return _mm256_shuffle_ps(d0, d0, (1 << 6) | (0 << 4) | (3 << 2) | (2 << 0)); }
-static INLINE vint2 vrev21_vi2_vi2(vint2 i) { return vreinterpret_vi2_vf(vrev21_vf_vf(vreinterpret_vf_vi2(i))); }
 
 static INLINE void vstream_v_p_vf(float *ptr, vfloat v) { _mm256_stream_ps(ptr, v); }
 
@@ -438,14 +440,23 @@ static INLINE void vsscatter2_v_p_i_i_vf(float *ptr, int offset, int step, vfloa
 
 //
 
-static vmask2 vloadu_vm2_p(void *p) {
-  vmask2 vm2;
-  memcpy(&vm2, p, VECTLENDP * 16);
-  return vm2;
+static vquad loadu_vq_p(void *p) {
+  vquad vq;
+  memcpy(&vq, p, VECTLENDP * 16);
+  return vq;
 }
 
-static INLINE vmask2 vcast_vm2_aq(vargquad aq) { return aq; }
-static INLINE vargquad vcast_aq_vm2(vmask2 vm2) { return vm2; }
+static INLINE vquad cast_vq_aq(vargquad aq) {
+  vquad vq;
+  memcpy(&vq, &aq, VECTLENDP * 16);
+  return vq;
+}
+
+static INLINE vargquad cast_aq_vq(vquad vq) {
+  vargquad aq;
+  memcpy(&aq, &vq, VECTLENDP * 16);
+  return aq;
+}
 
 static INLINE int vtestallzeros_i_vo64(vopmask g) {
   return _mm_movemask_epi8(_mm_or_si128(_mm256_extractf128_si256(g, 0), _mm256_extractf128_si256(g, 1))) == 0;
@@ -462,8 +473,8 @@ static INLINE vopmask vgt64_vo_vm_vm(vmask x, vmask y) { return _mm256_cmpgt_epi
 //@#define vsll64_vm_vm_i(x, c) _mm256_slli_epi64(x, c)
 //@#define vsrl64_vm_vm_i(x, c) _mm256_srli_epi64(x, c)
 
-static INLINE vmask vcast_vm_vi(vint vi) { return _mm256_cvtepi32_epi64(vi); }
-static INLINE vint vcast_vi_vm(vmask vm) {
+static INLINE vmask vcast_vm_vi(vint vi) { return _mm256_cvtepi32_epi64(vi); } // signed 32-bit => 64-bit
+static INLINE vint vcast_vi_vm(vmask vm) { // signed 32-bit <= 64-bit
   return _mm_or_si128(_mm_castps_si128(_mm_shuffle_ps(_mm_castsi128_ps(_mm256_castsi256_si128(vm)), _mm_set1_ps(0), 0x08)),
   		      _mm_castps_si128(_mm_shuffle_ps(_mm_set1_ps(0), _mm_castsi128_ps(_mm256_extractf128_si256(vm, 1)), 0x80)));
 }

@@ -18,7 +18,7 @@
 namespace libkineto {
 
 struct LoggerTypeName {
-  constexpr LoggerTypeName(const char* n, LoggerOutputType t) : name(n), type(t) {};
+  constexpr LoggerTypeName(const char* n, LoggerOutputType t) : name(n), type(t) {}
   const char* name;
   LoggerOutputType type;
 };
@@ -27,8 +27,8 @@ static constexpr std::array<LoggerTypeName, LoggerTypeCount + 1> LoggerMap{{
     {"VERBOSE", LoggerOutputType::VERBOSE},
     {"INFO", LoggerOutputType::INFO},
     {"WARNING", LoggerOutputType::WARNING},
-    {"ERROR", LoggerOutputType::ERROR},
     {"STAGE", LoggerOutputType::STAGE},
+    {"ERROR", LoggerOutputType::ERROR},
     {"???", LoggerOutputType::ENUM_COUNT}
 }};
 

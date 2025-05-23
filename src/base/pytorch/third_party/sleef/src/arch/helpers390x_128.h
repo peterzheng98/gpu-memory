@@ -1,4 +1,4 @@
-//          Copyright Naoki Shibata 2010 - 2019.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -68,9 +68,9 @@ typedef __vector unsigned long long vuint64;
 
 typedef struct {
   vmask x, y;
-} vmask2;
+} vquad;
 
-typedef vmask2 vargquad;
+typedef vquad vargquad;
 
 //
 
@@ -120,15 +120,14 @@ static INLINE void vstoreu_v_p_vf(float *p, vfloat v) { p[0] = v[0]; p[1] = v[1]
 static INLINE void vscatter2_v_p_i_i_vd(double *p, int offset, int step, vdouble v) { vstore_v_p_vd((double *)(&p[2*offset]), v); }
 
 static INLINE vdouble vgather_vd_p_vi(const double *p, vint vi) {
-  int a[VECTLENDP];
   return ((vdouble) { p[vi[0]], p[vi[1]] });
 }
 
 static INLINE vfloat vgather_vf_p_vi2(const float *p, vint2 vi2) {
-  int a[VECTLENSP];
   return ((vfloat) { p[vi2[0]], p[vi2[1]], p[vi2[2]], p[vi2[3]] });
 }
 
+static INLINE vopmask vcast_vo_i(int i) { return (vopmask) { i ? (long long)-1 : 0, i ? (long long)-1 : 0 }; }
 static INLINE vint vcast_vi_i(int i) { return (vint) { i, i }; }
 static INLINE vint2 vcast_vi2_i(int i) { return (vint2) { i, i, i, i }; }
 static INLINE vfloat vcast_vf_f(float f) { return (vfloat) { f, f, f, f }; }
@@ -148,8 +147,6 @@ static INLINE vint2 vtruncate_vi2_vf(vfloat vf) { return (vint) { vf[0], vf[1], 
 
 static INLINE vmask vreinterpret_vm_vd(vdouble vd) { return (vmask)vd; }
 static INLINE vdouble vreinterpret_vd_vm(vmask vm) { return (vdouble)vm; }
-static INLINE vint2 vreinterpret_vi2_vd(vdouble vd) { return (vint2)vd; }
-static INLINE vdouble vreinterpret_vd_vi2(vint2 vi) { return (vdouble)vi; }
 
 static INLINE vmask vreinterpret_vm_vf(vfloat vf) { return (vmask)vf; }
 static INLINE vfloat vreinterpret_vf_vm(vmask vm) { return (vfloat)vm; }
@@ -201,8 +198,11 @@ static INLINE vopmask vcast_vo32_vo64(vopmask g) { return (vopmask)(vint) { g[0]
 static INLINE vopmask vcast_vo64_vo32(vopmask g) { return (vopmask) { ((vint)g)[0] != 0 ? 0xffffffffffffffffLL : 0, ((vint)g)[1] != 0 ? 0xffffffffffffffffLL : 0 }; }
 
 static INLINE vmask vcast_vm_i_i(int h, int l) { return (vmask)(vint){ h, l, h, l }; }
-static INLINE vint2 vcastu_vi2_vi(vint vi) { return (vint2){ vi[0], 0, vi[1], 0 }; }
-static INLINE vint vcastu_vi_vi2(vint2 vi2) { return (vint){ vi2[0], vi2[2] }; }
+static INLINE vmask vcast_vm_i64(int64_t i) { return (vmask)(vint64){ i, i }; }
+static INLINE vmask vcast_vm_u64(uint64_t i) { return (vmask)(vuint64){ i, i }; }
+
+static INLINE vmask vcastu_vm_vi(vint vi) { return (vmask)(vint2){ vi[0], 0, vi[1], 0 }; }
+static INLINE vint vcastu_vi_vm(vmask vi2) { return (vint){ vi2[0] >> 32, vi2[1] >> 32 }; }
 
 static INLINE vint vreinterpretFirstHalf_vi_vi2(vint2 vi2) { return (vint){ vi2[0], vi2[1] }; }
 static INLINE vint2 vreinterpretFirstHalf_vi2_vi(vint vi) { return (vint2){ vi[0], vi[1], 0, 0 }; }
@@ -211,7 +211,6 @@ static INLINE vdouble vrev21_vd_vd(vdouble vd) { return (vdouble) { vd[1], vd[0]
 static INLINE vdouble vreva2_vd_vd(vdouble vd) { return vd; }
 static INLINE vfloat vrev21_vf_vf(vfloat vd) { return (vfloat) { vd[1], vd[0], vd[3], vd[2] }; }
 static INLINE vfloat vreva2_vf_vf(vfloat vd) { return (vfloat) { vd[2], vd[3], vd[0], vd[1] }; }
-static INLINE vint2 vrev21_vi2_vi2(vint2 i) { return vreinterpret_vi2_vf(vrev21_vf_vf(vreinterpret_vf_vi2(i))); }
 
 static INLINE vopmask veq64_vo_vm_vm(vmask x, vmask y) {
   return (vopmask) { x[0] == y[0] ? 0xffffffffffffffffLL : 0, x[1] == y[1] ? 0xffffffffffffffffLL : 0 };
@@ -411,18 +410,18 @@ static INLINE vint2 vrint_vi2_vf(vfloat vf) {
 
 //
 
-static vmask2 vloadu_vm2_p(void *p) {
-  vmask2 vm2;
-  memcpy(&vm2, p, VECTLENDP * 16);
-  return vm2;
+static vquad loadu_vq_p(void *p) {
+  vquad vq;
+  memcpy(&vq, p, VECTLENDP * 16);
+  return vq;
 }
 
-static INLINE vmask2 vcast_vm2_aq(vargquad aq) {
-  vmask2 m = { aq.y, aq.x };
+static INLINE vquad cast_vq_aq(vargquad aq) {
+  vquad m = { aq.y, aq.x };
   return m;
 }
-static INLINE vargquad vcast_aq_vm2(vmask2 vm2) {
-  vargquad a = { vm2.y, vm2.x };
+static INLINE vargquad cast_aq_vq(vquad vq) {
+  vargquad a = { vq.y, vq.x };
   return a;
 }
 

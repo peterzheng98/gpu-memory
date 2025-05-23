@@ -113,7 +113,7 @@ def vertical_flip_image(image: torch.Tensor) -> torch.Tensor:
 
 
 @_register_kernel_internal(vertical_flip, PIL.Image.Image)
-def _vertical_flip_image_pil(image: PIL.Image) -> PIL.Image:
+def _vertical_flip_image_pil(image: PIL.Image.Image) -> PIL.Image.Image:
     return _FP.vflip(image)
 
 
@@ -159,21 +159,21 @@ vflip = vertical_flip
 
 
 def _compute_resized_output_size(
-    canvas_size: Tuple[int, int], size: List[int], max_size: Optional[int] = None
+    canvas_size: Tuple[int, int], size: Optional[List[int]], max_size: Optional[int] = None
 ) -> List[int]:
     if isinstance(size, int):
         size = [size]
-    elif max_size is not None and len(size) != 1:
+    elif max_size is not None and size is not None and len(size) != 1:
         raise ValueError(
-            "max_size should only be passed if size specifies the length of the smaller edge, "
+            "max_size should only be passed if size is None or specifies the length of the smaller edge, "
             "i.e. size should be an int or a sequence of length 1 in torchscript mode."
         )
-    return __compute_resized_output_size(canvas_size, size=size, max_size=max_size)
+    return __compute_resized_output_size(canvas_size, size=size, max_size=max_size, allow_size_none=True)
 
 
 def resize(
     inpt: torch.Tensor,
-    size: List[int],
+    size: Optional[List[int]],
     interpolation: Union[InterpolationMode, int] = InterpolationMode.BILINEAR,
     max_size: Optional[int] = None,
     antialias: Optional[bool] = True,
@@ -194,7 +194,7 @@ def resize(
 # according to our benchmarks on eager, non-AVX CPUs should still prefer u8->f32->interpolate->u8 path for bilinear
 def _do_native_uint8_resize_on_cpu(interpolation: InterpolationMode) -> bool:
     if interpolation == InterpolationMode.BILINEAR:
-        if torch._dynamo.is_compiling():
+        if torch.compiler.is_compiling():
             return True
         else:
             return "AVX2" in torch.backends.cpu.get_cpu_capability()
@@ -206,7 +206,7 @@ def _do_native_uint8_resize_on_cpu(interpolation: InterpolationMode) -> bool:
 @_register_kernel_internal(resize, tv_tensors.Image)
 def resize_image(
     image: torch.Tensor,
-    size: List[int],
+    size: Optional[List[int]],
     interpolation: Union[InterpolationMode, int] = InterpolationMode.BILINEAR,
     max_size: Optional[int] = None,
     antialias: Optional[bool] = True,
@@ -310,7 +310,7 @@ def __resize_image_pil_dispatch(
     return _resize_image_pil(image, size=size, interpolation=interpolation, max_size=max_size)
 
 
-def resize_mask(mask: torch.Tensor, size: List[int], max_size: Optional[int] = None) -> torch.Tensor:
+def resize_mask(mask: torch.Tensor, size: Optional[List[int]], max_size: Optional[int] = None) -> torch.Tensor:
     if mask.ndim < 3:
         mask = mask.unsqueeze(0)
         needs_squeeze = True
@@ -334,7 +334,10 @@ def _resize_mask_dispatch(
 
 
 def resize_bounding_boxes(
-    bounding_boxes: torch.Tensor, canvas_size: Tuple[int, int], size: List[int], max_size: Optional[int] = None
+    bounding_boxes: torch.Tensor,
+    canvas_size: Tuple[int, int],
+    size: Optional[List[int]],
+    max_size: Optional[int] = None,
 ) -> Tuple[torch.Tensor, Tuple[int, int]]:
     old_height, old_width = canvas_size
     new_height, new_width = _compute_resized_output_size(canvas_size, size=size, max_size=max_size)
@@ -353,7 +356,7 @@ def resize_bounding_boxes(
 
 @_register_kernel_internal(resize, tv_tensors.BoundingBoxes, tv_tensor_wrapper=False)
 def _resize_bounding_boxes_dispatch(
-    inpt: tv_tensors.BoundingBoxes, size: List[int], max_size: Optional[int] = None, **kwargs: Any
+    inpt: tv_tensors.BoundingBoxes, size: Optional[List[int]], max_size: Optional[int] = None, **kwargs: Any
 ) -> tv_tensors.BoundingBoxes:
     output, canvas_size = resize_bounding_boxes(
         inpt.as_subclass(torch.Tensor), inpt.canvas_size, size, max_size=max_size
@@ -364,7 +367,7 @@ def _resize_bounding_boxes_dispatch(
 @_register_kernel_internal(resize, tv_tensors.Video)
 def resize_video(
     video: torch.Tensor,
-    size: List[int],
+    size: Optional[List[int]],
     interpolation: Union[InterpolationMode, int] = InterpolationMode.BILINEAR,
     max_size: Optional[int] = None,
     antialias: Optional[bool] = True,
@@ -525,6 +528,13 @@ def _get_inverse_affine_matrix(
 
 
 def _compute_affine_output_size(matrix: List[float], w: int, h: int) -> Tuple[int, int]:
+    if torch.compiler.is_compiling() and not torch.jit.is_scripting():
+        return _compute_affine_output_size_python(matrix, w, h)
+    else:
+        return _compute_affine_output_size_tensor(matrix, w, h)
+
+
+def _compute_affine_output_size_tensor(matrix: List[float], w: int, h: int) -> Tuple[int, int]:
     # Inspired of PIL implementation:
     # https://github.com/python-pillow/Pillow/blob/11de3318867e4398057373ee9f12dcb33db7335c/src/PIL/Image.py#L2054
 
@@ -557,6 +567,29 @@ def _compute_affine_output_size(matrix: List[float], w: int, h: int) -> Tuple[in
     cmin = min_vals.mul_(inv_tol).trunc_().mul_(tol).floor_()
     size = cmax.sub_(cmin)
     return int(size[0]), int(size[1])  # w, h
+
+
+def _compute_affine_output_size_python(matrix: List[float], w: int, h: int) -> Tuple[int, int]:
+    # Mostly copied from PIL implementation:
+    # The only difference is with transformed points as input matrix has zero translation part here and
+    # PIL has a centered translation part.
+    # https://github.com/python-pillow/Pillow/blob/11de3318867e4398057373ee9f12dcb33db7335c/src/PIL/Image.py#L2054
+
+    a, b, c, d, e, f = matrix
+    xx = []
+    yy = []
+
+    half_w = 0.5 * w
+    half_h = 0.5 * h
+    for x, y in ((-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)):
+        nx = a * x + b * y + c
+        ny = d * x + e * y + f
+        xx.append(nx + half_w)
+        yy.append(ny + half_h)
+
+    nw = math.ceil(max(xx)) - math.floor(min(xx))
+    nh = math.ceil(max(yy)) - math.floor(min(yy))
+    return int(nw), int(nh)  # w, h
 
 
 def _apply_grid_transform(img: torch.Tensor, grid: torch.Tensor, mode: str, fill: _FillTypeJIT) -> torch.Tensor:
@@ -595,8 +628,7 @@ def _apply_grid_transform(img: torch.Tensor, grid: torch.Tensor, mode: str, fill
         fill_list = fill if isinstance(fill, (tuple, list)) else [float(fill)]  # type: ignore[arg-type]
         fill_img = torch.tensor(fill_list, dtype=float_img.dtype, device=float_img.device).view(1, -1, 1, 1)
         if mode == "nearest":
-            bool_mask = mask < 0.5
-            float_img[bool_mask] = fill_img.expand_as(float_img)[bool_mask]
+            float_img = torch.where(mask < 0.5, fill_img.expand_as(float_img), float_img)
         else:  # 'bilinear'
             # The following is mathematically equivalent to:
             # img * mask + (1.0 - mask) * fill = img * mask - fill * mask + fill = mask * (img - fill) + fill
@@ -968,6 +1000,21 @@ def rotate_image(
     center: Optional[List[float]] = None,
     fill: _FillTypeJIT = None,
 ) -> torch.Tensor:
+    angle = angle % 360  # shift angle to [0, 360) range
+
+    # fast path: transpose without affine transform
+    if center is None:
+        if angle == 0:
+            return image.clone()
+        if angle == 180:
+            return torch.rot90(image, k=2, dims=(-2, -1))
+
+        if expand or image.shape[-1] == image.shape[-2]:
+            if angle == 90:
+                return torch.rot90(image, k=1, dims=(-2, -1))
+            if angle == 270:
+                return torch.rot90(image, k=3, dims=(-2, -1))
+
     interpolation = _check_interpolation(interpolation)
 
     input_height, input_width = image.shape[-2:]

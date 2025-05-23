@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -24,11 +24,13 @@
 #include "common/utils.hpp"
 
 #include "cpu/cpu_convolution_pd.hpp"
+#include "cpu/scale_utils.hpp"
 
 #include "cpu/x64/amx_tile_configure.hpp"
 #include "cpu/x64/cpu_barrier.hpp"
 #include "cpu/x64/cpu_reducer.hpp"
 #include "cpu/x64/jit_avx512_core_amx_conv_kernel.hpp"
+#include "cpu/x64/jit_avx512_core_scale_precompute.hpp"
 #include "cpu/x64/jit_transpose_utils.hpp"
 
 namespace dnnl {
@@ -69,15 +71,18 @@ struct jit_avx512_core_amx_convolution_fwd_t : public primitive_t {
                                     | smask_t::sum_dt,
                             dst_md(0)->data_type);
 
-            bool ok = is_fwd()
-                    && set_default_alg_kind(alg_kind::convolution_direct)
-                    && (is_bf16_convolution || is_int8_convolution)
-                    && !has_zero_dim_memory() && attr_scales_ok()
-                    && attr()->post_ops_.check_sum_consistency(
-                            dst_md(0)->data_type,
-                            /* is_int8 */ is_int8_convolution)
-                    && zero_points_ok();
-            if (!ok) return status::unimplemented;
+            VDISPATCH_CONV(is_fwd(), VERBOSE_BAD_PROPKIND);
+            VDISPATCH_CONV((is_bf16_convolution || is_int8_convolution),
+                    VERBOSE_UNSUPPORTED_DT_CFG);
+            VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
+                    VERBOSE_BAD_ALGORITHM);
+            VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
+            VDISPATCH_CONV(attr()->post_ops_.check_sum_consistency(
+                                   dst_md(0)->data_type,
+                                   /* is_int8 */ is_int8_convolution),
+                    VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_CONV(attr_scales_ok(), VERBOSE_UNSUPPORTED_SCALES_CFG);
+            VDISPATCH_CONV(zero_points_ok(), VERBOSE_UNSUPPORTED_ZP_CFG);
 
             CHECK(jit_avx512_core_amx_fwd_kernel_t::init_conf(jcp_, *desc(),
                     src_md_, weights_md_, dst_md_, bias_md_, attr_,
@@ -109,7 +114,21 @@ struct jit_avx512_core_amx_convolution_fwd_t : public primitive_t {
         CHECK(safe_ptr_assign(kernel_,
                 new jit_avx512_core_amx_fwd_kernel_t(
                         pd()->jcp_, *pd()->attr(), *pd()->dst_md(0))));
-        return kernel_->create_kernel();
+        CHECK(kernel_->create_kernel());
+
+        // JIT to precompute scales
+        const bool is_jit_supported = mayiuse(avx512_core);
+        const auto attr = pd()->attr();
+        if (is_jit_supported && pd()->OC() > 1 && req_copy_scales(attr)) {
+            const auto &attr_scales = attr->scales_;
+            int wei_scale_mask = attr_scales.get(DNNL_ARG_WEIGHTS).mask_;
+            if (wei_scale_mask != 0) {
+                CHECK(safe_ptr_assign(jit_scale_precompute_,
+                        new jit_avx512_core_scale_precompute_t(attr)));
+                CHECK(jit_scale_precompute_->create_kernel());
+            }
+        }
+        return status::success;
     }
 
     status_t execute(const exec_ctx_t &ctx) const override {
@@ -129,6 +148,7 @@ private:
             const memory_tracking::grantor_t &scratchpad) const;
 
     std::unique_ptr<jit_avx512_core_amx_fwd_kernel_t> kernel_;
+    std::unique_ptr<jit_avx512_core_scale_precompute_t> jit_scale_precompute_;
 };
 
 struct jit_avx512_core_amx_convolution_bwd_data_t : public primitive_t {
@@ -148,11 +168,14 @@ struct jit_avx512_core_amx_convolution_bwd_data_t : public primitive_t {
                     && utils::one_of(
                             diff_src_md_.data_type, data_type::f32, wdt);
 
-            bool ok = desc()->prop_kind == prop_kind::backward_data
-                    && set_default_alg_kind(alg_kind::convolution_direct)
-                    && is_xf16_convolution && !has_zero_dim_memory()
-                    && attr()->has_default_values();
-            if (!ok) return status::unimplemented;
+            VDISPATCH_CONV(desc()->prop_kind == prop_kind::backward_data,
+                    VERBOSE_BAD_PROPKIND);
+            VDISPATCH_CONV(is_xf16_convolution, VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
+                    VERBOSE_BAD_ALGORITHM);
+            VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
+            VDISPATCH_CONV(
+                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
 
             status_t status = jit_avx512_core_amx_bwd_data_kernel_t::init_conf(
                     jcp_, *desc(), diff_src_md_, weights_md_, diff_dst_md_,
@@ -176,7 +199,21 @@ struct jit_avx512_core_amx_convolution_bwd_data_t : public primitive_t {
         CHECK(safe_ptr_assign(kernel_,
                 new jit_avx512_core_amx_bwd_data_kernel_t(
                         pd()->jcp_, *pd()->attr())));
-        return kernel_->create_kernel();
+        CHECK(kernel_->create_kernel());
+
+        // JIT to precompute scales
+        const bool is_jit_supported = mayiuse(avx512_core);
+        const auto attr = pd()->attr();
+        if (is_jit_supported && pd()->OC() > 1 && req_copy_scales(attr)) {
+            const auto &attr_scales = attr->scales_;
+            int wei_scale_mask = attr_scales.get(DNNL_ARG_WEIGHTS).mask_;
+            if (wei_scale_mask != 0) {
+                CHECK(safe_ptr_assign(jit_scale_precompute_,
+                        new jit_avx512_core_scale_precompute_t(attr)));
+                CHECK(jit_scale_precompute_->create_kernel());
+            }
+        }
+        return status::success;
     }
 
     status_t execute(const exec_ctx_t &ctx) const override {
@@ -193,6 +230,7 @@ private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_avx512_core_amx_bwd_data_kernel_t> kernel_;
+    std::unique_ptr<jit_avx512_core_scale_precompute_t> jit_scale_precompute_;
 };
 
 struct jit_avx512_core_amx_convolution_bwd_weights_t : public primitive_t {
@@ -206,19 +244,23 @@ struct jit_avx512_core_amx_convolution_bwd_weights_t : public primitive_t {
                 jit_avx512_core_amx_convolution_bwd_weights_t);
 
         status_t init(engine_t *engine) {
-            bool ok = true && is_bwd_w()
-                    && set_default_alg_kind(alg_kind::convolution_direct)
-                    && (expect_data_types(data_type::bf16, data_type::bf16,
-                                data_type::undef, data_type::bf16,
-                                data_type::undef)
-                            || expect_data_types(data_type::bf16,
-                                    data_type::f32, data_type::undef,
-                                    data_type::bf16, data_type::undef))
-                    && IMPLICATION(with_bias(),
-                            utils::one_of(diff_bias_md_.data_type,
-                                    data_type::f32, data_type::bf16))
-                    && attr()->has_default_values() && !has_zero_dim_memory();
-            if (!ok) return status::unimplemented;
+            using namespace data_type;
+            VDISPATCH_CONV(is_bwd_w(), VERBOSE_BAD_PROPKIND);
+            VDISPATCH_CONV(
+                    (expect_data_types(bf16, bf16, data_type::undef, bf16,
+                             data_type::undef)
+                            || expect_data_types(bf16, f32, data_type::undef,
+                                    bf16, data_type::undef)),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
+                    VERBOSE_BAD_ALGORITHM);
+            VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
+            VDISPATCH_CONV(
+                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(
+                    IMPLICATION(with_bias(),
+                            utils::one_of(diff_bias_md_.data_type, f32, bf16)),
+                    VERBOSE_UNSUPPORTED_BIAS_CFG);
 
             status_t status
                     = jit_avx512_core_amx_bwd_weights_kernel_t::init_conf(jcp_,

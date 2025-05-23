@@ -30,7 +30,7 @@ constexpr unsigned int kLinkAsyncCpuGpu = 2;
 class GenericTraceActivity : public ITraceActivity {
  public:
   GenericTraceActivity()
-      : activityType(ActivityType::ENUM_COUNT), traceSpan_(NULL) {}
+      : activityType(ActivityType::ENUM_COUNT), traceSpan_(nullptr) {}
 
   GenericTraceActivity(
       const TraceSpan& trace, ActivityType type, const std::string& name)
@@ -121,7 +121,7 @@ class GenericTraceActivity : public ITraceActivity {
     return json.str();
   }
 
-  virtual ~GenericTraceActivity() override {};
+  virtual ~GenericTraceActivity() override {}
 
   int64_t startTime{0};
   int64_t endTime{0};

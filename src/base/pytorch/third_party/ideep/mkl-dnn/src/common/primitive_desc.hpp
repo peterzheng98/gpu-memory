@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -48,12 +48,12 @@ struct primitive_t;
 // Primitive descriptor implementation
 struct primitive_desc_t : public c_compatible {
     primitive_desc_t(const primitive_attr_t *attr, primitive_kind_t kind)
-        : attr_(*attr), kind_(kind), pd_iterator_offset_(0) {
+        : attr_(*attr), kind_(kind), pd_iterator_offset_(0), skip_idx_(-1) {
         is_initialized_ = is_initialized_ && attr_.is_initialized();
     }
 
     primitive_desc_t(primitive_kind_t kind)
-        : kind_(kind), pd_iterator_offset_(0) {}
+        : kind_(kind), pd_iterator_offset_(0), skip_idx_(-1) {}
 
     bool is_initialized() const { return is_initialized_; }
 
@@ -69,9 +69,14 @@ struct primitive_desc_t : public c_compatible {
     }
 
     // Returns `info` string with actual md tags and non-dense strides and dims
-    // if runtime dimensions were requested.
+    //     if runtime dimensions were requested.
     // Note: doesn't use `pd_info_t` object since it's prohibited to change the
-    // state of primitive desc at `execute` time.
+    //     state of primitive desc at `execute` time.
+    // Note: lives in `primitive_desc_t` because it relies on
+    //     `const char *info(...)`, which relies on its member `info_`, which is
+    //     not available in verbose translation unit.
+    // Note: requires all internals to be defined for ONEDNN_VERBOSE=OFF, but
+    //     doesn't require any special handling since `get_verbose` is `false`.
     std::string info_with_runtime_dims(engine_t *engine,
             const memory_desc_t *src_md, const memory_desc_t *wei_md,
             const memory_desc_t *bia_md, const memory_desc_t *dst_md) {
@@ -394,11 +399,13 @@ struct primitive_desc_t : public c_compatible {
     virtual const char *name() const = 0;
 
     int pd_iterator_offset() const { return pd_iterator_offset_; }
+    int skip_idx() const { return skip_idx_; }
 
 protected:
     primitive_attr_t attr_;
     primitive_kind_t kind_;
     int pd_iterator_offset_;
+    int skip_idx_;
 
     memory_desc_t scratchpad_md_;
 
@@ -409,6 +416,7 @@ protected:
 
 protected:
     void init_pd_iterator_offset(int offset) { pd_iterator_offset_ = offset; }
+    void init_skip_idx(int skip_idx) { skip_idx_ = skip_idx; }
 
     /** compares ws between fwd_pd and this (make sense to use for bwd_pd)
      * Expectation: this already set workspace, and this workspace should

@@ -37,6 +37,7 @@ extern "C" {
   void suppressLibkinetoLogMessages();
   int InitializeInjection(void);
   void libkineto_init(bool cpuOnly, bool logOnError);
+  bool hasTestEnvVar();
 }
 
 namespace libkineto {
@@ -152,7 +153,6 @@ class LibkinetoApi {
   ClientInterface* client_{};
   int32_t clientRegisterThread_{0};
 
-  bool isLoaded_{false};
   std::vector<ChildActivityProfilerFactory> childProfilerFactories_;
 };
 

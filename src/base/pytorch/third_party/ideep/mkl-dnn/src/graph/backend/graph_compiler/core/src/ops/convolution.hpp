@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2020-2023 Intel Corporation
+ * Copyright 2020-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,9 +41,7 @@ inline sc_dims get_dilations(const any_map_t &attr) {
     return dilations;
 }
 
-class SC_INTERNAL_API conv_fwd_core_op_t
-    : public tunable_op_t,
-      public op_traits::batchwise_shrinkable_t {
+class SC_INTERNAL_API conv_fwd_core_op_t : public tunable_op_t {
 public:
     conv_fwd_core_op_t(const std::vector<graph_tensor_ptr> &ins,
             const std::vector<graph_tensor_ptr> &outs, const any_map_t &attrs);
@@ -62,7 +60,7 @@ public:
     static void infer_auto_pad(sc_graph_t &owner_graph,
             const sc_dims &input_dims, const sc_dims &weight_dims,
             const sc_dims &stride, const sc_dims &dilation, any_map_t &attrs,
-            bool is_same_upper);
+            bool is_same_upper, bool is_NGCX_layout = false);
     sc_data_type_t infer_out_dtype(const sc_data_type_t &input_dtype,
             const sc_data_type_t &weight_dtype);
     void check_dtypes(const sc_data_type_t &data_dtype,
@@ -70,16 +68,13 @@ public:
             const sc_data_type_t &out_dtype = datatypes::undef);
     sc_op_ptr do_compensations(sc_graph_t &g, const context_ptr &ctx) override;
     sc_op_ptr get_data_compensation(sc_graph_t &g);
-    sc_op_ptr get_weight_compensation(sc_graph_t &g);
+    std::vector<sc_op_ptr> get_s8s8_and_weight_compensation(
+            sc_graph_t &g, bool s8s8_compensation);
     sc_op_ptr get_constant_compensation(sc_graph_t &g);
     bool use_nested_conv_fwd_generator();
-    bool use_conv1d();
-    sc_dims get_bwise_fuse_shrink_dims() override;
-    void collect_shrinked_lt_map(int bw_size, gt2gt_map &bw_lt_map) override;
-    void collect_shrinked_axis_map(
-            int bw_size, gt2axis_map &bw_axis_map) override;
-    void infer_slice_ranges(
-            fslice_map &fsmap, infer_status_map_t &stat_map) override;
+    bool use_conv1d(const context_ptr &ctx);
+    infer_status_code infer_slice_ranges(
+            const context_ptr &ctx, fslice_map &fsmap) override;
 
     void set_config_by_key(
             const op_dispatch_key_t &key, const context_ptr &ctx) override;
@@ -89,6 +84,7 @@ public:
     std::vector<int> get_impl_dispatch_candidates(
             const context_ptr &ctx) override;
     shape_rl_vec get_dynamic_shape_relations() const override;
+    void calculate_dynamic_shape_expression() override;
     static shape_rl_vec get_shape_relations_impl(const sc_dims &data_plain_dims,
             const sc_dims &weight_plain_dims, const sc_dims &out_plain_dims,
             const any_map_t &attrs);
@@ -109,10 +105,10 @@ public:
             override;
     body_generator_ptr create_generator() override;
     float get_gflop() override;
-    void infer_slice_ranges(
-            fslice_map &fsmap, infer_status_map_t &stat_map) override {
+    infer_status_code infer_slice_ranges(
+            const context_ptr &ctx, fslice_map &fsmap) override {
         // TODO(XXX)
-        stat_map.append_ops_by_status(this, infer_status_code::FAIL);
+        return infer_status_code::FAIL;
     }
     bool use_nested_generator();
 
@@ -131,10 +127,10 @@ public:
             override;
     body_generator_ptr create_generator() override;
     float get_gflop() override;
-    void infer_slice_ranges(
-            fslice_map &fsmap, infer_status_map_t &stat_map) override {
+    infer_status_code infer_slice_ranges(
+            const context_ptr &ctx, fslice_map &fsmap) override {
         // TODO(XXX)
-        stat_map.append_ops_by_status(this, infer_status_code::FAIL);
+        return infer_status_code::FAIL;
     }
     bool use_nested_generator();
 

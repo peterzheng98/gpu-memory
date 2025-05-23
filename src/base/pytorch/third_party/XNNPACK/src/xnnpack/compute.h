@@ -11,18 +11,22 @@
 
 #include <xnnpack.h>
 #include <xnnpack/common.h>
+#include <xnnpack/config.h>
 #include <xnnpack/math.h>
-#include <xnnpack/params.h>
 
 
 enum xnn_parallelization_type {
   xnn_parallelization_type_invalid = 0,
   xnn_parallelization_type_1d,
+  xnn_parallelization_type_1d_with_thread,
   xnn_parallelization_type_1d_tile_1d,
   xnn_parallelization_type_2d,
+  xnn_parallelization_type_2d_with_thread,
   xnn_parallelization_type_2d_tile_1d,
   xnn_parallelization_type_2d_tile_2d,
   xnn_parallelization_type_3d,
+  xnn_parallelization_type_3d_tile_1d,
+  xnn_parallelization_type_3d_tile_1d_with_thread,
   xnn_parallelization_type_3d_tile_2d,
   xnn_parallelization_type_4d,
   xnn_parallelization_type_4d_tile_2d,
@@ -30,7 +34,10 @@ enum xnn_parallelization_type {
   xnn_parallelization_type_5d_tile_2d,
   xnn_parallelization_type_6d_tile_2d,
 #if XNN_MAX_UARCH_TYPES > 1
+  xnn_parallelization_type_2d_tile_1d_with_uarch,
   xnn_parallelization_type_2d_tile_2d_with_uarch,
+  xnn_parallelization_type_3d_tile_1d_with_uarch,
+  xnn_parallelization_type_3d_tile_1d_with_uarch_with_thread,
   xnn_parallelization_type_3d_tile_2d_with_uarch,
   xnn_parallelization_type_4d_tile_2d_with_uarch,
 #endif  // XNN_MAX_UARCH_TYPES > 1
@@ -40,11 +47,15 @@ struct compute_parameters {
   enum xnn_parallelization_type type;
   union {
     pthreadpool_task_1d_t task_1d;
+    pthreadpool_task_1d_with_thread_t task_1d_with_thread;
     pthreadpool_task_1d_tile_1d_t task_1d_tile_1d;
     pthreadpool_task_2d_t task_2d;
+    pthreadpool_task_2d_with_thread_t task_2d_with_thread;
     pthreadpool_task_2d_tile_1d_t task_2d_tile_1d;
     pthreadpool_task_2d_tile_2d_t task_2d_tile_2d;
     pthreadpool_task_3d_t task_3d;
+    pthreadpool_task_3d_tile_1d_t task_3d_tile_1d;
+    pthreadpool_task_3d_tile_1d_with_thread_t task_3d_tile_1d_with_thread;
     pthreadpool_task_3d_tile_2d_t task_3d_tile_2d;
     pthreadpool_task_4d_t task_4d;
     pthreadpool_task_4d_tile_2d_t task_4d_tile_2d;
@@ -52,11 +63,17 @@ struct compute_parameters {
     pthreadpool_task_5d_tile_2d_t task_5d_tile_2d;
     pthreadpool_task_6d_tile_2d_t task_6d_tile_2d;
 #if XNN_MAX_UARCH_TYPES > 1
+    pthreadpool_task_2d_tile_1d_with_id_t task_2d_tile_1d_with_id;
     pthreadpool_task_2d_tile_2d_with_id_t task_2d_tile_2d_with_id;
+    pthreadpool_task_3d_tile_1d_with_id_t task_3d_tile_1d_with_id;
+    pthreadpool_task_3d_tile_1d_with_id_with_thread_t task_3d_tile_1d_with_id_with_thread;
     pthreadpool_task_3d_tile_2d_with_id_t task_3d_tile_2d_with_id;
     pthreadpool_task_4d_tile_2d_with_id_t task_4d_tile_2d_with_id;
 #endif  // XNN_MAX_UARCH_TYPES > 1
   };
+  // Offset of the invocation context w.r.t. xnn_operator.context
+  // Typically 0, but can be non-zero when an operator does multiple invocations.
+  size_t context_offset;
   size_t range[6];
   size_t tile[2];
 };
@@ -168,20 +185,139 @@ XNN_PRIVATE void xnn_compute_transposev_6d(
     size_t tile_m,
     size_t tile_n);
 
-struct gemm_context {
-  size_t k_scaled;
-  const void* a;
-  size_t a_stride;
-  const void* packed_w;
+// Context for Packing Weights (packw) for GEMM microkernels in Group-OutputChannels-InputChannels layout.
+// Kernel has shape GxNxK, bias has shape GxN.
+struct packw_gemm_goi_context {
+  // Number of input channels.
+  size_t kc;
+  // Number of output channels the GEMM is optimized for.
+  size_t nr;
+  size_t kr;
+  size_t sr;
+  // Pointer to kernel.
+  const void* kernel;
+  // Stride, in bytes, between each N of the kernel.
+  size_t k_stride;
+  // Pointer to bias.
+  const void* bias;
+  // Stride, in bytes, between each bias.
+  size_t b_stride;
+  // Output pointer to write packed kernel and bias.
+  void* packed_weights;
+  // Stride, in bytes, between each packed kernel and bias.
   size_t w_stride;
-  size_t wg_stride;
+
+  // Strides used for batched packw.
+  // Stride, in bytes, between each group of kernel
+  size_t gk_stride;
+  // Stride, in bytes, between each group of bias.
+  size_t gb_stride;
+  // Stride, in bytes, between each group of packed weights.
+  size_t gc_stride;
+
+  // Microkernel to preform packing.
+  xnn_packw_gemm_goi_ukernel_fn packw_gemm_goi;
+};
+
+#ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_packw_gemm_goi(
+      const struct packw_gemm_goi_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t n_block_start,
+      size_t n_block_size);
+  XNN_PRIVATE void xnn_compute_batched_packw_gemm_goi(
+      const struct packw_gemm_goi_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t n_block_start,
+      size_t n_block_size);
+#endif
+
+// Context for Packing Weights (packw) for GEMM microkernels in Groups-InputChannels-OutputChannels layout.
+// Kernel has shape GxKxN, bias has shape GxN.
+struct packw_gemm_gio_context {
+  // Number of input channels.
+  size_t kc;
+  // Number of output channels the GEMM is optimized for.
+  size_t nr;
+  size_t kr;
+  size_t sr;
+  // Pointer to kernel.
+  const void* kernel;
+  // Pointer to bias.
+  const void* bias;
+  // Stride, in bytes, between each bias.
+  size_t b_stride;
+  // Output pointer to write packed kernel and bias.
+  void* packed_weights;
+  // Stride, in bytes, between each packed kernel and bias.
+  size_t w_stride;
+  // Stride, in number of elements, between each k of the kernel.
+  size_t k_stride_elements;
+  // Stride, in bytes, between each n of the kernel.
+  size_t n_stride;
+
+  // Strides used for batched packw.
+  // Stride, in bytes, between each group of kernel
+  size_t gk_stride;
+  // Stride, in bytes, between each group of bias.
+  size_t gb_stride;
+  // Stride, in bytes, between each group of of packed weights.
+  size_t gc_stride;
+
+  // Microkernel to preform packing.
+  xnn_packw_gemm_gio_ukernel_fn packw_gemm_gio;
+};
+
+#ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_packw_gemm_gio(
+      const struct packw_gemm_gio_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t n_block_start,
+      size_t n_block_size);
+  XNN_PRIVATE void xnn_compute_batched_packw_gemm_gio(
+      const struct packw_gemm_gio_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t n_block_start,
+      size_t n_block_size);
+#endif
+
+// Context for Dense Matrix Multiplication.
+// C [GxMxN] := A [GxMxK] * B[GxKxN] + bias [GxN]
+// Where B and bias have been packed into packed_w.
+struct gemm_context {
+  // K dimension of matrix A, scaled by size of an element in A.
+  // Corresponds to the number of input channels.
+  size_t k_scaled;
+  // Input matrix A.
+  const void* a;
+  // Stride, in bytes, between each row (M) of A.
+  size_t a_stride;
+  // Stride, in bytes, between each group (G) of A.
+  size_t ga_stride;
+  // Pointer to weights (kernel and bias) that have been packed.
+  const void* packed_w;
+  // Stride, in bytes, between output channel (N) of weights.
+  size_t w_stride;
+  // Stride, in bytes, between each group (G) of weights.
+  size_t gw_stride;
+  // Output matrix C.
   void* c;
+  // Stride, in bytes, between each row (M) of C.
   size_t cm_stride;
+  // Stride, in bytes, between columns (N) of C written.
   size_t cn_stride;
-  size_t cg_stride;
+  // Stride, in bytes, between each group (G) of C.
+  size_t gc_stride;
+  // Size, in bytes, of each element of C.
   uint32_t log2_csize;
-  struct xnn_hmp_gemm_ukernel ukernel;
+  // GEMM microkernels.
+  union {
+    struct xnn_hmp_gemm_ukernel ukernel;
+    struct xnn_hmp_dqgemm_ukernel dq_ukernel;
+  };
+  // Parameters for dynamically quantized inputs.
+  const struct xnn_qd8_quantization_params* quantization_params;
+  // Parameters for fused GEMM.
   void* fused_params;
+  // Parameters for fused activations.
   union {
     union xnn_qs8_conv_minmax_params qs8;
     union xnn_qu8_conv_minmax_params qu8;
@@ -194,6 +330,13 @@ struct gemm_context {
   XNN_PRIVATE void xnn_compute_grouped_gemm(
       const struct gemm_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t group_index,
+      size_t mr_block_start,
+      size_t nr_block_start,
+      size_t mr_block_size,
+      size_t nr_block_size);
+
+  XNN_PRIVATE void xnn_compute_dqgemm(
+      const struct gemm_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t mr_block_start,
       size_t nr_block_start,
       size_t mr_block_size,
@@ -217,6 +360,14 @@ struct gemm_context {
         size_t nr_block_size);
 
     XNN_PRIVATE void xnn_compute_hmp_gemm(
+        const struct gemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+        uint32_t uarch_index,
+        size_t mr_block_start,
+        size_t nr_block_start,
+        size_t mr_block_size,
+        size_t nr_block_size);
+
+    XNN_PRIVATE void xnn_compute_hmp_dqgemm(
         const struct gemm_context context[restrict XNN_MIN_ELEMENTS(1)],
         uint32_t uarch_index,
         size_t mr_block_start,
@@ -266,25 +417,74 @@ struct spmm_context {
     size_t mr_block_size);
 #endif
 
+// Context for initializing the indirection buffer for conv2d igemm.
+struct conv2d_igemm_indirection_init_context {
+  const void** indirection_buffer;
+  const void* input;
+  const void* zero_buffer;
+  size_t input_pixel_stride;
+  size_t input_height;
+  size_t input_width;
+  size_t output_height;
+  size_t output_width;
+  size_t kernel_height;
+  size_t kernel_width;
+  size_t stride_height;
+  size_t stride_width;
+  size_t dilation_height;
+  size_t dilation_width;
+  size_t input_padding_top;
+  size_t input_padding_left;
+};
+
+// Context for Indirect Dense Matrix Multiplication.
+// C [BxGxMxN] := A [BxGxMxK] * B[BxGxKxN] + bias [BxGxN]
+// Where B and bias have been packed into packed_w.
 struct igemm_context {
   size_t ks;
   size_t ks_scaled;
+  // Number of input channels (K).
   size_t kc;
+  // Stride, in bytes, between output channel (N) of weights.
   size_t w_stride;
+  // Indirection buffer for input matrix A.
   const void** indirect_a;
+  // Offset of each pointer in indirection buffer.
   size_t a_offset;
+  // Zero buffer.
   void* zero;
+  // Zero buffers.
+  void** zero_buffers;
+  // Pointer to weights (kernel and bias) that have been packed.
   const void* packed_w;
+  // Output matrix C.
   void* c;
+  // Stride, in bytes, between each row (M) of C.
   size_t cm_stride;
+  // Stride, in bytes, between columns (N) of C written.
   size_t cn_stride;
+  // Stride, in bytes, between each group (G) of A.
   size_t ga_stride;
+  // Stride, in bytes, between each group (G) of packed weights.
   size_t gw_stride;
+  // Stride, in bytes, between each group (G) of C.
   size_t gc_stride;
+  // Stride, in bytes, between each batch (B) of A.
   size_t ba_stride;
+  // Stride, in bytes, between each batch (B) of C.
   size_t bc_stride;
+  // Size, in bytes, of each element of C.
   uint32_t log2_csize;
-  struct xnn_hmp_igemm_ukernel ukernel;
+  // Size, in bytes, of the zero buffer.
+  size_t zero_size;
+  // IGEMM microkernels.
+  union {
+    struct xnn_hmp_igemm_ukernel ukernel;
+    struct xnn_hmp_dqigemm_ukernel dq_ukernel;
+  };
+  // Parameters for dynamically quantized inputs.
+  const struct xnn_qd8_quantization_params* quantization_params;
+  // Parameters for fused activations.
   union {
     union xnn_qs8_conv_minmax_params qs8;
     union xnn_qu8_conv_minmax_params qu8;
@@ -294,75 +494,98 @@ struct igemm_context {
 };
 
 #ifndef __cplusplus
-  XNN_PRIVATE void xnn_compute_grouped_igemm(
-      const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
-      size_t group_index,
-      size_t mr_block_start,
-      size_t nr_block_start,
-      size_t mr_block_size,
-      size_t nr_block_size);
+XNN_PRIVATE void xnn_compute_grouped_dqigemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t group_index, size_t mr_block_start, size_t nr_block_start,
+    size_t mr_block_size, size_t nr_block_size);
 
-  XNN_PRIVATE void xnn_compute_grouped_batch_igemm(
-      const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
-      size_t batch_index,
-      size_t group_index,
-      size_t mr_block_start,
-      size_t nr_block_start,
-      size_t mr_block_size,
-      size_t nr_block_size);
+XNN_PRIVATE void xnn_compute_grouped_igemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t group_index, size_t mr_block_start, size_t nr_block_start,
+    size_t mr_block_size, size_t nr_block_size);
 
-  XNN_PRIVATE void xnn_compute_igemm(
-      const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
-      size_t mr_block_start,
-      size_t nr_block_start,
-      size_t mr_block_size,
-      size_t nr_block_size);
+XNN_PRIVATE void xnn_compute_grouped_batch_dqigemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t batch_index, size_t group_index, size_t mr_block_start,
+    size_t nr_block_start, size_t mr_block_size, size_t nr_block_size);
 
-  XNN_PRIVATE void xnn_compute_batch_igemm(
-      const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
-      size_t batch_index,
-      size_t mr_block_start,
-      size_t nr_block_start,
-      size_t mr_block_size,
-      size_t nr_block_size);
+XNN_PRIVATE void xnn_compute_grouped_batch_igemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t batch_index, size_t group_index, size_t mr_block_start,
+    size_t nr_block_start, size_t mr_block_size, size_t nr_block_size);
 
-  #if XNN_MAX_UARCH_TYPES > 1
-    XNN_PRIVATE void xnn_compute_hmp_grouped_igemm(
-        const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
-        uint32_t uarch_index,
-        size_t group_index,
-        size_t mr_block_start,
-        size_t nr_block_start,
-        size_t mr_block_size,
-        size_t nr_block_size);
+XNN_PRIVATE void xnn_compute_dq_zero_buffer(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t size);
 
-    XNN_PRIVATE void xnn_compute_hmp_grouped_batch_igemm(
-        const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
-        uint32_t uarch_index,
-        size_t batch_index,
-        size_t group_index,
-        size_t mr_block_start,
-        size_t nr_block_start,
-        size_t mr_block_size,
-        size_t nr_block_size);
+XNN_PRIVATE void xnn_compute_dqigemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t mr_block_start, size_t nr_block_start, size_t mr_block_size,
+    size_t nr_block_size);
 
-    XNN_PRIVATE void xnn_compute_hmp_igemm(
-        const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
-        uint32_t uarch_index,
-        size_t mr_block_start,
-        size_t nr_block_start,
-        size_t mr_block_size,
-        size_t nr_block_size);
+XNN_PRIVATE void xnn_compute_igemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t mr_block_start, size_t nr_block_start, size_t mr_block_size,
+    size_t nr_block_size);
 
-    XNN_PRIVATE void xnn_compute_batch_hmp_igemm(
-        const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
-        uint32_t uarch_index,
-        size_t batch_index,
-        size_t mr_block_start,
-        size_t nr_block_start,
-        size_t mr_block_size,
-        size_t nr_block_size);
-  #endif  // XNN_MAX_UARCH_TYPES > 1
+XNN_PRIVATE void xnn_compute_conv2d_igemm_indirection(
+    const struct conv2d_igemm_indirection_init_context
+        context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t output_tile_start, size_t output_tile_size);
+
+XNN_PRIVATE void xnn_compute_batch_dqigemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t batch_index, size_t mr_block_start, size_t nr_block_start,
+    size_t mr_block_size, size_t nr_block_size);
+
+XNN_PRIVATE void xnn_compute_batch_igemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t batch_index, size_t mr_block_start, size_t nr_block_start,
+    size_t mr_block_size, size_t nr_block_size);
+
+#if XNN_MAX_UARCH_TYPES > 1
+XNN_PRIVATE void xnn_compute_hmp_grouped_igemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    uint32_t uarch_index, size_t group_index, size_t mr_block_start,
+    size_t nr_block_start, size_t mr_block_size, size_t nr_block_size);
+
+XNN_PRIVATE void xnn_compute_hmp_grouped_dqigemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    uint32_t uarch_index, size_t group_index, size_t mr_block_start,
+    size_t nr_block_start, size_t mr_block_size, size_t nr_block_size);
+
+XNN_PRIVATE void xnn_compute_hmp_grouped_batch_dqigemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    uint32_t uarch_index, size_t batch_index, size_t group_index,
+    size_t mr_block_start, size_t nr_block_start, size_t mr_block_size,
+    size_t nr_block_size);
+
+XNN_PRIVATE void xnn_compute_hmp_grouped_batch_igemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    uint32_t uarch_index, size_t batch_index, size_t group_index,
+    size_t mr_block_start, size_t nr_block_start, size_t mr_block_size,
+    size_t nr_block_size);
+
+XNN_PRIVATE void xnn_compute_hmp_dqigemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    uint32_t uarch_index, size_t mr_block_start, size_t nr_block_start,
+    size_t mr_block_size, size_t nr_block_size);
+
+XNN_PRIVATE void xnn_compute_hmp_igemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    uint32_t uarch_index, size_t mr_block_start, size_t nr_block_start,
+    size_t mr_block_size, size_t nr_block_size);
+
+XNN_PRIVATE void xnn_compute_batch_hmp_dqigemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    uint32_t uarch_index, size_t batch_index, size_t mr_block_start,
+    size_t nr_block_start, size_t mr_block_size, size_t nr_block_size);
+
+XNN_PRIVATE void xnn_compute_batch_hmp_igemm(
+    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    uint32_t uarch_index, size_t batch_index, size_t mr_block_start,
+    size_t nr_block_start, size_t mr_block_size, size_t nr_block_size);
+#endif  // XNN_MAX_UARCH_TYPES > 1
 #endif
 
 struct subgemm_context {
@@ -397,9 +620,9 @@ struct subgemm_context {
       size_t subkernel_index,
       size_t slice_y,
       size_t slice_x_start,
-      size_t nr_block_start,
+      size_t nc_block_start,
       size_t slice_x_max,
-      size_t nr_block_size);
+      size_t nc_block_size);
 
   XNN_PRIVATE void xnn_compute_subgemm2d(
       const struct subgemm_context context[restrict XNN_MIN_ELEMENTS(1)],
@@ -407,9 +630,9 @@ struct subgemm_context {
       size_t subkernel_index,
       size_t slice_y,
       size_t slice_x_start,
-      size_t nr_block_start,
+      size_t nc_block_start,
       size_t slice_x_max,
-      size_t nr_block_size);
+      size_t nc_block_size);
 #endif
 
 struct subconv_context {
@@ -487,7 +710,31 @@ struct conv2d_context {
       size_t output_y_slice);
 #endif
 
+// Context for initializing the indirection buffer for dwconv.
+struct dwconv_indirection_init_context {
+  const void** indirection_buffer;
+  const void* input;
+  const void* zero_buffer;
+  size_t input_pixel_stride;
+  size_t input_height;
+  size_t input_width;
+  size_t output_height;
+  size_t output_width;
+  size_t kernel_height;
+  size_t kernel_width;
+  size_t stride_height;
+  size_t stride_width;
+  size_t dilation_height;
+  size_t dilation_width;
+  size_t input_padding_top;
+  size_t input_padding_left;
+  size_t step_height;
+  size_t step_width;
+  size_t tile_size;
+};
+
 struct dwconv_context {
+  size_t kernel_size;
   const void** indirect_input;
   intptr_t indirect_input_width_stride;
   size_t indirect_input_height_stride;
@@ -497,6 +744,7 @@ struct dwconv_context {
   void* output;
   size_t output_batch_stride;
   size_t output_height_stride;
+  size_t output_height;
   size_t output_width;
   size_t groups;
   const void* zero;
@@ -509,12 +757,30 @@ struct dwconv_context {
   } params;
   union {
     xnn_dwconv_unipass_ukernel_fn unipass_ukernel;
+    xnn_dwconv_multipass_ukernel_fn multipass_ukernel;
   };
+  size_t buffer_size;
+  void* multipass_buffer;
+  // Offset into workspace denoting area usable by multipass buffer.
+  size_t multipass_buffer_offset;
 };
 
 #ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_dwconv_indirection(
+    const struct dwconv_indirection_init_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t output_y_start,
+    size_t output_y_tile);
   XNN_PRIVATE void xnn_compute_dwconv_unipass(
       const struct dwconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t output_y);
+  XNN_PRIVATE void xnn_compute_dwconv_multipass(
+      const struct dwconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t output_y);
+  XNN_PRIVATE void xnn_compute_dwconv_multipass_with_thread(
+      const struct dwconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t thread_index,
       size_t batch_index,
       size_t output_y);
 #endif
@@ -605,6 +871,7 @@ struct argmax_pooling_context {
   void* output;
   size_t output_batch_stride;
   size_t output_height_stride;
+  size_t output_height;
   size_t output_width;
   uint32_t* index;
   size_t index_batch_stride;
@@ -617,6 +884,11 @@ struct argmax_pooling_context {
     xnn_argmaxpool_unipass_ukernel_fn unipass_ukernel;
     xnn_argmaxpool_multipass_ukernel_fn multipass_ukernel;
   };
+  // Size of accumulation buffer, in bytes, per thread, only for multipass.
+  size_t accumulation_buffer_size;
+  // Size of accumulation and index buffer, in bytes, only used for multipass.
+  size_t accumulation_and_index_buffer_size;
+  void* multipass_buffer;
 };
 
 #ifndef __cplusplus
@@ -625,8 +897,16 @@ struct argmax_pooling_context {
       size_t batch_index,
       size_t output_y);
 
+  // Workspace sized based on batch size * output height.
   XNN_PRIVATE void xnn_compute_argmax_pooling_multipass(
       const struct argmax_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t output_y);
+
+  // Workspace sized based on number of threads.
+  XNN_PRIVATE void xnn_compute_argmax_pooling_multipass_with_thread(
+      const struct argmax_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t thread_index,
       size_t batch_index,
       size_t output_y);
 #endif
@@ -636,6 +916,13 @@ struct average_pooling_context {
   size_t indirect_input_height_stride;
   size_t input_offset;
   size_t input_batch_stride;
+
+  // Stride to get to the next y of input. Used when we have compressed indirection buffers (i.e. indirection buffers
+  // contain only pointers to the first row of input).
+  size_t input_y_stride;
+  size_t indirect_top_height;  // Number of output rows that form the top section of indirection buffer.
+  size_t indirect_bot_start;  // Smallest output row y for the bottom section of indirection buffer.
+
   void* output;
   size_t output_batch_stride;
   size_t output_height_stride;
@@ -654,6 +941,9 @@ struct average_pooling_context {
     xnn_avgpool_unipass_ukernel_fn unipass_ukernel;
     xnn_avgpool_multipass_ukernel_fn multipass_ukernel;
   };
+  size_t multipass_batch_stride;
+  size_t multipass_pixel_stride;
+  void* multipass_buffer;
 };
 
 #ifndef __cplusplus
@@ -666,6 +956,12 @@ struct average_pooling_context {
       const struct average_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t batch_index,
       size_t output_y);
+
+  XNN_PRIVATE void xnn_compute_average_pooling_multipass_with_thread(
+      const struct average_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t thread_index,
+      size_t batch_index,
+      size_t output_y);
 #endif
 
 struct pixelwise_average_pooling_context {
@@ -673,6 +969,13 @@ struct pixelwise_average_pooling_context {
   size_t indirect_input_height_stride;
   size_t input_offset;
   size_t input_batch_stride;
+
+  // Stride to get to the next y of input. Used when we have compressed indirection buffers (i.e. indirection buffers
+  // contain only pointers to the first row of input).
+  size_t input_y_stride;
+  size_t indirect_top_height;  // Number of output rows that form the top section of indirection buffer.
+  size_t indirect_bot_start;  // Smallest output row y for the bottom section of indirection buffer.
+
   const void* pixelwise_buffer;
   size_t pixelwise_buffer_height_stride;
   void* output;
@@ -693,6 +996,9 @@ struct pixelwise_average_pooling_context {
     xnn_pavgpool_unipass_ukernel_fn unipass_ukernel;
     xnn_pavgpool_multipass_ukernel_fn multipass_ukernel;
   };
+  size_t multipass_batch_stride;
+  size_t multipass_pixel_stride;
+  void* multipass_buffer;
 };
 
 #ifndef __cplusplus
@@ -703,6 +1009,12 @@ struct pixelwise_average_pooling_context {
 
   XNN_PRIVATE void xnn_compute_pixelwise_average_pooling_multipass(
       const struct pixelwise_average_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t output_y);
+
+  XNN_PRIVATE void xnn_compute_pixelwise_average_pooling_multipass_with_thread(
+      const struct pixelwise_average_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t thread_index,
       size_t batch_index,
       size_t output_y);
 #endif
@@ -726,6 +1038,8 @@ struct global_average_pooling_nwc_context {
     xnn_gavgpool_unipass_ukernel_fn unipass_ukernel;
     xnn_gavgpool_multipass_ukernel_fn multipass_ukernel;
   };
+  size_t multipass_batch_stride;
+  void* multipass_buffer;
 };
 
 #ifndef __cplusplus
@@ -735,6 +1049,11 @@ struct global_average_pooling_nwc_context {
 
   XNN_PRIVATE void xnn_compute_global_average_pooling_nwc_multipass(
       const struct global_average_pooling_nwc_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index);
+
+  XNN_PRIVATE void xnn_compute_global_average_pooling_nwc_multipass_with_thread(
+      const struct global_average_pooling_nwc_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t thread_index,
       size_t batch_index);
 #endif
 
@@ -760,6 +1079,21 @@ struct global_average_pooling_ncw_context {
       size_t channels_start,
       size_t channels_slice);
 #endif
+
+struct resize_bilinear_nhwc_indirection_init_context {
+  const void** buffer;
+  const void* input;
+  size_t packed_weight_size;
+  size_t input_pixel_stride;
+  size_t input_offset;
+  size_t input_height;
+  size_t input_width;
+  size_t output_height;
+  size_t output_width;
+  bool align_corners;
+  bool tensorflow_legacy_mode;
+  xnn_indirection_init_resize_bilinear2d_hwc_fn indirection_init;
+};
 
 struct resize_bilinear_context {
   // Number of channels multiplied by sizeof(input element).
@@ -810,16 +1144,20 @@ struct resize_bilinear_chw_context {
 };
 
 #ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_resize_bilinear_indirection(
+      const struct resize_bilinear_nhwc_indirection_init_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t output_y_start,
+      size_t output_y_tile);
   XNN_PRIVATE void xnn_compute_resize_bilinear(
       const struct resize_bilinear_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t batch_index,
       size_t pixel_start,
       size_t pixel_range);
   XNN_PRIVATE void xnn_compute_resize_bilinear_chw(
-    const struct resize_bilinear_chw_context context[restrict XNN_MIN_ELEMENTS(1)],
-    size_t batch_index,
-    size_t pixel_start,
-    size_t pixel_range);
+      const struct resize_bilinear_chw_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t pixel_start,
+      size_t pixel_range);
 #endif
 
 struct elementwise_binary_context {
@@ -839,9 +1177,13 @@ struct elementwise_binary_context {
     union xnn_f32_minmax_params f32;
   } params;
   xnn_vbinary_ukernel_fn ukernel;
+  bool flip_a_b;
 };
 
 #ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_elementwise_binary_1d_tile(
+      const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t offset, size_t tile);
   XNN_PRIVATE void xnn_compute_elementwise_binary_1d(
       const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t i);
@@ -930,6 +1272,7 @@ struct univector_strided_context {
     union xnn_f16_minmax_params f16_minmax;
     union xnn_f16_neg_params f16_neg;
     union xnn_f16_sigmoid_params f16_sigmoid;
+    union xnn_f16_tanh_params f16_tanh;
     union xnn_f32_abs_params f32_abs;
     union xnn_f32_default_params f32_default;
     union xnn_f32_elu_params f32_elu;
@@ -943,11 +1286,15 @@ struct univector_strided_context {
     union xnn_f32_rnd_params f32_rnd;
     union xnn_f32_sigmoid_params f32_sigmoid;
     union xnn_f32_sqrt_params f32_sqrt;
+    union xnn_f32_tanh_params f32_tanh;
     union xnn_qs8_cvt_params qs8_cvt;
+    union xnn_qs16_qs8_cvt_params qs16_qs8_cvt;
     union xnn_qs8_f32_cvt_params qs8_f32_cvt;
+    union xnn_qs8_hswish_params qs8_hswish;
     union xnn_qs8_lrelu_params qs8_lrelu;
     union xnn_qu8_cvt_params qu8_cvt;
     union xnn_qu8_f32_cvt_params qu8_f32_cvt;
+    union xnn_qu8_hswish_params qu8_hswish;
     union xnn_qu8_lrelu_params qu8_lrelu;
     union xnn_s8_minmax_params s8_minmax;
     union xnn_u8_minmax_params u8_minmax;
@@ -990,10 +1337,13 @@ struct univector_contiguous_context {
     union xnn_f32_sigmoid_params f32_sigmoid;
     union xnn_f32_sqrt_params f32_sqrt;
     union xnn_qs8_cvt_params qs8_cvt;
+    union xnn_qs16_qs8_cvt_params qs16_qs8_cvt;
     union xnn_qs8_f32_cvt_params qs8_f32_cvt;
+    union xnn_qs8_hswish_params qs8_hswish;
     union xnn_qs8_lrelu_params qs8_lrelu;
     union xnn_qu8_cvt_params qu8_cvt;
     union xnn_qu8_f32_cvt_params qu8_f32_cvt;
+    union xnn_qu8_hswish_params qu8_hswish;
     union xnn_qu8_lrelu_params qu8_lrelu;
     union xnn_s8_minmax_params s8_minmax;
     union xnn_u8_minmax_params u8_minmax;
@@ -1005,6 +1355,26 @@ struct univector_contiguous_context {
       const struct univector_contiguous_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t offset,
       size_t size);
+#endif
+
+struct reduce_context {
+  const void* input;
+  void* output;
+  size_t input_stride;
+  size_t output_stride;
+  size_t scaled_elements;
+  xnn_reduce_ukernel_fn ukernel;
+  union {
+    union xnn_f32_default_params f32_default;
+    union xnn_f32_scale_params f32_scale;
+  } params;
+};
+
+#ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_reduce(
+      const struct reduce_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t batch_range);
 #endif
 
 struct prelu_context {
@@ -1073,6 +1443,7 @@ struct slice_context {
   size_t offsets[XNN_MAX_TENSOR_DIMS];
   size_t contiguous_size;
   xnn_vunary_ukernel_fn ukernel;
+  size_t num_normalized_dims;
 };
 
 #ifndef __cplusplus
@@ -1091,6 +1462,52 @@ struct slice_context {
   XNN_PRIVATE void xnn_compute_slice_5d(
       const struct slice_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t i, size_t j, size_t k, size_t l, size_t m);
+#endif
+
+struct f16_qd8_convert_context {
+  size_t n;
+  const void* x;
+  size_t x_stride;
+  int8_t* y;
+  size_t y_stride;
+  size_t batch_size;
+  struct xnn_qd8_quantization_params* quantization_params;
+  xnn_reduce_ukernel_fn rminmax_ukernel;
+  xnn_vunary_ukernel_fn convert_ukernel;
+  xnn_init_f16_qs8_cvt_params_fn init_params;
+  union {
+    union xnn_f16_default_params f16_default;
+  } params;
+};
+
+struct f32_qd8_convert_context {
+  size_t n;
+  const float* x;
+  size_t x_stride;
+  int8_t* y;
+  size_t y_stride;
+  size_t batch_size;
+  struct xnn_qd8_quantization_params* quantization_params;
+  xnn_reduce_ukernel_fn rminmax_ukernel;
+  xnn_vunary_ukernel_fn convert_ukernel;
+  xnn_init_f32_qs8_cvt_params_fn init_params;
+  union {
+    union xnn_f32_default_params f32_default;
+  } params;
+};
+
+#ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_f16_qd8_convert(
+      const struct f16_qd8_convert_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index);
+
+  XNN_PRIVATE void xnn_compute_f32_qd8_convert(
+      const struct f32_qd8_convert_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index);
+
+  XNN_PRIVATE void xnn_compute_pad_qd8_params(
+      const struct f32_qd8_convert_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index);
 #endif
 
 struct u8_softmax_context {
@@ -1130,10 +1547,183 @@ struct floating_point_softmax_context {
     union xnn_f16_expminus_params f16;
     union xnn_f32_expminus_params f32;
   } expminus_params;
+  union {
+    union xnn_f16_default_params f16;
+    union xnn_f32_default_params f32;
+  } rmax_params;
 };
 
 #ifndef __cplusplus
   XNN_PRIVATE void xnn_compute_floating_point_softmax(
       const struct floating_point_softmax_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t batch_index);
+#endif
+
+struct rope_context {
+  size_t scaled_channels;
+  size_t batch_stride;
+  size_t head_stride;
+  size_t sequence_stride;
+  const void* input;
+  const void* weights;
+  void* output;
+  xnn_vbinary_ukernel_fn vcmul;
+  union {
+    union xnn_f32_default_params f32;
+  } params;
+};
+
+#ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_rope(
+      const struct rope_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t head_index,
+      size_t sequence_index);
+#endif
+
+struct attention_logits_cap {
+  enum xnn_attention_logits_cap_type type;
+  union {
+    uint16_t f16;
+    float f32;
+  } cap;
+  union {
+    uint16_t f16;
+    float f32;
+  } cap_reciprocal;
+};
+
+struct scaled_dot_product_attention_context {
+  // Pointer to query.
+  const void* query;
+  // Pointer to packed key.
+  const void* key;
+  // Pointer to packed value.
+  const void* value;
+  // Pointer to scale for query.
+  const void* scale;
+  // Pointer to mask.
+  const void* mask;
+  // Pointer to write output of attention.
+  void* output;
+
+  // Pointer to where we can write the output of Q scaled.
+  void* scaled_query;
+  // Pointer to where we can write the output of Q*K.
+  void* logits_buffer;
+
+  // Cap for logits (Q * K).
+  struct attention_logits_cap logits_cap;
+
+  // Query/Key Channels (head dimension).
+  size_t query_key_channels;
+  // Query/Key Channels (head dimension) in bytes.
+  size_t query_key_scaled_channels;
+  // Tokens length for key/value.
+  size_t key_value_tokens;
+  // Tokens length for key/value, in bytes.
+  size_t key_value_tokens_scaled;
+  // Value Channels.
+  size_t value_channels;
+  // Value Channels, in bytes.
+  size_t value_scaled_channels;
+  // Stride, in bytes, between columns of logits and final attention output.
+  size_t cn_stride;
+
+  // Stride, in bytes, between each batch of query.
+  size_t query_batch_stride;
+  // Stride, in bytes, between each head of query.
+  size_t query_head_stride;
+  // Stride, in bytes,  between each batch of key.
+  size_t key_batch_stride;
+  // Stride, in bytes,  between each head of key.
+  size_t key_head_stride;
+  // Stride, in bytes,  between each batch of value.
+  size_t value_batch_stride;
+  // Stride, in bytes,  between each head of value.
+  size_t value_head_stride;
+  // Stride, in bytes,  between each batch of logits (Q*K).
+  size_t logits_batch_stride;
+  // Stride, in bytes,  between each head of logits (Q*K).
+  size_t logits_head_stride;
+  // Stride, in bytes, between each batch of output.
+  size_t output_batch_stride;
+  // Stride, in bytes, between each head of output.
+  size_t output_head_stride;
+
+  // Stride, in bytes, between the buffer for each thread to write scaled query.
+  size_t scaled_query_thread_stride;
+  // Stride, in bytes, between the buffer for each thread to write logits.
+  size_t logits_thread_stride;
+
+  struct xnn_hmp_gemm_ukernel gemm_ukernel;
+  xnn_compute_reciprocal_fn compute_reciprocal;
+  xnn_rmax_ukernel_fn rmax_ukernel;
+  xnn_raddstoreexpminusmax_ukernel_fn raddstoreexpminusmax_ukernel;
+  xnn_vbinary_ukernel_fn vmulc_ukernel;
+  xnn_vbinary_ukernel_fn vmul_ukernel;
+  xnn_vbinary_ukernel_fn vdivc_ukernel;
+  xnn_vbinary_ukernel_fn vadd_ukernel;
+  xnn_vunary_ukernel_fn vtanh_ukernel;
+
+  union {
+    union xnn_f32_expminus_params f32;
+  } expminus_params;
+  union {
+    union xnn_f32_minmax_params f32;
+  } minmax_params;
+  union {
+    union xnn_f16_default_params f16;
+  } rmax_params;
+  union {
+    union xnn_f32_tanh_params f32;
+  } tanh_params;
+
+  // Attention uses a single workspace for multiple intermediates:
+  // - scaled query
+  // - packed keys
+  // - packed values
+  // - output of Q * K (known as logits)
+  // These are the offsets into the workspace that can be used to read/write the intermediates.
+  // These are set during reshape, and then used during setup.
+  size_t scaled_query_offset;
+  size_t packed_k_offset;
+  size_t packed_v_offset;
+  size_t logits_offset;
+};
+
+#ifndef __cplusplus
+  // We have 4 variations of compute scaled dot product attention:
+  // 1. micro-architecture aware and not micro-architecture aware
+  // 2. whether the workspace size is based on batch_size or number of heads.
+  // The workspace size is chosen based on which one requires a smaller memory allocation for workspace.
+  // Batch size (times query heads and query tokens) is compared to number of threads (times MR).
+  XNN_PRIVATE void xnn_compute_scaled_dot_product_attention(
+      const struct scaled_dot_product_attention_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t head_index,
+      size_t tokens_start,
+      size_t tokens_block_size);
+  XNN_PRIVATE void xnn_compute_scaled_dot_product_attention_with_thread(
+      const struct scaled_dot_product_attention_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t thread_index,
+      size_t batch_index,
+      size_t head_index,
+      size_t tokens_start,
+      size_t tokens_block_size);
+  XNN_PRIVATE void xnn_compute_hmp_scaled_dot_product_attention(
+      const struct scaled_dot_product_attention_context context[restrict XNN_MIN_ELEMENTS(1)],
+      uint32_t uarch_index,
+      size_t batch_index,
+      size_t head_index,
+      size_t tokens_start,
+      size_t tokens_block_size);
+  XNN_PRIVATE void xnn_compute_hmp_scaled_dot_product_attention_with_thread(
+      const struct scaled_dot_product_attention_context context[restrict XNN_MIN_ELEMENTS(1)],
+      uint32_t uarch_index,
+      size_t thread_index,
+      size_t batch_index,
+      size_t head_index,
+      size_t tokens_start,
+      size_t tokens_block_size);
 #endif

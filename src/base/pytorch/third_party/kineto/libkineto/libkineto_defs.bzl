@@ -11,10 +11,7 @@ def get_libkineto_api_srcs():
 
 def get_libkineto_cupti_srcs(with_api = True):
     return [
-        "src/CudaDeviceProperties.cpp",
-        "src/CudaUtil.cpp",
         "src/CuptiActivityApi.cpp",
-        "src/CuptiActivityPlatform.cpp",
         "src/CuptiCallbackApi.cpp",
         "src/CuptiEventApi.cpp",
         "src/CuptiMetricApi.cpp",
@@ -35,6 +32,13 @@ def get_libkineto_roctracer_srcs(with_api = True):
         "src/RoctracerLogger.cpp",
     ] + (get_libkineto_cpu_only_srcs(with_api))
 
+def get_libkineto_xpupti_srcs(with_api = True):
+    return [
+        "src/plugin/xpupti/XpuptiActivityApi.cpp",
+        "src/plugin/xpupti/XpuptiActivityProfiler.cpp",
+        "src/plugin/xpupti/XpuptiActivityHandlers.cpp",
+    ] + (get_libkineto_cpu_only_srcs(with_api))
+
 def get_libkineto_cpu_only_srcs(with_api = True):
     return [
         "src/AbstractConfig.cpp",
@@ -47,6 +51,8 @@ def get_libkineto_cpu_only_srcs(with_api = True):
         "src/CuptiActivityApi.cpp",
         "src/DaemonConfigLoader.cpp",
         "src/Demangle.cpp",
+        "src/DeviceProperties.cpp",
+        "src/DeviceUtil.cpp",
         "src/GenericTraceActivity.cpp",
         "src/ILoggerObserver.cpp",
         "src/IpcFabricConfigClient.cpp",
@@ -69,10 +75,12 @@ def get_libkineto_public_headers():
         "include/IActivityProfiler.h",
         "include/ILoggerObserver.h",
         "include/ITraceActivity.h",
+        "include/LoggingAPI.h",
         "include/TraceSpan.h",
         "include/ThreadUtil.h",
         "include/libkineto.h",
         "include/time_since_epoch.h",
+        "include/output_base.h",
     ]
 
 # kineto code should be updated to not have to

@@ -94,12 +94,6 @@ class SpaceToDepthOperatorTester {
     return this->batch_size_;
   }
 
-  inline SpaceToDepthOperatorTester& input_channels_stride(size_t input_channels_stride) {
-    assert(input_channels_stride >= 1);
-    this->input_channels_stride_ = input_channels_stride;
-    return *this;
-  }
-
   inline size_t input_channels_stride() const {
     if (this->input_channels_stride_ == 0) {
       return input_channels();
@@ -107,12 +101,6 @@ class SpaceToDepthOperatorTester {
       assert(this->input_channels_stride_ >= input_channels());
       return this->input_channels_stride_;
     }
-  }
-
-  inline SpaceToDepthOperatorTester& output_channels_stride(size_t output_channels_stride) {
-    assert(output_channels_stride >= 1);
-    this->output_channels_stride_ = output_channels_stride;
-    return *this;
   }
 
   inline size_t output_channels_stride() const {
@@ -149,7 +137,6 @@ class SpaceToDepthOperatorTester {
 
       ASSERT_EQ(xnn_status_success,
                 xnn_create_space_to_depth_nhwc_x8(
-                    input_channels(), input_channels_stride(), output_channels_stride(),
                     block_size(), 0, &space_to_depth_op));
       ASSERT_NE(nullptr, space_to_depth_op);
 
@@ -157,13 +144,19 @@ class SpaceToDepthOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_space_to_depth_op(space_to_depth_op, xnn_delete_operator);
 
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_space_to_depth_nhwc_x8(
+                xnn_reshape_space_to_depth_nhwc_x8(
                     space_to_depth_op,
-                    batch_size(), input_height(), input_width(),
-                    input.data(), output.data(), nullptr /* thread pool */));
+                    batch_size(), input_height(), input_width(), input_channels(),
+                    /*output_height_out=*/nullptr, /*output_width_out=*/nullptr, /*output_channels_out=*/nullptr,
+                    /*threadpool=*/nullptr));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(space_to_depth_op, nullptr /* thread pool */));
+                xnn_setup_space_to_depth_nhwc_x8(
+                    space_to_depth_op,
+                    input.data(), output.data()));
+
+      ASSERT_EQ(xnn_status_success,
+        xnn_run_operator(space_to_depth_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -219,7 +212,6 @@ class SpaceToDepthOperatorTester {
 
       ASSERT_EQ(xnn_status_success,
                 xnn_create_space_to_depth_nhwc_x16(
-                    input_channels(), input_channels_stride(), output_channels_stride(),
                     block_size(), 0, &space_to_depth_op));
       ASSERT_NE(nullptr, space_to_depth_op);
 
@@ -227,13 +219,19 @@ class SpaceToDepthOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_space_to_depth_op(space_to_depth_op, xnn_delete_operator);
 
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_space_to_depth_nhwc_x16(
+                xnn_reshape_space_to_depth_nhwc_x16(
                     space_to_depth_op,
-                    batch_size(), input_height(), input_width(),
-                    input.data(), output.data(), nullptr /* thread pool */));
+                    batch_size(), input_height(), input_width(), input_channels(),
+                    /*output_height_out=*/nullptr, /*output_width_out=*/nullptr, /*output_channels_out=*/nullptr,
+                    /*threadpool=*/nullptr));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(space_to_depth_op, nullptr /* thread pool */));
+                xnn_setup_space_to_depth_nhwc_x16(
+                    space_to_depth_op,
+                    input.data(), output.data()));
+
+      ASSERT_EQ(xnn_status_success,
+        xnn_run_operator(space_to_depth_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -289,7 +287,6 @@ class SpaceToDepthOperatorTester {
 
       ASSERT_EQ(xnn_status_success,
                 xnn_create_space_to_depth_nhwc_x32(
-                    input_channels(), input_channels_stride(), output_channels_stride(),
                     block_size(), 0, &space_to_depth_op));
       ASSERT_NE(nullptr, space_to_depth_op);
 
@@ -297,13 +294,19 @@ class SpaceToDepthOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_space_to_depth_op(space_to_depth_op, xnn_delete_operator);
 
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_space_to_depth_nhwc_x32(
+                xnn_reshape_space_to_depth_nhwc_x32(
                     space_to_depth_op,
-                    batch_size(), input_height(), input_width(),
-                    input.data(), output.data(), nullptr /* thread pool */));
+                    batch_size(), input_height(), input_width(), input_channels(),
+                    /*output_height_out=*/nullptr, /*output_width_out=*/nullptr, /*output_channels_out=*/nullptr,
+                    /*threadpool=*/nullptr));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(space_to_depth_op, nullptr /* thread pool */));
+                xnn_setup_space_to_depth_nhwc_x32(
+                    space_to_depth_op,
+                    input.data(), output.data()));
+
+      ASSERT_EQ(xnn_status_success,
+        xnn_run_operator(space_to_depth_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {

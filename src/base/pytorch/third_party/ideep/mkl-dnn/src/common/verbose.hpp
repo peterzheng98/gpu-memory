@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2018-2023 Intel Corporation
+* Copyright 2018-2024 Intel Corporation
 * Copyright 2023 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -112,8 +112,20 @@ struct const_expr_value {
         if (dnnl::impl::get_verbose(verbose_t::error)) { \
             VFORMAT(get_msec(), apitype, error, "", #component "," msg, \
                     ##__VA_ARGS__); \
+            fflush(stdout); \
         } \
-        fflush(stdout); \
+    } while (0)
+
+// Special syntactic sugar for debuginfo prints.
+// `level` is responsible to set the bar to be printed.
+#define VDEBUGINFO(level, apitype, component, msg, ...) \
+    do { \
+        if (dnnl::impl::get_verbose_dev_mode(verbose_t::debuginfo) \
+                >= (level)) { \
+            VFORMAT(get_msec(), apitype, debuginfo, "", #component "," msg, \
+                    ##__VA_ARGS__); \
+            fflush(stdout); \
+        } \
     } while (0)
 
 // Special syntactic sugar for logging performance
@@ -181,13 +193,26 @@ struct component_t {
     };
 };
 
+struct filter_status_t {
+    enum flags : uint32_t {
+        none = 0,
+        valid,
+        invalid,
+    };
+
+    flags status = flags::none;
+    // used to form a message about proper components used
+    std::string components;
+    std::string err_msg;
+};
+
 inline component_t::flag_kind prim_kind2_comp_kind(
         const primitive_kind_t prim_kind) {
     return static_cast<component_t::flag_kind>(1 << prim_kind | 1 << 0);
 }
 
 uint32_t get_verbose(verbose_t::flag_kind kind = verbose_t::none,
-        component_t::flag_kind filter_kind = component_t::all);
+        component_t::flag_kind filter_kind = component_t::all) noexcept;
 
 // Helper to avoid #ifdefs for DNNL_DEV_MODE related logging
 static inline uint32_t get_verbose_dev_mode(

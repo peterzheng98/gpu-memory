@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -26,8 +26,10 @@ extern const double Sleef_rempitabdp[];
 #include "rename.h"
 #endif
 
-#if (defined(_MSC_VER))
+#if defined(_MSC_VER) && !defined (__clang__)
 #pragma fp_contract (off)
+#else
+#pragma STDC FP_CONTRACT OFF
 #endif
 
 #define MLA mla
@@ -35,21 +37,15 @@ extern const double Sleef_rempitabdp[];
 #include "estrin.h"
 
 static INLINE CONST int64_t doubleToRawLongBits(double d) {
-  union {
-    double f;
-    int64_t i;
-  } tmp;
-  tmp.f = d;
-  return tmp.i;
+  int64_t ret;
+  memcpy(&ret, &d, sizeof(ret));
+  return ret;
 }
 
 static INLINE CONST double longBitsToDouble(int64_t i) {
-  union {
-    double f;
-    int64_t i;
-  } tmp;
-  tmp.i = i;
-  return tmp.f;
+  double ret;
+  memcpy(&ret, &i, sizeof(ret));
+  return ret;
 }
 
 static INLINE CONST double fabsk(double x) {
@@ -72,6 +68,7 @@ static INLINE CONST double trunck(double x) { return (double)(int)x; }
 static INLINE CONST double fmink(double x, double y) { return x < y ? x : y; }
 static INLINE CONST double fmaxk(double x, double y) { return x > y ? x : y; }
 
+static INLINE CONST int xsignbit(double d) { return (doubleToRawLongBits(d) & doubleToRawLongBits(-0.0)) == doubleToRawLongBits(-0.0); }
 static INLINE CONST int xisnan(double x) { return x != x; }
 static INLINE CONST int xisinf(double x) { return x == SLEEF_INFINITY || x == -SLEEF_INFINITY; }
 static INLINE CONST int xisminf(double x) { return x == -SLEEF_INFINITY; }
@@ -623,7 +620,7 @@ static Sleef_double2 atan2k_u1(Sleef_double2 y, Sleef_double2 x) {
   t = ddsqu_d2_d2(s);
   t = ddnormalize_d2_d2(t);
 
-  double t2 = t.x * t.x, t4 = t2 * t2, t8 = t4 * t4, t16 = t8 * t8;
+  double t2 = t.x * t.x, t4 = t2 * t2, t8 = t4 * t4;
   u = POLY16(t.x, t2, t4, t8,
 	     1.06298484191448746607415e-05,
 	     -0.000125620649967286867384336,
@@ -700,7 +697,7 @@ EXPORT CONST double xasin_u1(double d) {
 EXPORT CONST double xacos_u1(double d) {
   int o = fabsk(d) < 0.5;
   double x2 = o ? (d*d) : ((1-fabsk(d))*0.5), u;
-  Sleef_double2 x = o ? dd(fabsk(d), 0) : ddsqrt_d2_d(x2), w;
+  Sleef_double2 x = o ? dd(fabsk(d), 0) : ddsqrt_d2_d(x2);
   x = fabsk(d) == 1.0 ? dd(0, 0) : x;
 
   double x4 = x2 * x2, x8 = x4 * x4, x16 = x8 * x8;
@@ -764,9 +761,8 @@ static CONST di_t rempisub(double x) {
 
 // Payne-Hanek like argument reduction
 static CONST ddi_t rempi(double a) {
-  Sleef_double2 x, y, z;
+  Sleef_double2 x, y;
   di_t di;
-  double t;
   int ex = ilogb2k(a) - 55, q = ex > (700-55) ? -64 : 0;
   a = ldexp3k(a, q);
   if (ex < 0) ex = 0;
@@ -1644,14 +1640,13 @@ EXPORT CONST double xpow(double x, double y) {
 
   Sleef_double2 d = ddmul_d2_d2_d(logk(fabsk(x)), y);
   double result = expk(d);
-  if (d.x > 709.78271114955742909217217426) result = SLEEF_INFINITY;
 
-  result = xisnan(result) ? SLEEF_INFINITY : result;
-  result *= (x > 0 ? 1 : (!yisint ? SLEEF_NAN : (yisodd ? -1 : 1)));
+  result = (d.x > 709.78271114955742909217217426 || xisnan(result)) ? SLEEF_INFINITY : result;
+  result *= (x > 0 ? 1 : (yisint ? (yisodd ? -1 : 1) : SLEEF_NAN));
 
   double efx = mulsign(fabsk(x) - 1, y);
   if (xisinf(y)) result = efx < 0 ? 0.0 : (efx == 0 ? 1.0 : SLEEF_INFINITY);
-  if (xisinf(x) || x == 0) result = (yisodd ? sign(x) : 1) * ((x == 0 ? -y : y) < 0 ? 0 : SLEEF_INFINITY);
+  if (xisinf(x) || x == 0) result = mulsign((xsignbit(y) ^ (x == 0)) ? 0 : SLEEF_INFINITY, yisodd ? x : 1);
   if (xisnan(x) || xisnan(y)) result = SLEEF_NAN;
   if (y == 0 || x == 1) result = 1;
 
@@ -2334,57 +2329,59 @@ EXPORT CONST double xhypot_u35(double x, double y) {
 }
 
 EXPORT CONST double xnextafter(double x, double y) {
-  union {
-    double f;
-    int64_t i;
-  } cx;
+  double cxf;
+  int64_t cxi;
 
   x = x == 0 ? mulsign(0, y) : x;
-  cx.f = x;
-  int c = (cx.i < 0) == (y < x);
-  if (c) cx.i = -(cx.i ^ (UINT64_C(1) << 63));
+  cxf = x;
+  memcpy(&cxi, &cxf, sizeof(cxi));
 
-  if (x != y) cx.i--;
+  int c = (cxi < 0) == (y < x);
+  if (c) cxi = -(cxi ^ (int64_t)(UINT64_C(1) << 63));
 
-  if (c) cx.i = -(cx.i ^ (UINT64_C(1) << 63));
+  if (x != y) cxi--;
 
-  if (cx.f == 0 && x != 0) cx.f = mulsign(0, x);
-  if (x == 0 && y == 0) cx.f = y;
-  if (xisnan(x) || xisnan(y)) cx.f = SLEEF_NAN;
+  if (c) cxi = -(cxi ^ (int64_t)(UINT64_C(1) << 63));
+
+  memcpy(&cxf, &cxi, sizeof(cxf));
+  if (cxf == 0 && x != 0) cxf = mulsign(0, x);
+  if (x == 0 && y == 0) cxf = y;
+  if (xisnan(x) || xisnan(y)) cxf = SLEEF_NAN;
   
-  return cx.f;
+  return cxf;
 }
 
 EXPORT CONST double xfrfrexp(double x) {
-  union {
-    double f;
-    uint64_t u;
-  } cx;
+  double cxf;
+  uint64_t cxu;
 
   if (fabsk(x) < DBL_MIN) x *= (UINT64_C(1) << 63);
   
-  cx.f = x;
-  cx.u &= ~UINT64_C(0x7ff0000000000000);
-  cx.u |=  UINT64_C(0x3fe0000000000000);
+  cxf = x;
+  memcpy(&cxu, &cxf, sizeof(cxu));
 
-  if (xisinf(x)) cx.f = mulsign(SLEEF_INFINITY, x);
-  if (x == 0) cx.f = x;
+  cxu &= ~UINT64_C(0x7ff0000000000000);
+  cxu |=  UINT64_C(0x3fe0000000000000);
+
+  memcpy(&cxf, &cxu, sizeof(cxf));
+  if (xisinf(x)) cxf = mulsign(SLEEF_INFINITY, x);
+  if (x == 0) cxf = x;
   
-  return cx.f;
+  return cxf;
 }
 
 EXPORT CONST int xexpfrexp(double x) {
-  union {
-    double f;
-    uint64_t u;
-  } cx;
+  double cxf;
+  uint64_t cxu;
 
   int ret = 0;
   
   if (fabsk(x) < DBL_MIN) { x *= (UINT64_C(1) << 63); ret = -63; }
   
-  cx.f = x;
-  ret += (int32_t)(((cx.u >> 52) & 0x7ff)) - 0x3fe;
+  cxf = x;
+  memcpy(&cxu, &cxf, sizeof(cxu));
+
+  ret += (int32_t)(((cxu >> 52) & 0x7ff)) - 0x3fe;
 
   if (x == 0 || xisnan(x) || xisinf(x)) ret = 0;
   
@@ -2471,7 +2468,7 @@ typedef struct {
 } dd2;
 
 static CONST dd2 gammak(double a) {
-  Sleef_double2 clc = dd(0, 0), clln = dd(1, 0), clld = dd(1, 0), v = dd(1, 0), x, y, z;
+  Sleef_double2 clc = dd(0, 0), clln = dd(1, 0), clld = dd(1, 0), x, y, z;
   double t, u;
 
   int otiny = fabsk(a) < 1e-306, oref = a < 0.5;

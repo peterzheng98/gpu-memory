@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2020-2023 Intel Corporation
+ * Copyright 2020-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -552,18 +552,25 @@ using expr = node_ptr<expr_base, expr_base>;
  * @param mask_ the mask of vector to load, should be lanes == length_ or
  * bits == length_, e.g. length_==16, vec_f32x16(trans2d) or uint16_t(most
  * cases).
+ * @param rows_ the rows of the vector to load. Can be 0 if it is 1D vector
  * */
 struct span_t {
     std::vector<expr> index_;
     uint16_t length_;
+    uint16_t rows_;
     expr mask_;
 
-    span_t(std::vector<expr> index, uint16_t length, expr mask = expr())
-        : index_(std::move(index)), length_(length), mask_(std::move(mask)) {}
+    span_t(std::vector<expr> index, uint16_t length, expr mask = expr(),
+            uint16_t rows = 0)
+        : index_(std::move(index))
+        , length_(length)
+        , rows_(rows)
+        , mask_(std::move(mask)) {}
 
     span_t(span_t &&other)
         : index_(std::move(other.index_))
         , length_(other.length_)
+        , rows_(other.rows_)
         , mask_(std::move(other.mask_)) {}
 };
 
@@ -1134,6 +1141,11 @@ public:
     bool ptr_same(const func_t &v) const { return v.get() == get(); }
 };
 
+inline bool operator==(const func_t &v, std::nullptr_t) {
+    // make dpcpp happy in c++20 mode
+    return !v;
+}
+
 // constant version of func_t
 using func_c = std::shared_ptr<const func_base>;
 
@@ -1264,10 +1276,10 @@ public:
         , idx_(idx)
         , mask_(std::move(mask)) {}
     indexing_node(const expr &ptr, const std::vector<expr> &idx, uint16_t lanes,
-            expr mask)
+            uint16_t rows, expr mask)
         : expr_base(sc_data_type_t(
                             etypes::get_pointer_element(ptr->dtype_.type_code_),
-                            lanes),
+                            lanes, rows),
                 sc_expr_type::indexing)
         , ptr_(ptr)
         , idx_(idx)
@@ -1335,6 +1347,7 @@ enum class intrin_type {
     reduce_max,
     reduce_min,
     fmadd,
+    fnmadd,
     unpack_low,
     unpack_high,
     shuffle,
@@ -1373,7 +1386,10 @@ enum class intrin_type {
     // very local to cache (0, or _MM_HINT_T0) to not local (3)
     prefetch,
     // explicitly load from const memory location
-    load_const_mem,
+    constant_load,
+    // explicitly load from const memory location with volatility, prevent to be
+    // hoisted
+    volatile_load,
     // gets the group id in nested-parallel-for. It should be in 0 to (max
     // number of groups)-1. Takes one parameter of u32 for the level of group.
     get_group_id,

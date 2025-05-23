@@ -3,8 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # type: ignore
 
-"""
-You can run a specific test by using the following syntax.
+"""You can run a specific test by using the following syntax.
 
 ::
 
@@ -27,7 +26,16 @@ import parameterized
 import version_utils
 from numpy.testing import assert_allclose
 
-from onnx import AttributeProto, FunctionProto, ModelProto, TensorProto, checker, parser
+import onnx.reference.custom_element_types as custom
+from onnx import (
+    AttributeProto,
+    FunctionProto,
+    ModelProto,
+    TensorProto,
+    checker,
+    parser,
+    subbyte,
+)
 from onnx.backend.test.case.node.roialign import get_roi_align_input_values
 from onnx.checker import check_model
 from onnx.defs import onnx_opset_version
@@ -40,6 +48,7 @@ from onnx.helper import (
     make_model,
     make_model_gen_version,
     make_node,
+    make_operatorsetid,
     make_opsetid,
     make_sequence_type_proto,
     make_tensor,
@@ -141,15 +150,17 @@ def run_ort_inference(onnx_model):
 
 
 def im2col_naive_implementation(data, kernel_shape, dilations, pads, strides):  # type: ignore
-    """
-    Naive implementation for `im2col`.
+    """Naive implementation for `im2col`.
 
-    :param image: image (float)
-    :param kernel_shape: kernel shape
-    :param dilations: dilations
-    :param pads: pads
-    :param strides: strides
-    :return: result
+    Args:
+        data: image (float)
+        kernel_shape: kernel shape
+        dilations: dilations
+        pads: pads
+        strides: strides
+
+    Returns:
+        result
     """
     if not isinstance(kernel_shape, tuple):
         raise TypeError(f"Unexpected type {type(kernel_shape)!r} for kernel_shape.")
@@ -223,8 +234,7 @@ class TestReferenceEvaluator(unittest.TestCase):
 
     @staticmethod
     def _load_model(m_def: str) -> ModelProto:
-        """
-        Parses a model from a string representation, including checking
+        """Parses a model from a string representation, including checking
         the model for correctness
         """
         m = parser.parse_model(m_def)
@@ -1185,6 +1195,85 @@ class TestReferenceEvaluator(unittest.TestCase):
         got = sess.run(None, {"X": x})[0]
         expected = 1 / (x + 0.5)
         assert_allclose(expected, got)
+
+    def test_custom_no_output_tuple(self):
+        class InvAlpha(OpRun):
+            op_domain = "custom"
+
+            def _run(self, x, alpha=None):  # type: ignore
+                alpha = alpha or self.alpha  # type: ignore
+                return 1 / (x + alpha)
+
+        X = make_tensor_value_info("X", TensorProto.FLOAT, [None, None])
+        Y = make_tensor_value_info("Y", TensorProto.FLOAT, [None])
+        node1 = make_node("InvAlpha", ["X"], ["Y"], alpha=0.5, domain="custom")
+        graph = make_graph([node1], "rs", [X], [Y])
+        onnx_model = make_model(graph, opset_imports=[make_opsetid("custom", 1)])
+        x = np.arange(60).reshape((3, 4, 5)).astype(np.float32) + 1
+        ref = ReferenceEvaluator(onnx_model, new_ops=[InvAlpha])
+        with self.assertRaises(TypeError):
+            ref.run(None, {"X": x})
+
+    def test_custom_empty_output(self):
+        class InvAlpha(OpRun):
+            op_domain = "custom"
+
+            def _run(self, x, alpha=None):  # type: ignore
+                return tuple()
+
+        X = make_tensor_value_info("X", TensorProto.FLOAT, [None, None])
+        Y = make_tensor_value_info("Y", TensorProto.FLOAT, [None])
+        node1 = make_node("InvAlpha", ["X"], ["Y"], alpha=0.5, domain="custom")
+        graph = make_graph([node1], "rs", [X], [Y])
+        onnx_model = make_model(graph, opset_imports=[make_opsetid("custom", 1)])
+        x = np.arange(60).reshape((3, 4, 5)).astype(np.float32) + 1
+        ref = ReferenceEvaluator(onnx_model, new_ops=[InvAlpha])
+        with self.assertRaises(ValueError):
+            ref.run(None, {"X": x})
+
+    def test_custom_tuple_tuple(self):
+        class InvAlpha(OpRun):
+            op_domain = "custom"
+
+            def _run(self, x, alpha=None):  # type: ignore
+                alpha = alpha or self.alpha  # type: ignore
+                res = tuple([tuple([1 / (x + alpha)])])  # noqa: C409
+                assert isinstance(res, tuple)
+                assert isinstance(res[0], tuple)
+                return res
+
+        X = make_tensor_value_info("X", TensorProto.FLOAT, [None, None])
+        Y = make_tensor_value_info("Y", TensorProto.FLOAT, [None])
+        node1 = make_node("InvAlpha", ["X"], ["Y"], alpha=0.5, domain="custom")
+        graph = make_graph([node1], "rs", [X], [Y])
+        onnx_model = make_model(graph, opset_imports=[make_opsetid("custom", 1)])
+        x = np.arange(60).reshape((3, 4, 5)).astype(np.float32) + 1
+        ref = ReferenceEvaluator(onnx_model, new_ops=[InvAlpha])
+        with self.assertRaises(TypeError):
+            ref.run(None, {"X": x})
+
+    def test_custom_tuple_unexpected_type(self):
+        class CustomType:
+            pass
+
+        class InvAlpha(OpRun):
+            op_domain = "custom"
+
+            def _run(self, x, alpha=None):  # type: ignore
+                res = tuple([CustomType()])  # noqa: C409
+                assert isinstance(res, tuple)
+                assert isinstance(res[0], CustomType)
+                return res
+
+        X = make_tensor_value_info("X", TensorProto.FLOAT, [None, None])
+        Y = make_tensor_value_info("Y", TensorProto.FLOAT, [None])
+        node1 = make_node("InvAlpha", ["X"], ["Y"], alpha=0.5, domain="custom")
+        graph = make_graph([node1], "rs", [X], [Y])
+        onnx_model = make_model(graph, opset_imports=[make_opsetid("custom", 1)])
+        x = np.arange(60).reshape((3, 4, 5)).astype(np.float32) + 1
+        ref = ReferenceEvaluator(onnx_model, new_ops=[InvAlpha])
+        with self.assertRaises(TypeError):
+            ref.run(None, {"X": x})
 
     def test_loop(self):
         # Given a tensor x of values [x1, ..., xN],
@@ -3501,6 +3590,389 @@ class TestReferenceEvaluator(unittest.TestCase):
         got = ref.run(None, {"X": data})
         assert_allclose(expected, got[0])
 
+    def test_quantize_linear_uint16(self):
+        X = make_tensor_value_info("X", TensorProto.FLOAT, [None])
+        Y = make_tensor_value_info("Y", TensorProto.UINT16, [None])
+        model = make_model(
+            make_graph(
+                [
+                    make_node("QuantizeLinear", ["X", "scale", "zero"], ["Y"]),
+                ],
+                "g",
+                [X],
+                [Y],
+                [
+                    make_tensor("scale", TensorProto.FLOAT, [1], [2.0]),
+                    make_tensor("zero", TensorProto.UINT16, [1], [32767]),
+                ],
+            )
+        )
+        ref = ReferenceEvaluator(model)
+        data = np.array(
+            [
+                # rounding half to even
+                0.0,
+                -128.0,
+                3.0,
+                -3.0,
+                # round < .5
+                2.9,
+                -2.9,
+                # round > .5
+                3.1,
+                -3.1,
+                # critical point
+                65536.0,
+                -65534.0,
+                # saturate case
+                70000.0,
+                -70000.0,
+            ],
+            dtype=np.float32,
+        )
+        expected = np.array(
+            [
+                32767,
+                32703,
+                32769,
+                32765,
+                32768,
+                32766,
+                32769,
+                32765,
+                65535,
+                0,
+                65535,
+                0,
+            ],
+            dtype=np.uint16,
+        )
+        got = ref.run(None, {"X": data})
+        assert_allclose(expected, got[0])
+
+    def test_quantize_linear_int16(self):
+        X = make_tensor_value_info("X", TensorProto.FLOAT, [None])
+        Y = make_tensor_value_info("Y", TensorProto.INT16, [None])
+        model = make_model(
+            make_graph(
+                [
+                    make_node("QuantizeLinear", ["X", "scale", "zero"], ["Y"]),
+                ],
+                "g",
+                [X],
+                [Y],
+                [
+                    make_tensor("scale", TensorProto.FLOAT, [1], [2.0]),
+                    make_tensor("zero", TensorProto.INT16, [1], [256]),
+                ],
+            )
+        )
+        ref = ReferenceEvaluator(model)
+        data = np.array(
+            [
+                # rounding half to even
+                0.0,
+                -514.0,
+                3.0,
+                -3.0,
+                # round < .5
+                2.9,
+                -2.9,
+                # round > .5
+                3.1,
+                -3.1,
+                # critical point
+                65022.0,
+                -66046.0,
+                65023.0,
+                -66047.0,
+                65024.0,
+                -66048.0,
+                # saturate case
+                70000.0,
+                -70000.0,
+            ],
+            dtype=np.float32,
+        )
+        expected = np.array(
+            [
+                256,
+                -1,
+                258,
+                254,
+                257,
+                255,
+                258,
+                254,
+                32767,
+                -32767,
+                32767,
+                -32768,
+                32767,
+                -32768,
+                32767,
+                -32768,
+            ],
+            dtype=np.int16,
+        )
+        got = ref.run(None, {"X": data})
+        assert_allclose(expected, got[0])
+
+    def test_dequantize_linear_uint16(self):
+        X = make_tensor_value_info("X", TensorProto.UINT16, [None])
+        Y = make_tensor_value_info("Y", TensorProto.FLOAT, [None])
+        model = make_model(
+            make_graph(
+                [
+                    make_node(
+                        "DequantizeLinear", ["X", "scale", "zero"], ["Y"], axis=0
+                    ),
+                ],
+                "g",
+                [X],
+                [Y],
+                [
+                    make_tensor("scale", TensorProto.FLOAT, [1], [2.0]),
+                    make_tensor("zero", TensorProto.UINT16, [1], [32767]),
+                ],
+            )
+        )
+        ref = ReferenceEvaluator(model)
+        data = np.array([30000, 31000, 32768, 33000], dtype=np.uint16)
+        expected = np.array([-5534.0, -3534.0, 2.0, 466.0], dtype=np.float32)
+        got = ref.run(None, {"X": data})
+        assert_allclose(expected, got[0])
+
+    def test_dequantize_linear_int16(self):
+        X = make_tensor_value_info("X", TensorProto.INT16, [None])
+        Y = make_tensor_value_info("Y", TensorProto.FLOAT, [None])
+        model = make_model(
+            make_graph(
+                [
+                    make_node(
+                        "DequantizeLinear", ["X", "scale", "zero"], ["Y"], axis=0
+                    ),
+                ],
+                "g",
+                [X],
+                [Y],
+                [
+                    make_tensor("scale", TensorProto.FLOAT, [1], [2.0]),
+                    make_tensor("zero", TensorProto.INT16, [1], [-1024]),
+                ],
+            )
+        )
+        ref = ReferenceEvaluator(model)
+        data = np.array([-300, -30, -1025, 1270], dtype=np.int16)
+        expected = np.array([1448.0, 1988.0, -2.0, 4588.0], dtype=np.float32)
+        got = ref.run(None, {"X": data})
+        assert_allclose(expected, got[0])
+
+    @parameterized.parameterized.expand(
+        [
+            (
+                4 * np.arange(12).reshape(3, 4),
+                np.arange(1, 7).reshape(3, 2),
+                np.zeros((3, 2)),
+                1,
+                2,
+                [[0, 4, 4, 6], [5, 7, 6, 7], [6, 7, 7, 7]],
+            ),
+            (
+                4 * np.arange(12).reshape(3, 4),
+                np.arange(1, 7).reshape(3, 2),
+                np.ones((3, 2)),
+                1,
+                2,
+                [[1, 5, 5, 7], [6, 8, 7, 8], [7, 8, 8, 8]],
+            ),
+            (
+                np.arange(24).reshape(3, 8),
+                [[0.25, 0.5, 1], [0.25, 0.5, 1], [0.25, 0.5, 1]],
+                np.zeros((3, 3)),
+                1,
+                3,
+                [
+                    [0, 4, 8, 6, 8, 10, 6, 7],
+                    [32, 36, 40, 22, 24, 26, 14, 15],
+                    [64, 68, 72, 38, 40, 42, 22, 23],
+                ],
+            ),
+            (
+                np.arange(6),
+                [0.25, 0.5],
+                [-1, -2],
+                0,
+                3,
+                [-1, 3, 7, 4, 6, 8],
+            ),
+            (
+                np.ones((9, 12)),
+                np.ones((3, 4)),
+                np.zeros((3, 4)),
+                0,
+                3,
+                None,  # Blocked quantization is defined for 1-D blocks only
+            ),
+            (
+                np.ones((3, 4, 5, 6)),
+                np.ones((3, 4)),
+                np.zeros((3, 4)),
+                2,
+                2,
+                None,  # Scale and ZP must have the same rank as the input
+            ),
+        ]
+    )
+    def test_blocked_quantize_linear(
+        self, x, scale, zero_point, axis, block_size, expected
+    ):
+        X = make_tensor_value_info("X", TensorProto.FLOAT, [None])
+        Y = make_tensor_value_info("Y", TensorProto.INT8, [None])
+
+        scale_data = np.array(scale, dtype=np.float32)
+        zp_data = np.array(zero_point, dtype=np.int8)
+        model = make_model(
+            make_graph(
+                [
+                    make_node(
+                        "QuantizeLinear",
+                        ["X", "scale", "zero"],
+                        ["Y"],
+                        axis=axis,
+                        block_size=block_size,
+                    ),
+                ],
+                "g",
+                [X],
+                [Y],
+                [
+                    make_tensor(
+                        "scale", TensorProto.FLOAT, scale_data.shape, scale_data
+                    ),
+                    make_tensor("zero", TensorProto.INT8, scale_data.shape, zp_data),
+                ],
+            )
+        )
+        ref = ReferenceEvaluator(model)
+
+        data = np.array(x, dtype=np.float32)
+
+        if expected is not None:
+            expected = np.array(expected, dtype=np.int8)
+            got = ref.run(None, {"X": data})
+            assert_allclose(expected, got[0])
+        else:
+            with self.assertRaises(ValueError):
+                ref.run(None, {"X": data})
+
+    @parameterized.parameterized.expand(
+        [
+            (
+                np.arange(12).reshape(3, 4),
+                np.arange(1, 7).reshape(3, 2),
+                np.zeros((3, 2)),
+                1,
+                2,
+                [[0, 1, 4, 6], [12, 15, 24, 28], [40, 45, 60, 66]],
+            ),
+            (
+                np.arange(12).reshape(3, 4),
+                np.arange(1, 7).reshape(3, 2),
+                np.ones((3, 2)),
+                1,
+                2,
+                [[-1, 0, 2, 4], [9, 12, 20, 24], [35, 40, 54, 60]],
+            ),
+            (
+                np.dstack([np.arange(4).reshape(2, 2)] * 4),
+                np.dstack([np.array([[1, 1], [2, 3]]), np.array([[4, 5], [6, 7]])]),
+                np.zeros((2, 2, 2)),
+                2,
+                2,
+                [[[0, 0, 0, 0], [1, 1, 5, 5]], [[4, 4, 12, 12], [9, 9, 21, 21]]],
+            ),
+            (
+                np.arange(24).reshape(3, 8),
+                [[2, 1, 3], [2, 1, 3], [2, 1, 3]],
+                np.zeros((3, 3)),
+                1,
+                3,
+                [
+                    [0, 2, 4, 3, 4, 5, 18, 21],
+                    [16, 18, 20, 11, 12, 13, 42, 45],
+                    [32, 34, 36, 19, 20, 21, 66, 69],
+                ],
+            ),
+            (
+                np.arange(
+                    6,
+                ),
+                [2, 3],
+                [1, 2],
+                0,
+                3,
+                [-2, 0, 2, 3, 6, 9],
+            ),
+            (
+                np.ones((9, 12)),
+                np.ones((3, 4)),
+                np.zeros((3, 4)),
+                0,
+                3,
+                None,  # Blocked quantization is defined for 1-D blocks only
+            ),
+            (
+                np.ones((3, 4, 5, 6)),
+                np.ones((3, 4)),
+                np.zeros((3, 4)),
+                2,
+                2,
+                None,  # Scale and ZP must have the same rank as the input
+            ),
+        ]
+    )
+    def test_blocked_dequantize_linear(
+        self, x, scale, zero_point, axis, block_size, expected
+    ):
+        X = make_tensor_value_info("X", TensorProto.INT8, [None])
+        Y = make_tensor_value_info("Y", TensorProto.FLOAT, [None])
+
+        scale_data = np.array(scale, dtype=np.float32)
+        zp_data = np.array(zero_point, dtype=np.int8)
+        model = make_model(
+            make_graph(
+                [
+                    make_node(
+                        "DequantizeLinear",
+                        ["X", "scale", "zero"],
+                        ["Y"],
+                        axis=axis,
+                        block_size=block_size,
+                    ),
+                ],
+                "g",
+                [X],
+                [Y],
+                [
+                    make_tensor(
+                        "scale", TensorProto.FLOAT, scale_data.shape, scale_data
+                    ),
+                    make_tensor("zero", TensorProto.INT8, scale_data.shape, zp_data),
+                ],
+            )
+        )
+        ref = ReferenceEvaluator(model)
+        data = np.array(x, dtype=np.int8)
+
+        if expected is not None:
+            expected = np.array(expected, dtype=np.float32)
+            got = ref.run(None, {"X": data})
+            assert_allclose(expected, got[0])
+        else:
+            with self.assertRaises(ValueError):
+                ref.run(None, {"X": data})
+
     def test_lrn(self):
         def _expected(x, alpha, beta, bias, size):
             square_sum = np.zeros((5, 5, 5, 5)).astype(np.float32)
@@ -4959,6 +5431,76 @@ class TestReferenceEvaluator(unittest.TestCase):
             num_splits, np.array(expected_num_splits, dtype=np.int64)
         )
 
+    def test_qlinearconv_int8(self):
+        node = make_node(
+            "QLinearMatMul",
+            inputs=[
+                "a",
+                "a_scale",
+                "a_zero_point",
+                "b",
+                "b_scale",
+                "b_zero_point",
+                "y_scale",
+                "y_zero_point",
+            ],
+            outputs=["y"],
+        )
+        graph = make_graph(
+            [node],
+            "g",
+            [
+                make_tensor_value_info("a", TensorProto.FLOAT, [None, None]),
+                make_tensor_value_info("a_scale", TensorProto.FLOAT, [1]),
+                make_tensor_value_info("a_zero_point", TensorProto.INT8, [1]),
+                make_tensor_value_info("b", TensorProto.FLOAT, [None, None]),
+                make_tensor_value_info("b_scale", TensorProto.FLOAT, [1]),
+                make_tensor_value_info("b_zero_point", TensorProto.INT8, [1]),
+                make_tensor_value_info("y_scale", TensorProto.FLOAT, [1]),
+                make_tensor_value_info("y_zero_point", TensorProto.INT8, [1]),
+            ],
+            [make_tensor_value_info("y", TensorProto.FLOAT, [None, None])],
+        )
+        onnx_model = make_model(
+            graph, opset_imports=[make_opsetid("", 20)], ir_version=9
+        )
+        sess = ReferenceEvaluator(onnx_model)
+
+        a = np.array([[208, 236, 0, 238], [3, 214, 255, 29]])
+        a -= 127
+        a = a.astype(np.int8)
+
+        a_scale = np.array([0.0066], dtype=np.float32)
+        a_zero_point = np.array([113 - 127], dtype=np.int8)
+
+        b = np.array([[152, 51, 244], [60, 26, 255], [0, 127, 246], [127, 254, 247]])
+        b -= 127
+        b = b.astype(np.int8)
+
+        b_scale = np.array([0.00705], dtype=np.float32)
+        b_zero_point = np.array([114 - 127], dtype=np.int8)
+
+        y_scale = np.array([0.0107], dtype=np.float32)
+        y_zero_point = np.array([118 - 127], dtype=np.int8)
+
+        got = sess.run(
+            None,
+            dict(
+                a=a,
+                a_scale=a_scale,
+                a_zero_point=a_zero_point,
+                b=b,
+                b_scale=b_scale,
+                b_zero_point=b_zero_point,
+                y_scale=y_scale,
+                y_zero_point=y_zero_point,
+            ),
+        )
+
+        np.testing.assert_array_equal(
+            np.array([[41, -12, -9], [1, -75, 20]], dtype=np.int8), got[0]
+        )
+
     @parameterized.parameterized.expand(
         [
             (
@@ -5011,6 +5553,351 @@ class TestReferenceEvaluator(unittest.TestCase):
         ref = ReferenceEvaluator(model)
         with self.assertRaises(ValueError):
             ref.run(None, {"X": np.array(["x"])})
+
+    @parameterized.parameterized.expand(
+        [
+            (
+                TensorProto.UINT4,
+                [-1, 0, 1.5, 2, 3.3, 10, 20, 40],
+                [0, 0, 2, 2, 4, 10, 20, 30],
+            ),
+            (TensorProto.UINT4, [-1, 0, 1.5, 2, 3.3, 10, 40], [0, 0, 2, 2, 4, 10, 30]),
+            (TensorProto.UINT4, [0], [0]),
+            (
+                TensorProto.INT4,
+                [-20, -14.5, 0, 1.5, 2, 3.3, 10, 20],
+                [-16, -14, 0, 2, 2, 4, 10, 14],
+            ),
+            (
+                TensorProto.INT4,
+                [-20, -14.5, 0, 1.5, 2, 3.3, 10],
+                [-16, -14, 0, 2, 2, 4, 10],
+            ),
+            (TensorProto.INT4, [0], [0]),
+        ]
+    )
+    @unittest.skipIf(
+        version_utils.numpy_older_than("1.22.0"),
+        "The test requires numpy 1.22.0 or later",
+    )
+    def test_quantize_linear_int4(self, qtype, data, expected):
+        X = make_tensor_value_info("X", TensorProto.FLOAT, [None])
+        Y = make_tensor_value_info("Y", TensorProto.FLOAT, [None])
+        model = make_model(
+            make_graph(
+                [
+                    make_node(
+                        "Constant",
+                        [],
+                        ["scale"],
+                        value=make_tensor("scale", TensorProto.FLOAT, [1], [2.0]),
+                    ),
+                    make_node(
+                        "Constant",
+                        [],
+                        ["zero"],
+                        value=make_tensor("zero", qtype, [1], [0]),
+                    ),
+                    make_node("QuantizeLinear", ["X", "scale", "zero"], ["T"]),
+                    make_node("DequantizeLinear", ["T", "scale"], ["Y"], axis=0),
+                ],
+                "g",
+                [X],
+                [Y],
+            )
+        )
+        ref = ReferenceEvaluator(model)
+        got = ref.run(None, {"X": np.asarray(data)})
+        assert_allclose(expected, got[0])
+
+    @parameterized.parameterized.expand(
+        itertools.product(
+            (TensorProto.FLOAT, TensorProto.FLOAT16),
+            (TensorProto.UINT4, TensorProto.INT4),
+        )
+    )
+    def test_cast_int4_output(self, cast_from, cast_to):
+        X = make_tensor_value_info("X", cast_from, [None])
+        Y = make_tensor_value_info("Y", cast_to, [None])
+        model = make_model(
+            make_graph(
+                [
+                    make_node("Cast", ["X"], ["Y"], to=cast_to),
+                ],
+                "g",
+                [X],
+                [Y],
+            )
+        )
+        ref = ReferenceEvaluator(model)
+        data = np.array([0, 1, 2.4, 2.6, 4, 10], dtype=np.float32)
+        signed = cast_to == TensorProto.INT4
+        expected1 = np.array(
+            [subbyte.float32_to_4bit_unpacked(x, signed=signed) for x in data]
+        )
+        got = ref.run(None, {"X": data})
+        self.assertEqual(expected1.tolist(), got[0].tolist())
+
+    @parameterized.parameterized.expand(
+        itertools.product(
+            (TensorProto.UINT4, TensorProto.INT4),
+            (TensorProto.FLOAT, TensorProto.FLOAT16),
+        )
+    )
+    def test_cast_int4_input(self, cast_from, cast_to):
+        X = make_tensor_value_info("X", cast_from, [None])
+        Y = make_tensor_value_info("Y", cast_to, [None])
+        model = make_model(
+            make_graph(
+                [
+                    make_node("Cast", ["X"], ["Y"], to=TensorProto.FLOAT),
+                ],
+                "g",
+                [X],
+                [Y],
+            )
+        )
+        ref = ReferenceEvaluator(model)
+        data = np.array(range(0, 7), dtype=np.float32)
+        cast_from_np = custom.uint4 if cast_from == TensorProto.UINT4 else custom.int4
+        data = data.astype(cast_from_np)
+        expected1 = np.array(
+            [subbyte.float32_to_4bit_unpacked(x, cast_from_np) for x in data]
+        )
+        got = ref.run(None, {"X": data})
+        self.assertEqual(expected1.tolist(), got[0].tolist())
+
+    def test_a_function_calling_a_function_once(self):
+        X = make_tensor_value_info("X", TensorProto.FLOAT, ["N"])
+        output = make_tensor_value_info("output", TensorProto.FLOAT, ["N"])
+        Z = make_tensor_value_info("output", TensorProto.FLOAT, ["N"])
+
+        func_def_add = make_function(
+            "this",
+            "fctadd",
+            ["input2"],
+            ["output"],
+            [
+                make_node("Constant", [], ["one"], value_floats=[1.0], name="CC0"),
+                make_node("Add", ["input2", "one"], ["output"], name="A1"),
+            ],
+            opset_imports=[make_operatorsetid("", 15)],
+        )
+
+        func_def = make_function(
+            "this",
+            "fct",
+            ["input"],
+            ["output"],
+            [
+                make_node("Constant", [], ["one"], value_floats=[1.0], name="CC"),
+                make_node("Greater", ["input", "one"], ["cond"]),
+                make_node(
+                    "If",
+                    ["cond"],
+                    ["output"],
+                    then_branch=make_graph(
+                        [make_node("fctadd", ["input"], ["output"], domain="this")],
+                        "gthen",
+                        [],
+                        [output],
+                    ),
+                    else_branch=make_graph(
+                        [make_node("Add", ["input", "one"], ["output"], domain="")],
+                        "gelse",
+                        [],
+                        [output],
+                    ),
+                    name=":IF",
+                ),
+            ],
+            opset_imports=[
+                make_operatorsetid("", 15),
+                make_operatorsetid("this", 1),
+            ],
+        )
+
+        model_def = make_model(
+            make_graph(
+                [
+                    make_node("fct", ["X"], ["output"], domain="this"),
+                ],
+                "test",
+                [X],
+                [Z],
+            ),
+            ir_version=7,
+            opset_imports=[
+                make_operatorsetid("", 15),
+                make_operatorsetid("this", 1),
+            ],
+            functions=[func_def_add, func_def],
+        )
+
+        feeds = {"X": np.array([-5], dtype=np.float32)}
+        oinf = ReferenceEvaluator(model_def)
+        expected = oinf.run(None, feeds)
+
+        # inlining does not work here
+        # inlined = inline_local_functions(model_def)
+        # oinf = ReferenceEvaluator(inlined)
+        # goti = oinf.run(None, feeds)
+        # self.assertEqual(expected[0].tolist(), goti[0].tolist())
+        self.assertEqual(expected[0], np.array([-4], dtype=np.float32))
+
+    def test_a_function_calling_a_function_double(self):
+        X = make_tensor_value_info("X", TensorProto.FLOAT, ["N"])
+        output = make_tensor_value_info("output", TensorProto.FLOAT, ["N"])
+        Z = make_tensor_value_info("output", TensorProto.FLOAT, ["N"])
+
+        func_def_add = make_function(
+            "this",
+            "fctadd",
+            ["input2"],
+            ["output"],
+            [
+                make_node("Constant", [], ["one"], value_floats=[1.0], name="CC0"),
+                make_node("Add", ["input2", "one"], ["output"], name="A1"),
+            ],
+            opset_imports=[make_operatorsetid("", 15)],
+        )
+
+        func_def = make_function(
+            "this",
+            "fct",
+            ["input"],
+            ["output"],
+            [
+                make_node("Constant", [], ["one"], value_floats=[1.0], name="CC"),
+                make_node("Greater", ["input", "one"], ["cond"]),
+                make_node(
+                    "If",
+                    ["cond"],
+                    ["output"],
+                    then_branch=make_graph(
+                        [make_node("fctadd", ["input"], ["output"], domain="this")],
+                        "gthen",
+                        [],
+                        [output],
+                    ),
+                    else_branch=make_graph(
+                        [make_node("Add", ["input", "one"], ["output"], domain="")],
+                        "gelse",
+                        [],
+                        [output],
+                    ),
+                    name=":IF",
+                ),
+            ],
+            opset_imports=[
+                make_operatorsetid("", 15),
+                make_operatorsetid("this", 1),
+            ],
+        )
+
+        model_def = make_model(
+            make_graph(
+                [
+                    make_node("fct", ["X"], ["ztmp"], domain="this"),
+                    make_node("fct", ["ztmp"], ["output"], domain="this"),
+                ],
+                "test",
+                [X],
+                [Z],
+            ),
+            ir_version=7,
+            opset_imports=[
+                make_operatorsetid("", 15),
+                make_operatorsetid("this", 1),
+            ],
+            functions=[func_def_add, func_def],
+        )
+
+        feeds = {"X": np.array([-5], dtype=np.float32)}
+        oinf = ReferenceEvaluator(model_def)
+        expected = oinf.run(None, feeds)
+
+        # inlining does not work here
+        # inlined = inline_local_functions(model_def)
+        # oinf = ReferenceEvaluator(inlined)
+        # goti = oinf.run(None, feeds)
+        # self.assertEqual(expected[0].tolist(), goti[0].tolist())
+        self.assertEqual(expected[0], np.array([-3], dtype=np.float32))
+
+    def test_overload_reference_implementation(self):
+        X = make_tensor_value_info("X", TensorProto.FLOAT, ["N"])
+        output = make_tensor_value_info("output", TensorProto.FLOAT, ["N"])
+        Z = make_tensor_value_info("output", TensorProto.FLOAT, ["N"])
+
+        func_def_add = make_function(
+            "this",
+            "fctadd",
+            ["input2"],
+            ["output"],
+            [
+                make_node("Constant", [], ["one"], value_floats=[1.0], name="CC0"),
+                make_node("Add", ["input2", "one"], ["output"], name="A1"),
+            ],
+            opset_imports=[make_operatorsetid("", 15)],
+        )
+
+        func_def = make_function(
+            "this",
+            "fct",
+            ["input"],
+            ["output"],
+            [
+                make_node("Constant", [], ["one"], value_floats=[1.0], name="CC"),
+                make_node("Greater", ["input", "one"], ["cond"]),
+                make_node(
+                    "If",
+                    ["cond"],
+                    ["output"],
+                    then_branch=make_graph(
+                        [make_node("fctadd", ["input"], ["output"], domain="this")],
+                        "gthen",
+                        [],
+                        [output],
+                    ),
+                    else_branch=make_graph(
+                        [make_node("Add", ["input", "one"], ["output"], domain="")],
+                        "gelse",
+                        [],
+                        [output],
+                    ),
+                    name=":IF",
+                ),
+            ],
+            opset_imports=[
+                make_operatorsetid("", 15),
+                make_operatorsetid("this", 1),
+            ],
+        )
+
+        model_def = make_model(
+            make_graph(
+                [
+                    make_node("fct", ["X"], ["ztmp"], domain="this"),
+                    make_node("fct", ["ztmp"], ["output"], domain="this"),
+                ],
+                "test",
+                [X],
+                [Z],
+            ),
+            ir_version=7,
+            opset_imports=[
+                make_operatorsetid("", 15),
+                make_operatorsetid("this", 1),
+            ],
+            functions=[func_def_add, func_def],
+        )
+
+        class MyReferenceEvaluator(ReferenceEvaluator):
+            pass
+
+        oinf = MyReferenceEvaluator(model_def)
+        for v in oinf.functions_.values():
+            self.assertIsInstance(v, MyReferenceEvaluator)
 
 
 if __name__ == "__main__":

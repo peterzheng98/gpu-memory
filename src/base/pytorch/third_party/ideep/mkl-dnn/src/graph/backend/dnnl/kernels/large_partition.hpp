@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2022-2023 Intel Corporation
+* Copyright 2022-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@
 #include "graph/interface/graph.hpp"
 
 #include "graph/backend/dnnl/common.hpp"
-#include "graph/backend/dnnl/constant_cache.hpp"
+#include "graph/backend/dnnl/dnnl_constant_tensor_cache.hpp"
 #include "graph/backend/dnnl/dnnl_partition_impl.hpp"
 #include "graph/backend/dnnl/op_executable.hpp"
 #include "graph/backend/dnnl/scratchpad.hpp"
@@ -130,6 +130,9 @@ public:
         BACKEND_DNNL_ADD_PASS(pipeline, fold_pre_mul_scale_into_bn);
         BACKEND_DNNL_ADD_PASS(pipeline, fold_post_mul_scale_into_bn);
 
+        // MQA pattern fusion
+        BACKEND_DNNL_ADD_PASS(pipeline, lift_up_post_add_for_matmul);
+
         BACKEND_DNNL_ADD_PASS(pipeline, fuse_post_ops);
         BACKEND_DNNL_ADD_PASS(pipeline, fold_mul_scales);
         BACKEND_DNNL_ADD_PASS(pipeline, convert_to_runtime_dst_scales);
@@ -179,6 +182,7 @@ public:
             memory_planner_t &mem_planner, bool enable_constant_cache) {
         pipeline.reset_visualize_arg(true, false);
         BACKEND_DNNL_ADD_PASS(pipeline, infer_shape);
+        BACKEND_DNNL_ADD_PASS(pipeline, fuse_src_transpose_to_matmul);
         BACKEND_DNNL_ADD_PASS(pipeline, fuse_dst_transpose_to_matmul);
         BACKEND_DNNL_ADD_PASS(pipeline, layout_propagation);
         BACKEND_DNNL_ADD_PASS(pipeline, common_reorder_elimination);
@@ -206,53 +210,7 @@ public:
     status_t compile_impl(const dnnl_partition_impl_t *part,
             const engine_t *g_engine,
             const std::vector<logical_tensor_t> &inputs,
-            const std::vector<logical_tensor_t> &outputs) override {
-        p_engine_ = make_dnnl_engine(*g_engine);
-        g_alloc_ = reinterpret_cast<graph::allocator_t *>(
-                g_engine->get_allocator());
-
-        // get subgraph from the deep copied partition
-        subgraph_ = std::make_shared<subgraph_t>(part->get_ops(), p_engine_,
-                part->get_fpmath_mode(), part->get_use_blocked_layout(), true);
-        BACKEND_DNNL_CHECK(
-                set_given_inputs_outputs(subgraph_, inputs, outputs));
-
-        // Populate the transform passes into the pipeline
-        std::call_once(once_flag_, [&, this]() {
-            vis_ = subgraph_visualizer_t(
-                    part->id(), [this](const value_t *val) {
-                        return this->memory_planner_.get_memory_info(val);
-                    });
-            pipeline_ = pass_pipeline_t(vis_);
-            setup_pipeline(
-                    pipeline_, memory_planner_, enabled_constant_cache());
-        });
-
-        // Run the added passes
-        BACKEND_DNNL_CHECK(pipeline_.run(subgraph_));
-
-        // fill information for inputs logical tensors
-        for (size_t i = 0; i < inputs.size(); i++) {
-            auto &in = const_cast<logical_tensor_t &>(inputs[i]);
-            in = subgraph_->ins_[i];
-        }
-
-        // fill information for outputs logical tensors
-        for (size_t i = 0; i < outputs.size(); i++) {
-            auto &out = const_cast<logical_tensor_t &>(outputs[i]);
-            out = subgraph_->outs_[i];
-        }
-
-        resource_ctor_ = [this]() {
-            return this->memory_planner_.get_exec_args_set().clone();
-        };
-
-        constant_key_ = generate_constant_cache_key(part->id(),
-                memory_planner_.get_exec_args_set()
-                        .get_persistent_mem_desc_list());
-
-        return status::success;
-    }
+            const std::vector<logical_tensor_t> &outputs) override;
 
     status_t prepare_inplace_pairs_impl() override {
         inplace_pairs_ = memory_planner_.get_subgraph_inplace_pairs();
@@ -300,14 +258,16 @@ public:
                 "no enough scratchpad memory");
         prepare_args_set(res, inputs, outputs, scratchpad);
 
+        constant_cache_t::cached_t c_buffer;
         if (enabled_constant_cache()) {
             std::promise<constant_cache_t::cached_t> c_promise;
             constant_cache_t::value_t cached_value
-                    = get_global_constant_cache().get_or_add(
-                            constant_key_, c_promise.get_future());
+                    = dnnl_constant_cache_get_or_add(p_engine_, constant_key_,
+                            memory_planner_.total_internal_persistent_size(),
+                            c_promise.get_future());
             bool is_from_cache = cached_value.valid();
             if (is_from_cache) {
-                const constant_cache_t::cached_t &c_buffer = cached_value.get();
+                c_buffer = cached_value.get();
                 grantor_t c_grantor
                         = memory_planner_.internal_persistent_grantor(
                                 c_buffer->data<char>());
@@ -317,11 +277,9 @@ public:
                             c_grantor.get(mem_offkey.second));
                 }
             } else {
-                constant_cache_t::cached_t c_buffer
-                        = std::make_shared<constant_buffer_t>(
-                                memory_planner_
-                                        .total_internal_persistent_size(),
-                                p_engine_, g_alloc_);
+                c_buffer = std::make_shared<dnnl_constant_buffer_t>(
+                        memory_planner_.total_internal_persistent_size(),
+                        p_engine_, g_alloc_);
                 grantor_t c_grantor
                         = memory_planner_.internal_persistent_grantor(
                                 c_buffer->data<char>());
@@ -372,14 +330,16 @@ public:
                 "no enough scratchpad memory");
         prepare_args_set(res, inputs, outputs, scratchpad);
 
+        constant_cache_t::cached_t c_buffer;
         if (enabled_constant_cache()) {
             std::promise<constant_cache_t::cached_t> c_promise;
             constant_cache_t::value_t cached_value
-                    = get_global_constant_cache().get_or_add(
-                            constant_key_, c_promise.get_future());
+                    = dnnl_constant_cache_get_or_add(p_engine_, constant_key_,
+                            memory_planner_.total_internal_persistent_size(),
+                            c_promise.get_future());
             bool is_from_cache = cached_value.valid();
             if (is_from_cache) {
-                const constant_cache_t::cached_t &c_buffer = cached_value.get();
+                c_buffer = cached_value.get();
                 grantor_t c_grantor
                         = memory_planner_.internal_persistent_grantor(
                                 c_buffer->data<char>());
@@ -389,11 +349,9 @@ public:
                             c_grantor.get(mem_offkey.second));
                 }
             } else {
-                constant_cache_t::cached_t c_buffer
-                        = std::make_shared<constant_buffer_t>(
-                                memory_planner_
-                                        .total_internal_persistent_size(),
-                                p_engine_, g_alloc_);
+                c_buffer = std::make_shared<dnnl_constant_buffer_t>(
+                        memory_planner_.total_internal_persistent_size(),
+                        p_engine_, g_alloc_);
                 grantor_t c_grantor
                         = memory_planner_.internal_persistent_grantor(
                                 c_buffer->data<char>());
@@ -423,6 +381,83 @@ public:
 
         scratchpad.set_deps(returned_event);
         if (sycl_event) *sycl_event = returned_event;
+
+        return status::success;
+    }
+#endif
+
+#if DNNL_GPU_RUNTIME == DNNL_RUNTIME_OCL
+    status_t ocl_execute_impl(const stream_t *g_stream,
+            const std::vector<tensor_t> &inputs,
+            const std::vector<tensor_t> &outputs,
+            const std::vector<cl_event> &ocl_deps, cl_event *event) override {
+        auto deps = ocl_deps;
+        cl_event returned_event;
+        dnnl::stream p_stream = make_dnnl_stream(p_engine_, *g_stream);
+
+        thread_local_cache_t<execution_args_set_t> res_cache;
+        execution_args_set_t *res = res_cache.get_or_add(
+                reinterpret_cast<size_t>(this), resource_ctor_);
+
+        temporary_scratchpad_t scratchpad(
+                memory_planner_.total_internal_temporary_size(), p_engine_,
+                *g_alloc_);
+        assertm(scratchpad.size()
+                        >= memory_planner_.total_internal_temporary_size(),
+                "no enough scratchpad memory");
+        prepare_args_set(res, inputs, outputs, scratchpad);
+
+        constant_cache_t::cached_t c_buffer;
+        if (enabled_constant_cache()) {
+            std::promise<constant_cache_t::cached_t> c_promise;
+            constant_cache_t::value_t cached_value
+                    = dnnl_constant_cache_get_or_add(p_engine_, constant_key_,
+                            memory_planner_.total_internal_persistent_size(),
+                            c_promise.get_future());
+            bool is_from_cache = cached_value.valid();
+            if (is_from_cache) {
+                c_buffer = cached_value.get();
+                grantor_t c_grantor
+                        = memory_planner_.internal_persistent_grantor(
+                                c_buffer->data<char>());
+                for (auto &mem_offkey :
+                        res->get_mems_use_internal_persistent()) {
+                    mem_offkey.first.set_data_handle(
+                            c_grantor.get(mem_offkey.second));
+                }
+            } else {
+                c_buffer = std::make_shared<dnnl_constant_buffer_t>(
+                        memory_planner_.total_internal_persistent_size(),
+                        p_engine_, g_alloc_);
+                grantor_t c_grantor
+                        = memory_planner_.internal_persistent_grantor(
+                                c_buffer->data<char>());
+                for (auto &mem_offkey :
+                        res->get_mems_use_internal_persistent()) {
+                    mem_offkey.first.set_data_handle(
+                            c_grantor.get(mem_offkey.second));
+                }
+
+                for (size_t i = 0; i < subgraph_->execs_.size(); i++) {
+                    if (!subgraph_->is_constant_[i]) continue;
+                    returned_event = subgraph_->execs_[i]->execute_ocl(
+                            p_stream, res->get_exec_args()[i], deps);
+                    deps = {returned_event};
+                }
+
+                c_promise.set_value(c_buffer);
+            }
+        }
+
+        for (size_t i = 0; i < subgraph_->execs_.size(); i++) {
+            if (subgraph_->is_constant_[i]) continue;
+            returned_event = subgraph_->execs_[i]->execute_ocl(
+                    p_stream, res->get_exec_args()[i], deps);
+            deps = {returned_event};
+        }
+
+        scratchpad.set_deps(returned_event);
+        if (event) *event = returned_event;
 
         return status::success;
     }

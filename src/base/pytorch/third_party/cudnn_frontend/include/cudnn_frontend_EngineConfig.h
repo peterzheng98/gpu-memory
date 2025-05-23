@@ -29,9 +29,6 @@
 #include <sstream>
 #include <utility>
 
-#include <cudnn.h>
-#include <cudnn_backend.h>
-
 #include "cudnn_frontend_Engine.h"
 #include "cudnn_frontend_utils.h"
 
@@ -94,7 +91,7 @@ class EngineConfig_v8 : public BackendDescriptor {
     ManagedOpaqueDescriptor engine = nullptr;
     int64_t numKnobs               = 0;
     std::string opGraphTag;
-    bool set_knobs_attr = false;
+    bool set_knobs_attr                                                  = false;
     std::array<ManagedOpaqueDescriptor, CUDNN_KNOB_TYPE_COUNTS> bChoices = {};  //!< Opaque pointer to the backend knobs
 };
 
@@ -121,11 +118,11 @@ class EngineConfigBuilder_v8 {
             cudnnStatus_t status;
             cudnnBackendKnobType_t type = knobs[i].getKnobType();
             int64_t value               = knobs[i].getChoice();
-            status = cudnnBackendSetAttribute(m_engine_config.bChoices[i]->get_backend_descriptor(),
-                                              CUDNN_ATTR_KNOB_CHOICE_KNOB_TYPE,
-                                              CUDNN_TYPE_KNOB_TYPE,
-                                              1,
-                                              &type);
+            status                      = detail::set_attribute(m_engine_config.bChoices[i]->get_backend_descriptor(),
+                                           CUDNN_ATTR_KNOB_CHOICE_KNOB_TYPE,
+                                           CUDNN_TYPE_KNOB_TYPE,
+                                           1,
+                                           &type);
             if (status != CUDNN_STATUS_SUCCESS) {
                 set_error_and_throw_exception(&m_engine_config,
                                               status,
@@ -133,11 +130,11 @@ class EngineConfigBuilder_v8 {
                                               "CUDNN_BACKEND_KNOB_CHOICE_DESCRIPTOR SetAttribute "
                                               "CUDNN_ATTR_KNOB_CHOICE_KNOB_TYPE Failed");
             }
-            status = cudnnBackendSetAttribute(m_engine_config.bChoices[i]->get_backend_descriptor(),
-                                              CUDNN_ATTR_KNOB_CHOICE_KNOB_VALUE,
-                                              CUDNN_TYPE_INT64,
-                                              1,
-                                              &value);
+            status = detail::set_attribute(m_engine_config.bChoices[i]->get_backend_descriptor(),
+                                           CUDNN_ATTR_KNOB_CHOICE_KNOB_VALUE,
+                                           CUDNN_TYPE_INT64,
+                                           1,
+                                           &value);
             if (status != CUDNN_STATUS_SUCCESS) {
                 set_error_and_throw_exception(&m_engine_config,
                                               status,
@@ -145,7 +142,7 @@ class EngineConfigBuilder_v8 {
                                               "CUDNN_BACKEND_KNOB_CHOICE_DESCRIPTOR SetAttribute "
                                               "CUDNN_ATTR_KNOB_CHOICE_KNOB_VALUE Failed");
             }
-            status = cudnnBackendFinalize(m_engine_config.bChoices[i]->get_backend_descriptor());
+            status = detail::finalize(m_engine_config.bChoices[i]->get_backend_descriptor());
             if (status != CUDNN_STATUS_SUCCESS) {
                 set_error_and_throw_exception(
                     &m_engine_config,
@@ -183,11 +180,11 @@ class EngineConfigBuilder_v8 {
             return std::move(m_engine_config);
         }
 
-        status = cudnnBackendSetAttribute(m_engine_config.pointer->get_backend_descriptor(),
-                                          CUDNN_ATTR_ENGINECFG_ENGINE,
-                                          CUDNN_TYPE_BACKEND_DESCRIPTOR,
-                                          1,
-                                          &(m_engine_config.engine->get_backend_descriptor()));
+        status = detail::set_attribute(m_engine_config.pointer->get_backend_descriptor(),
+                                       CUDNN_ATTR_ENGINECFG_ENGINE,
+                                       CUDNN_TYPE_BACKEND_DESCRIPTOR,
+                                       1,
+                                       &(m_engine_config.engine->get_backend_descriptor()));
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
                 &m_engine_config,
@@ -201,11 +198,11 @@ class EngineConfigBuilder_v8 {
             for (auto i = 0; i < m_engine_config.numKnobs; i++) {
                 bChoices_[i] = m_engine_config.bChoices[i]->get_backend_descriptor();
             }
-            status = cudnnBackendSetAttribute(m_engine_config.pointer->get_backend_descriptor(),
-                                              CUDNN_ATTR_ENGINECFG_KNOB_CHOICES,
-                                              CUDNN_TYPE_BACKEND_DESCRIPTOR,
-                                              m_engine_config.numKnobs,
-                                              bChoices_.data());
+            status = detail::set_attribute(m_engine_config.pointer->get_backend_descriptor(),
+                                           CUDNN_ATTR_ENGINECFG_KNOB_CHOICES,
+                                           CUDNN_TYPE_BACKEND_DESCRIPTOR,
+                                           m_engine_config.numKnobs,
+                                           bChoices_.data());
             if (status != CUDNN_STATUS_SUCCESS) {
                 set_error_and_throw_exception(
                     &m_engine_config,
@@ -216,13 +213,13 @@ class EngineConfigBuilder_v8 {
         }
 
         // Finalizing the descriptor
-        status = cudnnBackendFinalize(m_engine_config.pointer->get_backend_descriptor());
+        status = detail::finalize(m_engine_config.pointer->get_backend_descriptor());
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
                 &m_engine_config, status, "CUDNN_BACKEND_ENGINECFG_DESCRIPTOR: cudnnFinalize Failed");
             return std::move(m_engine_config);
         }
-        getLogger() << "[cudnn_frontend] " << m_engine_config << std::endl;
+        CUDNN_FE_LOG_LABEL_ENDL(m_engine_config);
         return std::move(m_engine_config);
     }
 
@@ -246,4 +243,4 @@ class EngineConfigBuilder_v8 {
 /// from various source and apply a filter.
 
 using EngineConfigList = std::vector<ManagedOpaqueDescriptor>;
-}
+}  // namespace cudnn_frontend

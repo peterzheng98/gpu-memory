@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2018-2023 Intel Corporation
+* Copyright 2018-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -159,6 +159,7 @@ enum {
     key_bnorm_tmp_diff_ss,
     key_bnorm_tmp_stats,
     key_bnorm_reduction,
+    key_bnorm_reduction_shift,
     key_brgemm_primitive_batch,
     key_brgemm_primitive_buffer,
     key_brgemm_primitive_buffer_a,
@@ -191,6 +192,7 @@ enum {
     key_conv_brgemm_buffer,
     key_conv_brgemm_inp_buffer,
     key_conv_brgemm_inp_buffer_mask,
+    key_conv_brgemm_out_buffer,
     key_conv_bwd_w_1st_bia_reorder,
     key_conv_bwd_w_1st_wei_reorder,
     key_conv_gemm_acc,
@@ -259,10 +261,10 @@ enum {
     key_reorder_wino_transform_space,
     key_reorder_precomputed_dst_scales,
     key_reorder_rnn_space,
-    key_reorder_rnn_weights_bf16_cvt,
     key_reorder_rnn_weights_quantization,
     key_reorder_rnn_weights_reduction,
     key_reorder_rnn_weights_transposition,
+    key_reorder_rnn_weights_xf16_cvt,
     key_rnn_space,
     key_rnn_bf32_attention_trans,
     key_rnn_bf32_wei_layer_trans,
@@ -271,6 +273,7 @@ enum {
     key_rnn_diff_states,
     key_rnn_gates,
     key_rnn_gates_blocked,
+    key_rnn_diff_gates,
     key_rnn_src_layer_trans,
     key_rnn_src_iter_trans,
     key_rnn_ht,

@@ -1985,8 +1985,9 @@ struct convolution_backward_data : public dnnl::convolution_backward_data {
                          const dims& padding_r,
                          const int groups,
                          bool is_channels_last = false,
+                         attr_t op_attr = attr_t(),
                          algorithm aalgorithm = algorithm::convolution_direct,
-                        const engine& aengine = engine::cpu_engine()) {
+                         const engine& aengine = engine::cpu_engine()) {
     IDEEP_CHECK(!(check_isa_is_avx2_vnni_2() &&
                   utils::one_of(diff_dst.get_data_type(),
                                 data_type::bf16, data_type::f16)),
@@ -2020,7 +2021,6 @@ struct convolution_backward_data : public dnnl::convolution_backward_data {
             diff_src_desc, weights_desc, tensor::desc(), diff_dst_desc, strides,
             dilates_, padding_l, padding_r, is_channels_last);
 
-    auto op_attr = dnnl::primitive_attr();
     op_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
 
 #ifdef __aarch64__

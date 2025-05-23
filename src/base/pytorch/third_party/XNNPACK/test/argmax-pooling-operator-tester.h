@@ -11,11 +11,14 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
-#include <limits>
+#include <cstdint>
+#include <memory>
 #include <random>
 #include <vector>
 
 #include <xnnpack.h>
+#include <xnnpack/aligned-allocator.h>
+#include <xnnpack/common.h>
 
 
 class ArgmaxPoolingOperatorTester {
@@ -318,6 +321,20 @@ class ArgmaxPoolingOperatorTester {
     }
   }
 
+  inline ArgmaxPoolingOperatorTester& multithreaded(size_t multithreaded) {
+    this->multithreaded_ = multithreaded;
+    return *this;
+  }
+
+  inline size_t multithreaded() const {
+    return this->multithreaded_;
+  }
+
+  size_t num_threads() const {
+    // Do not spin up excessive number of threads for tests.
+    return multithreaded() ? 5 : 1;
+  }
+
   inline ArgmaxPoolingOperatorTester& iterations(size_t iterations) {
     this->iterations_ = iterations;
     return *this;
@@ -338,6 +355,16 @@ class ArgmaxPoolingOperatorTester {
     std::vector<uint32_t> index(batch_size() * output_height() * output_width() * channels());
     std::vector<uint32_t> index_ref(batch_size() * output_height() * output_width() * channels());
     for (size_t iteration = 0; iteration < iterations(); iteration++) {
+      std::unique_ptr<pthreadpool, decltype(&pthreadpool_destroy)> auto_threadpool{nullptr, pthreadpool_destroy};
+      if (multithreaded()) {
+        const pthreadpool_t threadpool = pthreadpool_create(num_threads());
+        if (pthreadpool_get_threads_count(threadpool) <= 1) {
+          GTEST_SKIP();
+        } else {
+          auto_threadpool.reset(threadpool);
+        }
+      }
+
       std::generate(input.begin(), input.end(), [&]() { return f32dist(rng); });
       std::fill(output.begin(), output.end(), nanf(""));
 
@@ -380,7 +407,6 @@ class ArgmaxPoolingOperatorTester {
           padding_tf_same() ? 0 : padding_top(), padding_tf_same() ? 0 : padding_right(),
           padding_tf_same() ? 0 : padding_bottom(), padding_tf_same() ? 0 : padding_left(),
           pooling_height(), pooling_width(),
-          channels(), input_pixel_stride(), output_pixel_stride(),
           padding_tf_same() ? XNN_FLAG_TENSORFLOW_SAME_PADDING : 0,
           &argmax_pooling_op));
       ASSERT_NE(nullptr, argmax_pooling_op);
@@ -388,15 +414,29 @@ class ArgmaxPoolingOperatorTester {
       // Smart pointer to automatically delete argmax_pooling_op.
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_argmax_pooling_op(argmax_pooling_op, xnn_delete_operator);
 
+      size_t workspace_size = SIZE_MAX;
+      size_t workspace_alignment = SIZE_MAX;
+      ASSERT_EQ(xnn_status_success,
+        xnn_reshape_argmax_pooling2d_nhwc_f32(
+          argmax_pooling_op,
+          batch_size(), input_height(), input_width(),
+          channels(), input_pixel_stride(), output_pixel_stride(),
+          &workspace_size, &workspace_alignment,
+          /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
+          auto_threadpool.get()));
+
+      ASSERT_NE(workspace_size, SIZE_MAX);
+      ASSERT_LE(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
+      std::vector<char, AlignedAllocator<char, XNN_ALLOCATION_ALIGNMENT>> workspace(workspace_size);
+
       ASSERT_EQ(xnn_status_success,
         xnn_setup_argmax_pooling2d_nhwc_f32(
           argmax_pooling_op,
-          batch_size(), input_height(), input_width(),
-          input.data(), output.data(), index.data(),
-          nullptr /* thread pool */));
+          workspace.data(),
+          input.data(), output.data(), index.data()));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(argmax_pooling_op, nullptr /* thread pool */));
+        xnn_run_operator(argmax_pooling_op, auto_threadpool.get()));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -435,6 +475,16 @@ class ArgmaxPoolingOperatorTester {
     std::vector<uint32_t> index_ref(batch_size() * output_height() * output_width() * channels());
     std::vector<uint32_t> next_index_ref(next_batch_size() * next_output_height() * next_output_width() * channels());
     for (size_t iteration = 0; iteration < iterations(); iteration++) {
+      std::unique_ptr<pthreadpool, decltype(&pthreadpool_destroy)> auto_threadpool{nullptr, pthreadpool_destroy};
+      if (multithreaded()) {
+        const pthreadpool_t threadpool = pthreadpool_create(num_threads());
+        if (pthreadpool_get_threads_count(threadpool) <= 1) {
+          GTEST_SKIP();
+        } else {
+          auto_threadpool.reset(threadpool);
+        }
+      }
+
       std::generate(input.begin(), input.end(), [&]() { return f32dist(rng); });
       std::fill(output.begin(), output.end(), nanf(""));
 
@@ -476,19 +526,32 @@ class ArgmaxPoolingOperatorTester {
         xnn_create_argmax_pooling2d_nhwc_f32(
           padding_top(), padding_right(), padding_bottom(), padding_left(),
           pooling_height(), pooling_width(),
-          channels(), input_pixel_stride(), output_pixel_stride(),
           0, &argmax_pooling_op));
       ASSERT_NE(nullptr, argmax_pooling_op);
+
+      size_t workspace_size = SIZE_MAX;
+      size_t workspace_alignment = SIZE_MAX;
+      ASSERT_EQ(xnn_status_success,
+        xnn_reshape_argmax_pooling2d_nhwc_f32(
+          argmax_pooling_op,
+          batch_size(), input_height(), input_width(),
+          channels(), input_pixel_stride(), output_pixel_stride(),
+          &workspace_size, &workspace_alignment,
+          /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
+          auto_threadpool.get()));
+
+      ASSERT_NE(workspace_size, SIZE_MAX);
+      ASSERT_LE(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
+      std::vector<char, AlignedAllocator<char, XNN_ALLOCATION_ALIGNMENT>> workspace(workspace_size);
 
       ASSERT_EQ(xnn_status_success,
         xnn_setup_argmax_pooling2d_nhwc_f32(
           argmax_pooling_op,
-          batch_size(), input_height(), input_width(),
-          input.data(), output.data(), index.data(),
-          nullptr /* thread pool */));
+          workspace.data(),
+          input.data(), output.data(), index.data()));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(argmax_pooling_op, nullptr /* thread pool */));
+        xnn_run_operator(argmax_pooling_op, auto_threadpool.get()));
 
       // Verify results of the first run.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -540,16 +603,30 @@ class ArgmaxPoolingOperatorTester {
         }
       }
 
+      size_t next_workspace_size = SIZE_MAX;
+      size_t next_workspace_alignment = SIZE_MAX;
+      ASSERT_EQ(xnn_status_success,
+        xnn_reshape_argmax_pooling2d_nhwc_f32(
+          argmax_pooling_op,
+          next_batch_size(), next_input_height(), next_input_width(),
+          channels(), input_pixel_stride(), output_pixel_stride(),
+          &next_workspace_size, &next_workspace_alignment,
+          /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
+          auto_threadpool.get()));
+
+      ASSERT_NE(workspace_size, SIZE_MAX);
+      ASSERT_LE(next_workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
+      std::vector<char, AlignedAllocator<char, XNN_ALLOCATION_ALIGNMENT>> next_workspace(next_workspace_size);
+
       // Setup and run Argmax Pooling operator the second time, and destroy the operator.
       ASSERT_EQ(xnn_status_success,
         xnn_setup_argmax_pooling2d_nhwc_f32(
           argmax_pooling_op,
-          next_batch_size(), next_input_height(), next_input_width(),
-          input.data(), output.data(), index.data(),
-          nullptr /* thread pool */));
+          next_workspace.data(),
+          input.data(), output.data(), index.data()));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(argmax_pooling_op, nullptr /* thread pool */));
+        xnn_run_operator(argmax_pooling_op, auto_threadpool.get()));
 
       ASSERT_EQ(xnn_status_success,
         xnn_delete_operator(argmax_pooling_op));
@@ -592,7 +669,6 @@ class ArgmaxPoolingOperatorTester {
   size_t next_input_height_{0};
   size_t next_input_width_{0};
   size_t next_batch_size_{0};
-  uint8_t qmin_{0};
-  uint8_t qmax_{255};
+  bool multithreaded_{false};
   size_t iterations_{1};
 };

@@ -84,7 +84,7 @@ Registration serves two purposes:
 
 * You can pass a string containing your backend function's name to ``torch.compile`` instead of the function itself,
   for example, ``torch.compile(model, backend="my_compiler")``.
-* It is required for use with the `minifier <https://pytorch.org/docs/main/compile/troubleshooting.html>`__. Any generated
+* It is required for use with the `minifier <https://pytorch.org/docs/main/torch.compiler_troubleshooting.html>`__. Any generated
   code from the minifier must call your code that registers your backend function, typically through an ``import`` statement.
 
 Custom Backends after AOTAutograd
@@ -94,11 +94,11 @@ It is possible to define custom backends that are called by AOTAutograd rather t
 This is useful for 2 main reasons:
 
 * Users can define backends that support model training, as AOTAutograd can generate the backward graph for compilation.
-* AOTAutograd produces FX graphs consisting of `canonical Aten ops <https://pytorch.org/docs/main/ir.html#canonical-aten-ir>`__. As a result,
-  custom backends only need to support the canonical Aten opset, which is a significantly smaller opset than the entire torch/Aten opset.
+* AOTAutograd produces FX graphs consisting of `core Aten ops <https://pytorch.org/docs/main/torch.compiler_ir.html#core-aten-ir>`__. As a result,
+  custom backends only need to support the core Aten opset, which is a significantly smaller opset than the entire torch/Aten opset.
 
 Wrap your backend with
-``torch._dynamo.optimizations.training.aot_autograd`` and use ``torch.compile`` with the ``backend`` kwarg as before.
+``torch._dynamo.backends.common.aot_autograd`` and use ``torch.compile`` with the ``backend`` kwarg as before.
 Backend functions wrapped by ``aot_autograd`` should have the same contract as before.
 
 Backend functions are passed to ``aot_autograd`` through the ``fw_compiler`` (forward compiler)
@@ -264,9 +264,8 @@ And then you should be able to optimize any existing code with:
 Composable Backends
 ^^^^^^^^^^^^^^^^^^^
 
-TorchDynamo includes many backends, which can be found in
-`backends.py <https://github.com/pytorch/pytorch/blob/main/torch/_dynamo/optimizations/backends.py>`__
-or ``torch._dynamo.list_backends()``. You can combine these backends
+TorchDynamo includes many backends, which can be listed with
+``torch._dynamo.list_backends()``. You can combine these backends
 together with the following code:
 
 .. code-block:: python

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ namespace pattern {
 
 template <int64_t N>
 bool check_zps_values(op_t *op) {
+    if (op->has_attr(op_attr::zps) == false) return true;
     auto zps = op->get_attr<std::vector<int64_t>>(op_attr::zps);
     return std::all_of(
             zps.begin(), zps.end(), [](int64_t i) { return i == N; });
@@ -71,6 +72,19 @@ bool check_input_dtype_from_offset(op_t *op) {
     return true;
 }
 
+template <dim N>
+static inline bool check_conv_weight_size(op_t *op) {
+    std::string weight_fmt = op->get_attr<std::string>(op_attr::weights_format);
+    const logical_tensor_t &weight_lt
+            = op->get_input_value(1)->get_logical_tensor();
+    const auto weight_lt_wrapper = logical_tensor_wrapper_t(weight_lt);
+    if (weight_lt_wrapper.ndims() == DNNL_GRAPH_UNKNOWN_NDIMS) { return false; }
+    dims fil_sp = weight_lt_wrapper.get_weight_spatial_dims(weight_fmt);
+    bool all_equal = std::all_of(
+            fil_sp.begin(), fil_sp.end(), [](dim value) { return value == N; });
+    return all_equal;
+}
+
 template <data_type_t DTYPE>
 bool check_output_dtype(op_t *op) {
     for (size_t i = 0; i < op->num_outputs(); ++i) {
@@ -91,6 +105,34 @@ bool check_producer_input_num(op_t *op) {
 inline bool check_qtype_equal_to_per_tensor(op_t *op) {
     std::string qtype = op->get_attr<std::string>(op_attr::qtype);
     return qtype == "per_tensor";
+}
+
+inline bool check_begin_norm_axis_attr(const op_t *op) {
+    const logical_tensor_t &src_lt
+            = op->get_input_value(0)->get_logical_tensor();
+    const auto src_lt_wrapper = logical_tensor_wrapper_t(src_lt);
+    const auto ndims = src_lt_wrapper.ndims();
+
+    if (op->has_attr(op_attr::begin_norm_axis)) {
+        const auto begin_norm_axis
+                = op->get_attr<int64_t>(op_attr::begin_norm_axis);
+        if (ndims == DNNL_GRAPH_UNKNOWN_NDIMS) return begin_norm_axis == -1;
+        return begin_norm_axis == -1 || begin_norm_axis == ndims - 1;
+    }
+    return true;
+}
+
+// min <= input[offset]->ndims() <= max
+template <size_t OFFSET, int32_t MIN, int32_t MAX>
+inline bool check_input_ndim_from_offset(const op_t *op) {
+    if (OFFSET >= op->num_inputs()) return false;
+    const logical_tensor_t &src_lt
+            = op->get_input_value(OFFSET)->get_logical_tensor();
+    const auto src_lt_wrapper = logical_tensor_wrapper_t(src_lt);
+    const auto ndims = src_lt_wrapper.ndims();
+
+    if (ndims == DNNL_GRAPH_UNKNOWN_NDIMS) return true;
+    return ndims >= MIN && ndims <= MAX;
 }
 
 inline const std::vector<op_kind_t> &get_unary_ops() {
@@ -115,6 +157,25 @@ inline const std::vector<op_kind_t> &get_unary_ops() {
     };
 
     return unary;
+}
+
+inline const std::vector<op_kind_t> &get_unary_bwd_ops() {
+    const static std::vector<op_kind_t> unary_bwd = {
+            graph::op_kind::AbsBackward,
+            graph::op_kind::ClampBackward,
+            graph::op_kind::EluBackward,
+            graph::op_kind::GELUBackward,
+            graph::op_kind::HardSigmoidBackward,
+            graph::op_kind::HardSwishBackward,
+            graph::op_kind::MishBackward,
+            graph::op_kind::SigmoidBackward,
+            graph::op_kind::SoftPlusBackward,
+            graph::op_kind::ReLUBackward,
+            graph::op_kind::SqrtBackward,
+            graph::op_kind::TanhBackward,
+    };
+
+    return unary_bwd;
 }
 
 inline const std::vector<op_kind_t> &get_binary_ops() {
@@ -178,6 +239,21 @@ inline bool check_if_constant_weight(op_t *op) {
     }
 }
 
+inline bool is_int8_quantization(const op_t *op) {
+    const op_kind_t kind = op->get_kind();
+    if (kind == graph::op_kind::Quantize) {
+        const auto &out = op->get_output_value(0)->get_logical_tensor();
+        return graph::utils::one_of(
+                out.data_type, graph::data_type::s8, graph::data_type::u8);
+    } else if (kind == graph::op_kind::Dequantize) {
+        const auto &in = op->get_input_value(0)->get_logical_tensor();
+        return graph::utils::one_of(
+                in.data_type, graph::data_type::s8, graph::data_type::u8);
+    } else {
+        return false;
+    }
+}
+
 // Optional BiasAdd after operator like Conv/ConvTranspose/Matmul. If
 // `maybe_typecase` is true, there will also be an optional TypeCast before the
 // 2nd input of BiasAdd.
@@ -213,6 +289,7 @@ inline graph::utils::pm::repetition_t *post_quantized_add(
         graph::utils::pm::pb_node_t *input, bool check_zps = false) {
     graph::utils::pm::pb_op_t *pdequant_add
             = pgraph->append_op(graph::op_kind::Dequantize);
+    pdequant_add->append_decision_function(is_int8_quantization);
     if (check_zps) pdequant_add->append_decision_function(check_zps_values<0>);
     graph::utils::pm::pb_op_t *padd = pgraph->append_op(graph::op_kind::Add,
             graph::utils::pm::in_edges_t {
@@ -255,6 +332,7 @@ inline graph::utils::pm::pb_node_t *optional_smooth_quant(
     graph::utils::pm::pb_op_t *quant_out
             = p_curr_graph->append_op(graph::op_kind::Quantize,
                     graph::utils::pm::in_edges_t {in_edge(0, opt, 0)});
+    quant_out->append_decision_function(is_int8_quantization);
     if (optional_qout) {
         p_curr_graph->create_input_port(0, opt, 0);
         p_curr_graph->create_output_port(0, quant_out, 0);
@@ -264,6 +342,108 @@ inline graph::utils::pm::pb_node_t *optional_smooth_quant(
     } else {
         return quant_out;
     }
+}
+
+// Optional Select
+inline graph::utils::pm::repetition_t *optional_select(
+        const std::shared_ptr<graph::utils::pm::pb_graph_t> &pgraph,
+        graph::utils::pm::pb_node_t *input, int input_index) {
+    auto popt_select_graph = std::make_shared<graph::utils::pm::pb_graph_t>();
+
+    graph::utils::pm::pb_op_t *select_op
+            = popt_select_graph->append_op(graph::op_kind::Select);
+
+    popt_select_graph->create_input_port(0, select_op, 0);
+    popt_select_graph->create_input_port(1, select_op, 1);
+    popt_select_graph->create_input_port(2, select_op, 2);
+    popt_select_graph->create_output_port(0, select_op, 0);
+    auto pselect = pgraph->append_optional(popt_select_graph,
+            graph::utils::pm::in_edges_t {in_edge(input_index, input, 0)});
+    return pselect;
+}
+
+// Optional (transpose + reorder/staticReshape)
+inline graph::utils::pm::repetition_t *optional_transpose_reshape(
+        const std::shared_ptr<graph::utils::pm::pb_graph_t> &pgraph,
+        graph::utils::pm::pb_node_t *input, int input_index) {
+    auto popt_graph = std::make_shared<graph::utils::pm::pb_graph_t>();
+
+    graph::utils::pm::pb_op_t *transpose
+            = popt_graph->append_op(graph::op_kind::StaticTranspose);
+    graph::utils::pm::pb_op_t *reshape_out = popt_graph->append_alternation(
+            {graph::op_kind::Reorder, graph::op_kind::StaticReshape},
+            {in_edge(0, transpose, 0)});
+    popt_graph->create_input_port(0, transpose, 0);
+    popt_graph->create_output_port(0, reshape_out, 0);
+    auto popt_transpose_reshape = pgraph->append_optional(popt_graph,
+            graph::utils::pm::in_edges_t {in_edge(input_index, input, 0)});
+    return popt_transpose_reshape;
+}
+
+inline graph::utils::pm::pb_node_t *create_dequant_matmul(
+        const std::shared_ptr<graph::utils::pm::pb_graph_t> &pgraph,
+        graph::utils::pm::pb_node_t *input, bool is_bf16 = false,
+        bool is_int8 = false) {
+    graph::utils::pm::in_edges_t in_edges;
+    if (input) {
+        in_edges = graph::utils::pm::in_edges_t {in_edge(0, input, 0)};
+    }
+    if (is_int8) {
+        auto dequantize_A
+                = pgraph->append_op(graph::op_kind::Dequantize, in_edges);
+        auto dequantize_B = pgraph->append_op(graph::op_kind::Dequantize);
+        if (is_bf16) {
+            auto typecast_A = pgraph->append_op(
+                    graph::op_kind::TypeCast, {in_edge(0, dequantize_A, 0)});
+            auto typecast_B = pgraph->append_op(
+                    graph::op_kind::TypeCast, {in_edge(0, dequantize_B, 0)});
+            in_edges = graph::utils::pm::in_edges_t {
+                    in_edge(0, typecast_A, 0), in_edge(1, typecast_B, 0)};
+        } else {
+            in_edges = graph::utils::pm::in_edges_t {
+                    in_edge(0, dequantize_A, 0), in_edge(1, dequantize_B, 0)};
+        }
+    }
+    auto matmul = pgraph->append_op(graph::op_kind::MatMul, in_edges);
+    return matmul;
+}
+
+// only for single input and single output op
+inline graph::utils::pm::pb_node_t *append_siso_repetition_subgraph(
+        const std::shared_ptr<graph::utils::pm::pb_graph_t> &pgraph,
+        graph::op_kind_t kind, graph::utils::pm::pb_node_t *input,
+        int rep_min = 0, int rep_max = 2) {
+    graph::utils::pm::in_edges_t in_edges;
+    if (input) {
+        in_edges = graph::utils::pm::in_edges_t {in_edge(0, input, 0)};
+    }
+    auto rep_subgraph = std::make_shared<graph::utils::pm::pb_graph_t>();
+    auto single_op = rep_subgraph->append_op(kind);
+    rep_subgraph->create_input_port(0, single_op, 0);
+    rep_subgraph->create_output_port(0, single_op, 0);
+    auto rep = pgraph->append_repetition(
+            rep_subgraph, {0, 0}, rep_min, rep_max, in_edges);
+    return rep;
+}
+
+inline graph::utils::pm::pb_node_t *append_optional_typecast_quantize(
+        const std::shared_ptr<graph::utils::pm::pb_graph_t> &pgraph,
+        graph::utils::pm::pb_node_t *input, bool is_bf16 = false) {
+    auto subgraph = std::make_shared<graph::utils::pm::pb_graph_t>();
+    graph::utils::pm::in_edges_t in_edges;
+    graph::utils::pm::pb_node_t *subgraph_in_node;
+    if (is_bf16) {
+        auto typecast_output = subgraph->append_op(graph::op_kind::TypeCast);
+        in_edges
+                = graph::utils::pm::in_edges_t {in_edge(0, typecast_output, 0)};
+        subgraph_in_node = typecast_output;
+    }
+    auto quantize = subgraph->append_op(graph::op_kind::Quantize, in_edges);
+    if (!is_bf16) { subgraph_in_node = quantize; }
+    subgraph->create_input_port(0, subgraph_in_node, 0);
+    subgraph->create_output_port(0, quantize, 0);
+    auto output = pgraph->append_optional(subgraph, {in_edge(0, input, 0)});
+    return output;
 }
 
 } // namespace pattern

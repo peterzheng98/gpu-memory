@@ -1,5 +1,5 @@
 #===============================================================================
-# Copyright 2016-2023 Intel Corporation
+# Copyright 2016-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,6 +46,11 @@ file(GLOB_RECURSE headers *.hpp *.h)
 
 if(NOT DNNL_EXPERIMENTAL_SPARSE)
     list(REMOVE_ITEM sources ${CMAKE_CURRENT_SOURCE_DIR}/cpu_matmul_csr.cpp)
+    list(REMOVE_ITEM sources ${CMAKE_CURRENT_SOURCE_DIR}/cpu_matmul_weights_compression.cpp)
+endif()
+
+if(NOT DNNL_EXPERIMENTAL_UKERNEL)
+    list(REMOVE_ITEM sources ${CMAKE_CURRENT_SOURCE_DIR}/ukernels/cpu_brgemm.cpp)
 endif()
 
 # Remove tests for CUDA which use unimplemented primitives
@@ -66,7 +71,11 @@ if(NOT ONEDNN_BUILD_GRAPH)
     list(REMOVE_ITEM sources
         ${CMAKE_CURRENT_SOURCE_DIR}/graph/cpu_getting_started.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/graph/sycl_getting_started.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/graph/cpu_inference_int8.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/graph/cpu_inference_int8.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/graph/cpu_single_op_partition.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/graph/sycl_single_op_partition.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/graph/gpu_opencl_getting_started.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/graph/gpu_opencl_sdpa.cpp)
 endif()
 
 if(DNNL_SYCL_HIP)

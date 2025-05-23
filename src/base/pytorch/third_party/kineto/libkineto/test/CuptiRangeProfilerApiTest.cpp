@@ -10,12 +10,14 @@
 #include <array>
 #include <set>
 
+// TODO(T90238193)
+// @lint-ignore-every CLANGTIDY facebook-hte-RelativeInclude
 #include "include/libkineto.h"
 #include "include/Config.h"
 #include "src/CuptiRangeProfilerApi.h"
 
 #include "src/Logger.h"
-#include "test/CuptiRangeProfilerTestUtil.h"
+#include "CuptiRangeProfilerTestUtil.h"
 
 using namespace KINETO_NAMESPACE;
 
@@ -74,8 +76,11 @@ TEST(CuptiRangeProfilerApiTest, asyncLaunchUserRange) {
   simulateCudaContextCreate(ctx0, 0 /*device_id*/);
 
   CuptiRangeProfilerOptions opts{
+    .metricNames = {"metricNames"},
     .deviceId = 0,
-    .cuContext = ctx0};
+    .maxRanges = 1,
+    .numNestingLevels = 1,
+    .cuContext = ctx0 };
 
   std::unique_ptr<CuptiRBProfilerSession> session_ = mfactory.make(opts);
   auto session = mfactory.asDerived(session_.get());
@@ -108,8 +113,11 @@ TEST(CuptiRangeProfilerApiTest, asyncLaunchAutoRange) {
   simulateCudaContextCreate(ctx0, 0 /*device_id*/);
 
   CuptiRangeProfilerOptions opts{
+    .metricNames = {"metricNames"},
     .deviceId = 0,
-    .cuContext = ctx0};
+    .maxRanges = 1,
+    .numNestingLevels = 1,
+    .cuContext = ctx0 };
 
   std::unique_ptr<CuptiRBProfilerSession> session_ = mfactory.make(opts);
   auto session = mfactory.asDerived(session_.get());

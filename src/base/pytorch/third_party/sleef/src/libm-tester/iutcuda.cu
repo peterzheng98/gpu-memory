@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <cuda.h>
 
+#include "sleefinline_purec_scalar.h"
 #include "sleefinline_cuda.h"
 
 #define STDIN_FILENO 0
@@ -373,7 +374,7 @@ int main(int argc, char **argv) {
   fflush(stdout);
   
   char buf[BUFSIZE];
-  fgets(buf, BUFSIZE-1, stdin);
+  if (fgets(buf, BUFSIZE-1, stdin)) {}
 
   while(!feof(stdin)) {
     func_d_d("sin", xsin);

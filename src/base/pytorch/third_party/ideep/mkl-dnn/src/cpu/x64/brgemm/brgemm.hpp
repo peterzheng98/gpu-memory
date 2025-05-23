@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -60,8 +60,9 @@ namespace x64 {
 /// @param K Specifies the number of columns of the matrix A and
 ///        the number of rows of the matrix B
 /// @param strides Strides between the matrices in the batch. Can be nullptr.
+///        TODO: what does "Can be nullptr" mean?
 ///
-status_t DNNL_API brgemm_desc_init(brgemm_t *brg, cpu_isa_t isa,
+status_t DNNL_API brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         brgemm_batch_kind_t type, impl::data_type_t dt_a,
         impl::data_type_t dt_b, bool transA, bool transB,
         brgemm_layout_t layout, float alpha, float beta, dim_t LDA, dim_t LDB,
@@ -94,8 +95,9 @@ status_t DNNL_API brgemm_desc_init(brgemm_t *brg, cpu_isa_t isa,
 ///       LDC must be at least max(1, N)
 /// @param M Specifies the number of rows of the matrix A and C.
 /// @param N Specifies the number of columns of the matrix A and C.
+/// @param strides - TODO: missing documentation.
 ///
-status_t DNNL_API brdgmm_desc_init(brgemm_t *brg, cpu_isa_t isa,
+status_t DNNL_API brdgmm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         brgemm_batch_kind_t type, impl::data_type_t dt_a,
         impl::data_type_t dt_b, bool transA, brgemm_layout_t layout,
         float alpha, float beta, dim_t LDA, dim_t LDC, dim_t M, dim_t N,
@@ -111,11 +113,12 @@ status_t DNNL_API brdgmm_desc_init(brgemm_t *brg, cpu_isa_t isa,
 ///     determine dst data type.
 /// @param LDD Specifies the leading dimension of matrix D
 ///        LDD must be at least max(1, N)
+///        TODO: why LDD can't be obtained from dst_md directly?
 /// @param dt_bias Specifies the data type Bias
 ///     Can be u8, s8, s32, bf16, f16 or fp32
 ///
-status_t DNNL_API brgemm_desc_set_postops(brgemm_t *brg,
-        const primitive_attr_t *attr, const memory_desc_t *dst_md, int LDD,
+status_t DNNL_API brgemm_desc_set_postops(brgemm_desc_t *brg,
+        const primitive_attr_t *attr, const memory_desc_t *dst_md, dim_t LDD,
         impl::data_type_t dt_bias = impl::data_type::undef);
 
 /// Adds BRGEMM attributes to BRGEMM descriptor
@@ -125,7 +128,7 @@ status_t DNNL_API brgemm_desc_set_postops(brgemm_t *brg,
 ///     maximum batch size, kernel loop order etc.
 ///
 status_t DNNL_API brgemm_desc_set_attr(
-        brgemm_t *brg, const brgemm_attr_t &brgattr);
+        brgemm_desc_t *brg, const brgemm_attr_t &brgattr);
 
 /// Generates a BRGEMM kernel based on descriptor
 ///
@@ -133,7 +136,7 @@ status_t DNNL_API brgemm_desc_set_attr(
 /// @param brg BRGEMM descriptor
 ///
 status_t DNNL_API brgemm_kernel_create(
-        brgemm_kernel_t **brg_kernel, const brgemm_t &brg);
+        brgemm_kernel_t **brg_kernel, const brgemm_desc_t &brg);
 
 /// Destroys a BRGEMM kernel
 ///
@@ -161,10 +164,12 @@ status_t DNNL_API brgemm_kernel_destroy(brgemm_kernel_t *brg_kernel);
 /// @param scratch Scratchpad memory needed in several scenarios:
 ///     * Where: AMX+ hardware; When: always; For: buffer for tiles store.
 ///     * In rest scenarios is not used.
+/// @param dynamic_values TODO: missing doc
 ///
 void DNNL_API brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C,
-        void *scratch = nullptr);
+        void *scratch = nullptr,
+        const brgemm_dynamic_values_t *dynamic_values = nullptr);
 
 /// Execute BRGEMM kernel (brgemm_offs and brgemm_strd version)
 ///
@@ -186,11 +191,13 @@ void DNNL_API brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
 /// @param scratch Scratchpad memory needed in several scenarios:
 ///     * Where: AMX+ hardware; When: always; For: buffer for tiles store.
 ///     * In rest scenarios is not used.
+/// @param dynamic_values TODO: missing doc
 ///
 void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const void *addr_A, const void *addr_B,
         const brgemm_batch_element_t *batch, void *ptr_C,
-        void *scratch = nullptr);
+        void *scratch = nullptr,
+        const brgemm_dynamic_values_t *dynamic_values = nullptr);
 
 /// Execute BRGEMM kernel (brgemm_addr version)
 ///
@@ -212,10 +219,12 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
 ///     * Where: AMX+ hardware; When: always; For: buffer for tiles store.
 ///     * Where: pre-VNNI hardware; When: s8s8 kernel; For: compensation buffer.
 ///     * In rest scenarios is not used.
+/// @param dynamic_values TODO: missing doc
 ///
 void DNNL_API brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel,
         int bs, const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
-        const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr);
+        const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr,
+        const brgemm_dynamic_values_t *dynamic_values = nullptr);
 
 /// Execute BRGEMM kernel (brgemm_offs and brgemm_strd version)
 ///
@@ -240,26 +249,34 @@ void DNNL_API brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel,
 ///     * Where: AMX+ hardware; When: always; For: buffer for tiles store.
 ///     * Where: pre-VNNI hardware; When: s8s8 kernel; For: compensation buffer.
 ///     * In rest scenarios is not used.
+/// @param dynamic_values TODO: missing doc
 ///
-void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
-        const void *addr_A, const void *addr_B,
+void DNNL_API brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel,
+        int bs, const void *addr_A, const void *addr_B,
         const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
-        const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr);
+        const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr,
+        const brgemm_dynamic_values_t *dynamic_values = nullptr);
 
 /// AMX utilities: Creates a palette based on BRGEMM descriptor
 ///
 /// @note
-///     This call expects brgemm_t object completely set up, thus, used after
-///     `brgemm_desc_set_attr` call for non-empty attributes.
+///     This call expects brgemm_desc_t object completely set up, thus, must be
+///     used after `brgemm_desc_set_attr` call for non-empty attributes.
 ///
 /// @note
 ///     Caller is expected to subsequently configure AMX tiles by calling
 ///     amx_tile_configure(palette).
 ///
-/// @param brg BRGEMM descriptor
-/// @param palette 64 bytes array contains tiles configuration
+/// @param brg Input BRGeMM descriptor
+/// @param palette Output 64 bytes array initialized with tile configuration if
+///     returned status is status::success. When any other status is returned,
+///     the `palette` is not initialized and can't be used.
 ///
-status_t DNNL_API brgemm_init_tiles(const brgemm_t &brg, char palette[64]);
+/// TODO: replace `char[64]` with a proper type that can express itself if it
+/// was properly initialized and whether it's empty. Current API is broken in a
+/// sense that multiple different scenarios are considered equal, whether
+/// it's not AMX, or blocking is completely broken or unsupported.
+status_t DNNL_API brgemm_init_tiles(const brgemm_desc_t &brg, char palette[64]);
 
 } // namespace x64
 } // namespace cpu

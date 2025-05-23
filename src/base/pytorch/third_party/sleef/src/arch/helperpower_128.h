@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -85,9 +85,9 @@ typedef __vector unsigned long long vuint64;
 
 typedef struct {
   vmask x, y;
-} vmask2;
+} vquad;
 
-typedef vmask2 vargquad;
+typedef vquad vargquad;
 
 /**********************************************
  ** Utilities
@@ -272,10 +272,6 @@ static INLINE vmask vreinterpret_vm_vd(vdouble vd)
 { return (vmask)vd; }
 static INLINE vdouble vreinterpret_vd_vm(vmask vm)
 { return (vdouble)vm; }
-static INLINE vint2 vreinterpret_vi2_vd(vdouble vd)
-{ return (vint2)vd; }
-static INLINE vdouble vreinterpret_vd_vi2(vint2 vi)
-{ return (vdouble)vi; }
 
 static INLINE vmask vreinterpret_vm_vf(vfloat vf)
 { return (vmask)vf; }
@@ -340,6 +336,9 @@ static INLINE vopmask vcast_vo32_vo64(vopmask m)
 // clip 64-bit lanes to lower 32-bit
 static INLINE vint vcastu_vi_vi2(vint2 vi2)
 { return vec_mergeo(vi2, vec_splat(vi2, 3)); }
+static INLINE vint vcastu_vi_vm(vmask vi2)
+{ return vec_mergeo((vint2)vi2, vec_splat((vint2)vi2, 3)); }
+
 
 // expand lower 32-bit mask
 static INLINE vopmask vcast_vo64_vo32(vopmask m)
@@ -347,6 +346,13 @@ static INLINE vopmask vcast_vo64_vo32(vopmask m)
 // unsigned expand lower 32-bit integer
 static INLINE vint2 vcastu_vi2_vi(vint vi)
 { return vec_mergeh(vzero__vi(), vi); }
+static INLINE vmask vcastu_vm_vi(vint vi)
+{ return (vmask)vec_mergeh(vzero__vi(), vi); }
+
+static INLINE vopmask vcast_vo_i(int i) {
+  i = i ? -1 : 0;
+  return (vopmask) { i, i, i, i };
+}
 
 // signed int to single-precision
 static INLINE vfloat vcast_vf_vi2(vint2 vi)
@@ -376,6 +382,13 @@ static INLINE vdouble vcast_vd_vi(vint vi)
 // zip two scalars
 static INLINE vmask vcast_vm_i_i(int l, int h)
 { return (vmask)vec_mergeh(vsetall__vi2(h), vsetall__vi2(l)); }
+
+static INLINE vmask vcast_vm_i64(int64_t i) {
+  return (vmask)vsetall__s64(i);
+}
+static INLINE vmask vcast_vm_u64(uint64_t i) {
+  return (vmask)vsetall__u64(i);
+}
 
 ////////////// Truncation //////////////
 
@@ -805,14 +818,23 @@ static INLINE vdouble vmlsubadd_vd_vd_vd_vd(vdouble x, vdouble y, vdouble z)
 
 //
 
-static vmask2 vloadu_vm2_p(void *p) {
-  vmask2 vm2;
-  memcpy(&vm2, p, VECTLENDP * 16);
-  return vm2;
+static vquad loadu_vq_p(void *p) {
+  vquad vq;
+  memcpy(&vq, p, VECTLENDP * 16);
+  return vq;
 }
 
-static INLINE vmask2 vcast_vm2_aq(vargquad aq) { return aq; }
-static INLINE vargquad vcast_aq_vm2(vmask2 vm2) { return vm2; }
+static INLINE vquad cast_vq_aq(vargquad aq) {
+  vquad vq;
+  memcpy(&vq, &aq, VECTLENDP * 16);
+  return vq;
+}
+
+static INLINE vargquad cast_aq_vq(vquad vq) {
+  vargquad aq;
+  memcpy(&aq, &vq, VECTLENDP * 16);
+  return aq;
+}
 
 static INLINE int vtestallzeros_i_vo64(vopmask g) {
   return vec_all_eq((__vector signed long long)g, vzero__s64());

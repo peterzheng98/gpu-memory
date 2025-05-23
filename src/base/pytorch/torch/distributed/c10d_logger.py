@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# mypy: allow-untyped-defs
 
 # Copyright (c) Facebook, Inc. and its affiliates.
 # All rights reserved.
@@ -9,18 +10,21 @@
 import functools
 import logging
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple, TypeVar
+from typing_extensions import ParamSpec
 
 import torch
 import torch.distributed as dist
-
 from torch.distributed.logging_handlers import _log_handlers
+
 
 __all__: List[str] = []
 
+_DEFAULT_DESTINATION = "default"
 
-def _get_or_create_logger() -> logging.Logger:
-    logging_handler, log_handler_name = _get_logging_handler()
+
+def _get_or_create_logger(destination: str = _DEFAULT_DESTINATION) -> logging.Logger:
+    logging_handler, log_handler_name = _get_logging_handler(destination)
     logger = logging.getLogger(f"c10d-{log_handler_name}")
     logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter(
@@ -32,9 +36,11 @@ def _get_or_create_logger() -> logging.Logger:
     return logger
 
 
-def _get_logging_handler(destination: str = "default") -> Tuple[logging.Handler, str]:
+def _get_logging_handler(
+    destination: str = _DEFAULT_DESTINATION,
+) -> Tuple[logging.Handler, str]:
     log_handler = _log_handlers[destination]
-    log_handler_name = type(log_handler).__name__
+    log_handler_name = f"{type(log_handler).__name__}-{destination}"
     return (log_handler, log_handler_name)
 
 
@@ -44,15 +50,16 @@ _c10d_logger = _get_or_create_logger()
 
 def _get_msg_dict(func_name, *args, **kwargs) -> Dict[str, Any]:
     if dist.is_initialized():
+        group = kwargs.get("group") or kwargs.get("process_group")
         msg_dict = {
             "func_name": f"{func_name}",
             "args": f"{args}, {kwargs}",
             "pg_name": f"{dist._get_process_group_name(kwargs.get('pg'))}",  # type: ignore[arg-type]
-            "backend": f"{dist.get_backend(kwargs.get('group'))}",
+            "backend": f"{dist.get_backend(group)}",
             "world_size": f"{dist.get_world_size()}",
-            "group_size": f"{dist.get_world_size(kwargs.get('group'))}",
+            "group_size": f"{dist.get_world_size(group)}",
             "global_rank": f"{dist.get_rank()}",
-            "local_rank": f"{dist.get_rank(kwargs.get('group'))}",
+            "local_rank": f"{dist.get_rank(group)}",
         }
         if msg_dict["backend"] == "nccl":
             nccl_version = torch.cuda.nccl.version()
@@ -65,9 +72,13 @@ def _get_msg_dict(func_name, *args, **kwargs) -> Dict[str, Any]:
     return msg_dict
 
 
-def _exception_logger(func):
+_T = TypeVar("_T")
+_P = ParamSpec("_P")
+
+
+def _exception_logger(func: Callable[_P, _T]) -> Callable[_P, _T]:
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
         try:
             return func(*args, **kwargs)
         except Exception as error:
@@ -79,9 +90,9 @@ def _exception_logger(func):
     return wrapper
 
 
-def _time_logger(func):
+def _time_logger(func: Callable[_P, _T]) -> Callable[_P, _T]:
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
         t1 = time.time_ns()
         func_return = func(*args, **kwargs)
         time_spent = time.time_ns() - t1

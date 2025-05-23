@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -10,9 +10,13 @@
 #include <math.h>
 #include <float.h>
 #include <inttypes.h>
+#include <stdarg.h>
+#include <ctype.h>
+#include <assert.h>
 #include <cuda.h>
 
 #include "sleefquadinline_cuda.h"
+#include "sleefquadinline_purec_scalar.h"
 
 #define STDIN_FILENO 0
 
@@ -66,12 +70,14 @@ __global__ void xcast_from_uint64q(Sleef_quadx1 *r0, uint64_t *u0) { *r0 = Sleef
 __global__ void xcast_to_uint64q(uint64_t *r0, Sleef_quadx1 *a0) { *r0 = Sleef_cast_to_uint64q1_cuda(*a0); }
 
 __global__ void xsqrtq_u05(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_sqrtq1_u05cuda(*a0); }
+__global__ void xcbrtq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_cbrtq1_u10cuda(*a0); }
 __global__ void xsinq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_sinq1_u10cuda(*a0); }
 __global__ void xcosq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_cosq1_u10cuda(*a0); }
 __global__ void xtanq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_tanq1_u10cuda(*a0); }
 __global__ void xasinq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_asinq1_u10cuda(*a0); }
 __global__ void xacosq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_acosq1_u10cuda(*a0); }
 __global__ void xatanq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_atanq1_u10cuda(*a0); }
+__global__ void xatan2q_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_atan2q1_u10cuda(*a0, *a1); }
 __global__ void xexpq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_expq1_u10cuda(*a0); }
 __global__ void xexp2q_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_exp2q1_u10cuda(*a0); }
 __global__ void xexp10q_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_exp10q1_u10cuda(*a0); }
@@ -80,12 +86,33 @@ __global__ void xlogq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_logq1_
 __global__ void xlog2q_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_log2q1_u10cuda(*a0); }
 __global__ void xlog10q_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_log10q1_u10cuda(*a0); }
 __global__ void xlog1pq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_log1pq1_u10cuda(*a0); }
+__global__ void xpowq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_powq1_u10cuda(*a0, *a1); }
+__global__ void xsinhq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_sinhq1_u10cuda(*a0); }
+__global__ void xcoshq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_coshq1_u10cuda(*a0); }
+__global__ void xtanhq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_tanhq1_u10cuda(*a0); }
+__global__ void xasinhq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_asinhq1_u10cuda(*a0); }
+__global__ void xacoshq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_acoshq1_u10cuda(*a0); }
+__global__ void xatanhq_u10(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_atanhq1_u10cuda(*a0); }
 
 __global__ void xfabsq(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_fabsq1_cuda(*a0); }
 __global__ void xcopysignq(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_copysignq1_cuda(*a0, *a1); }
 __global__ void xfmaxq(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_fmaxq1_cuda(*a0, *a1); }
 __global__ void xfminq(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_fminq1_cuda(*a0, *a1); }
 __global__ void xfdimq_u05(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_fdimq1_u05cuda(*a0, *a1); }
+__global__ void xfmodq(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_fmodq1_cuda(*a0, *a1); }
+__global__ void xremainderq(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_remainderq1_cuda(*a0, *a1); }
+__global__ void xfrexpq(Sleef_quadx1 *r, Sleef_quadx1 *a0, int *i0) { *r = Sleef_frexpq1_cuda(*a0, i0); }
+__global__ void xmodfq(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_modfq1_cuda(*a0, a1); }
+__global__ void xfmaq_u05(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1, Sleef_quadx1 *a2) { *r = Sleef_fmaq1_u05cuda(*a0, *a1, *a2); }
+__global__ void xhypotq_u05(Sleef_quadx1 *r, Sleef_quadx1 *a0, Sleef_quadx1 *a1) { *r = Sleef_hypotq1_u05cuda(*a0, *a1); }
+__global__ void xilogbq(int *r, Sleef_quadx1 *a0) { *r = Sleef_ilogbq1_cuda(*a0); }
+__global__ void xldexpq(Sleef_quadx1 *r, Sleef_quadx1 *a0, int *i0) { *r = Sleef_ldexpq1_cuda(*a0, *i0); }
+
+__global__ void xtruncq(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_truncq1_cuda(*a0); }
+__global__ void xfloorq(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_floorq1_cuda(*a0); }
+__global__ void xceilq(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_ceilq1_cuda(*a0); }
+__global__ void xroundq(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_roundq1_cuda(*a0); }
+__global__ void xrintq(Sleef_quadx1 *r, Sleef_quadx1 *a0) { *r = Sleef_rintq1_cuda(*a0); }
 
 //
 
@@ -129,6 +156,38 @@ typedef union {
     }									\
   }
 
+#define func_q_q_q_q(funcStr, funcName) {				\
+    while (startsWith(buf, funcStr " ")) {				\
+      sentinel = 0;							\
+      cnv128 c0, c1, c2;						\
+      sscanf(buf, funcStr " %" PRIx64 ":%" PRIx64 " %" PRIx64 ":%" PRIx64 " %" PRIx64 ":%" PRIx64, \
+	     &c0.h, &c0.l, &c1.h, &c1.l, &c2.h, &c2.l);			\
+      *a0 = Sleef_setq1_cuda(*a0, 0, c0.q);				\
+      *a1 = Sleef_setq1_cuda(*a1, 0, c1.q);				\
+      *a2 = Sleef_setq1_cuda(*a2, 0, c2.q);				\
+      funcName<<<1, 1>>>(r, a0, a1, a2);				\
+      cudaDeviceSynchronize();						\
+      c0.q = Sleef_getq1_cuda(*r, 0);					\
+      printf("%" PRIx64 ":%" PRIx64 "\n", c0.h, c0.l);			\
+      fflush(stdout);							\
+      if (fgets(buf, BUFSIZE-1, stdin) == NULL) break;			\
+    }									\
+  }
+
+#define func_i_q(funcStr, funcName) {					\
+    while (startsWith(buf, funcStr " ")) {				\
+      sentinel = 0;							\
+      cnv128 c0;							\
+      sscanf(buf, funcStr " %" PRIx64 ":%" PRIx64, &c0.h, &c0.l); \
+      *a0 = Sleef_setq1_cuda(*a0, 0, c0.q);				\
+      funcName<<<1, 1>>>(i0, a0);					\
+      cudaDeviceSynchronize();						\
+      printf("%d\n", *i0);						\
+      fflush(stdout);							\
+      if (fgets(buf, BUFSIZE-1, stdin) == NULL) break;			\
+    }									\
+  }
+
 #define func_i_q_q(funcStr, funcName) {					\
     while (startsWith(buf, funcStr " ")) {				\
       sentinel = 0;							\
@@ -139,6 +198,23 @@ typedef union {
       funcName<<<1, 1>>>(i0, a0, a1);					\
       cudaDeviceSynchronize();						\
       printf("%d\n", *i0);						\
+      fflush(stdout);							\
+      if (fgets(buf, BUFSIZE-1, stdin) == NULL) break;			\
+    }									\
+  }
+
+#define func_q_q_i(funcStr, funcName) {					\
+    while (startsWith(buf, funcStr " ")) {				\
+      sentinel = 0;							\
+      cnv128 c0;							\
+      int k;								\
+      sscanf(buf, funcStr " %" PRIx64 ":%" PRIx64 " %d", &c0.h, &c0.l, &k); \
+      *a0 = Sleef_setq1_cuda(*a0, 0, c0.q);				\
+      *i0 = k;								\
+      funcName<<<1, 1>>>(r, a0, i0);					\
+      cudaDeviceSynchronize();						\
+      c0.q = Sleef_getq1_cuda(*r, 0);					\
+      printf("%" PRIx64 ":%" PRIx64 "\n", c0.h, c0.l);			\
       fflush(stdout);							\
       if (fgets(buf, BUFSIZE-1, stdin) == NULL) break;			\
     }									\
@@ -230,6 +306,37 @@ typedef union {
     }							\
   }
 
+#define func_q_q_pi(funcStr, funcName) {				\
+    while (startsWith(buf, funcStr " ")) {				\
+      sentinel = 0;							\
+      cnv128 c0;							\
+      sscanf(buf, funcStr " %" PRIx64 ":%" PRIx64, &c0.h, &c0.l);	\
+      *a0 = Sleef_setq1_cuda(*a0, 0, c0.q);				\
+      funcName<<<1, 1>>>(r, a0, i0);					\
+      cudaDeviceSynchronize();						\
+      c0.q = Sleef_getq1_cuda(*r, 0);					\
+      printf("%" PRIx64 ":%" PRIx64 " %d\n", c0.h, c0.l, *i0);		\
+      fflush(stdout);							\
+      if (fgets(buf, BUFSIZE-1, stdin) == NULL) break;			\
+    }									\
+  }
+
+#define func_q_q_pq(funcStr, funcName) {				\
+    while (startsWith(buf, funcStr " ")) {				\
+      sentinel = 0;							\
+      cnv128 c0, c1;							\
+      sscanf(buf, funcStr " %" PRIx64 ":%" PRIx64, &c0.h, &c0.l);	\
+      *a0 = Sleef_setq1_cuda(*a0, 0, c0.q);				\
+      funcName<<<1, 1>>>(r, a0, a1);					\
+      cudaDeviceSynchronize();						\
+      c0.q = Sleef_getq1_cuda(*r, 0);					\
+      c1.q = Sleef_getq1_cuda(*a1, 0);					\
+      printf("%" PRIx64 ":%" PRIx64 " %" PRIx64 ":%" PRIx64 "\n", c0.h, c0.l, c1.h, c1.l); \
+      fflush(stdout);							\
+      if (fgets(buf, BUFSIZE-1, stdin) == NULL) break;			\
+    }									\
+  }
+
 int main(int argc, char **argv) {
 #if 0
   cuInit(0);
@@ -250,7 +357,7 @@ int main(int argc, char **argv) {
 
   cudaSetDeviceFlags(cudaDeviceScheduleSpin);
 
-  Sleef_quadx1 *r, *a0, *a1;
+  Sleef_quadx1 *r, *a0, *a1, *a2;
   double *d0;
   int *i0;
   int64_t *i64;
@@ -258,6 +365,7 @@ int main(int argc, char **argv) {
   cudaMallocManaged(&r ,  1*sizeof(Sleef_quadx1));
   cudaMallocManaged(&a0,  1*sizeof(Sleef_quadx1));
   cudaMallocManaged(&a1,  1*sizeof(Sleef_quadx1));
+  cudaMallocManaged(&a2,  1*sizeof(Sleef_quadx1));
   cudaMallocManaged(&d0,  1*sizeof(double));
   cudaMallocManaged(&i0,  1*sizeof(int));
   cudaMallocManaged(&i64, 1*sizeof(int64_t));
@@ -268,8 +376,24 @@ int main(int argc, char **argv) {
   printf("1\n");
   fflush(stdout);
 
+  //
+
+  {
+    *a0 = Sleef_setq1_cuda(*a0, 0, SLEEF_M_PIq);
+    *a1 = Sleef_setq1_cuda(*a1, 0, Sleef_strtoq("2.718281828459045235360287471352662498", NULL));
+    xmulq_u05<<<1, 1>>>(r, a0, a1);
+    cudaDeviceSynchronize();
+    Sleef_quad v0 = Sleef_getq1_cuda(*r, 0);
+    if (Sleef_icmpneq1_purec(v0, sleef_q(+0x1114580b45d47LL, 0x49e6108579a2d0caULL, 3))) {
+      fprintf(stderr, "Testing with Sleef_mulq1_u05cuda failed\n");
+      exit(-1);
+    }
+  }
+
+  //
+
   char buf[BUFSIZE];
-  fgets(buf, BUFSIZE-1, stdin);
+  if (fgets(buf, BUFSIZE-1, stdin)) {}
   int sentinel = 0;
 
   while(!feof(stdin) && sentinel < 2) {
@@ -278,12 +402,14 @@ int main(int argc, char **argv) {
     func_q_q_q("mulq_u05", xmulq_u05);
     func_q_q_q("divq_u05", xdivq_u05);
     func_q_q("sqrtq_u05", xsqrtq_u05);
+    func_q_q("cbrtq_u10", xcbrtq_u10);
     func_q_q("sinq_u10", xsinq_u10);
     func_q_q("cosq_u10", xcosq_u10);
     func_q_q("tanq_u10", xtanq_u10);
     func_q_q("asinq_u10", xasinq_u10);
     func_q_q("acosq_u10", xacosq_u10);
     func_q_q("atanq_u10", xatanq_u10);
+    func_q_q_q("atan2q_u10", xatan2q_u10);
     func_q_q("expq_u10", xexpq_u10);
     func_q_q("exp2q_u10", xexp2q_u10);
     func_q_q("exp10q_u10", xexp10q_u10);
@@ -292,12 +418,34 @@ int main(int argc, char **argv) {
     func_q_q("log2q_u10", xlog2q_u10);
     func_q_q("log10q_u10", xlog10q_u10);
     func_q_q("log1pq_u10", xlog1pq_u10);
+    func_q_q_q("powq_u10", xpowq_u10);
+    func_q_q("sinhq_u10", xsinhq_u10);
+    func_q_q("coshq_u10", xcoshq_u10);
+    func_q_q("tanhq_u10", xtanhq_u10);
+    func_q_q("asinhq_u10", xasinhq_u10);
+    func_q_q("acoshq_u10", xacoshq_u10);
+    func_q_q("atanhq_u10", xatanhq_u10);
+
     func_q_q("negq", xnegq);
     func_q_q("fabsq", xfabsq);
     func_q_q_q("copysignq", xcopysignq);
     func_q_q_q("fmaxq", xfmaxq);
     func_q_q_q("fminq", xfminq);
     func_q_q_q("fdimq_u05", xfdimq_u05);
+    func_q_q_q("fmodq", xfmodq);
+    func_q_q_q("remainderq", xremainderq);
+    func_q_q_pi("frexpq", xfrexpq);
+    func_q_q_pq("modfq", xmodfq);
+    func_i_q("ilogbq", xilogbq);
+    func_q_q_i("ldexpq", xldexpq);
+    func_q_q_q_q("fmaq_u05", xfmaq_u05);
+    func_q_q_q("hypotq_u05", xhypotq_u05);
+
+    func_q_q("truncq", xtruncq);
+    func_q_q("floorq", xfloorq);
+    func_q_q("ceilq", xceilq);
+    func_q_q("roundq", xroundq);
+    func_q_q("rintq", xrintq);
 
     func_q_d("cast_from_doubleq", xcast_from_doubleq);
     func_d_q("cast_to_doubleq", xcast_to_doubleq);

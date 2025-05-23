@@ -50,8 +50,8 @@ USE_MSVC_STATIC_RUNTIME = os.getenv("USE_MSVC_STATIC_RUNTIME", "0") == "1"
 DEBUG = os.getenv("DEBUG", "0") == "1"
 COVERAGE = os.getenv("COVERAGE", "0") == "1"
 
-# Customize the wheel plat-name, usually needed for MacOS builds.
-# See usage in .github/workflows/release_mac.yml
+# Customize the wheel plat-name; sometimes useful for MacOS builds.
+# See https://github.com/onnx/onnx/pull/6117
 ONNX_WHEEL_PLATFORM_NAME = os.getenv("ONNX_WHEEL_PLATFORM_NAME")
 
 ################################################################################
@@ -99,12 +99,6 @@ def cd(path):
 
 
 def get_ext_suffix():
-    if sys.version_info < (3, 8) and sys.platform == "win32":
-        # Workaround for https://bugs.python.org/issue39825
-        # Reference: https://github.com/pytorch/pytorch/commit/4b96fc060b0cb810965b5c8c08bc862a69965667
-        import distutils
-
-        return distutils.sysconfig.get_config_var("EXT_SUFFIX")
     return sysconfig.get_config_var("EXT_SUFFIX")
 
 
@@ -220,18 +214,6 @@ class CmakeBuild(setuptools.Command):
                 raise RuntimeError(
                     "-DONNX_DISABLE_EXCEPTIONS=ON option is only available for c++ builds. Python binding require exceptions to be enabled."
                 )
-            if (
-                "PYTHONPATH" in os.environ
-                and "pip-build-env" in os.environ["PYTHONPATH"]
-            ):
-                # When the users use `pip install -e .` to install onnx and
-                # the cmake executable is a python entry script, there will be
-                # `Fix ModuleNotFoundError: No module named 'cmake'` from the cmake script.
-                # This is caused by the additional PYTHONPATH environment variable added by pip,
-                # which makes cmake python entry script not able to find correct python cmake packages.
-                # Actually, sys.path is well enough for `pip install -e .`.
-                # Therefore, we delete the PYTHONPATH variable.
-                del os.environ["PYTHONPATH"]
             subprocess.check_call(cmake_args)
 
             build_args = [CMAKE, "--build", os.curdir]
@@ -295,12 +277,12 @@ class BuildExt(setuptools.command.build_ext.build_ext):
             dst_dir = TOP_DIR
         else:
             dst_dir = build_lib
-        generated_python_files = (
-            *glob.glob(os.path.join(CMAKE_BUILD_DIR, "onnx", "*.py")),
-            *glob.glob(os.path.join(CMAKE_BUILD_DIR, "onnx", "*.pyi")),
-        )
-        assert generated_python_files, "Bug: No generated python files found"
-        for src in generated_python_files:
+
+        generated_py_files = glob.glob(os.path.join(CMAKE_BUILD_DIR, "onnx", "*.py"))
+        generated_pyi_files = glob.glob(os.path.join(CMAKE_BUILD_DIR, "onnx", "*.pyi"))
+        assert generated_py_files, "Bug: No generated python files found"
+        assert generated_pyi_files, "Bug: No generated python stubs found"
+        for src in (*generated_py_files, *generated_pyi_files):
             dst = os.path.join(dst_dir, os.path.relpath(src, CMAKE_BUILD_DIR))
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             self.copy_file(src, dst)

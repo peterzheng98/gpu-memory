@@ -53,7 +53,6 @@ load(
 )
 
 def read_bool(section, field, default, required = True):
-    # @lint-ignore BUCKRESTRICTEDSYNTAX
     val = read_config(section, field)
     if val != None:
         if val in ["true", "True", "1"]:
@@ -110,6 +109,11 @@ def get_static_dispatch_backend():
         return []
     return static_dispatch_backend.split(";")
 
+def get_glsl_image_format():
+    if read_config("pt", "vulkan_full_precision", "0") == "0":
+        return "rgba16f"
+    return "rgba32f"
+
 def get_glsl_paths():
     paths = [
         "//xplat/caffe2:aten_vulkan_glsl_src_path",
@@ -122,7 +126,7 @@ def get_glsl_paths():
 
     if len(paths) % 2 != 0:
         fail(
-            "gen_vulkan_spv.additional_glsl_paths must contain an even number of elements"
+            "gen_vulkan_spv.additional_glsl_paths must contain an even number of elements",
         )
 
     return " ".join(
@@ -136,10 +140,12 @@ def get_glsl_paths():
                 len(paths),
                 2,
             )
-        ]
+        ],
     )
 
-# @lint-ignore BUCKRESTRICTEDSYNTAX
+def spv_shader_library():
+    pass
+
 IS_OSS = read_config("pt", "is_oss", "0") == "1"  # True for OSS BUCK build, and False for internal BUCK build
 
 NOT_OSS = not IS_OSS
@@ -163,8 +169,8 @@ THIRD_PARTY_LIBS = {
     "flatc": ["//third-party/flatbuffers/fbsource_namespace:flatc", "//third_party:flatc"],
     "fmt": ["//third-party/fmt:fmt", "//third_party:fmt"],
     "glog": ["//third-party/glog:glog", "//third_party:glog"],
-    "gmock": ["//xplat/third-party/gmock:gtest", "//third_party:gmock"],
-    "gtest": ["//xplat/third-party/gmock:gmock", "//third_party:gtest"],
+    "gmock": ["//third-party/googletest:gmock_main", "//third_party:gmock"],
+    "gtest": ["//third-party/googletest:gtest_main", "//third_party:gtest"],
     "kineto": ["//xplat/kineto/libkineto:libkineto", "//third_party:libkineto"],
     "libkineto_headers": ["//xplat/kineto/libkineto:libkineto_headers", "//third_party:libkineto_headers"],
     "omp": ["//xplat/third-party/linker_lib:omp", "//third_party:no-op"],
@@ -175,8 +181,8 @@ THIRD_PARTY_LIBS = {
     "pyyaml": ["//third-party/pyyaml:pyyaml", "//third_party:pyyaml"],
     "rt": ["//xplat/third-party/linker_lib:rt", "//third_party:rt"],
     "ruy": ["//third-party/ruy:ruy_xplat_lib", "//third_party:ruy_lib"],
-    "typing-extensions": ["//third-party/typing-extensions:typing-extensions", "//third_party:typing-extensions"],
     "sleef_arm": ["//third-party/sleef:sleef_arm", "//third_party:sleef_arm"],
+    "typing-extensions": ["//third-party/typing-extensions:typing-extensions", "//third_party:typing-extensions"],
 }
 
 def third_party(name):
@@ -253,7 +259,6 @@ def get_aten_preprocessor_flags():
         "-DPYTORCH_QNNPACK_RUNTIME_QUANTIZATION",
         "-DAT_PARALLEL_OPENMP_FBXPLAT=0",
         "-DAT_PARALLEL_NATIVE_FBXPLAT=1",
-        "-DAT_PARALLEL_NATIVE_TBB_FBXPLAT=0",
         "-DUSE_LAPACK_FBXPLAT=0",
         "-DAT_BLAS_F2C_FBXPLAT=0",
         "-DAT_BLAS_USE_CBLAS_DOT_FBXPLAT=0",
@@ -271,7 +276,6 @@ def get_pt_preprocessor_flags():
         "-D_THP_CORE",
         "-DUSE_SCALARS",
         "-DNO_CUDNN_DESTROY_HANDLE",
-        "-DBUILD_CAFFE2",
     ]
 
     if _is_build_mode_dev():
@@ -377,6 +381,7 @@ def get_aten_generated_files(enabled_backends):
         "core/TensorMethods.cpp",
         "core/aten_interned_strings.h",
         "core/enum_tag.h",
+        "torch/csrc/inductor/aoti_torch/generated/c_shim_cpu.cpp",
     ] + get_aten_derived_type_srcs(enabled_backends)
 
     # This is tiresome.  A better strategy would be to unconditionally
@@ -461,6 +466,7 @@ def gen_aten_files(
         cmd = "$(exe {}torchgen:gen) ".format(ROOT_PATH) + " ".join([
             "--source-path $(location {}:aten_src_path)/aten/src/ATen".format(ROOT),
             "--install_dir $OUT",
+            "--aoti_install_dir $OUT/torch/csrc/inductor/aoti_torch/generated"
         ] + extra_params),
         visibility = visibility,
         compatible_with = compatible_with,
@@ -695,6 +701,43 @@ def gen_aten_libtorch_files(name, extra_params = [], compatible_with = [], apple
         apple_sdks = apple_sdks,
     )
 
+def vulkan_spv_shader_library(name, spv_filegroup):
+    genrule_cmd = [
+        "$(exe //xplat/caffe2/tools:gen_aten_vulkan_spv_bin)",
+        "--glsl-paths $(location {})".format(spv_filegroup),
+        "--output-path $OUT --env FLOAT_IMAGE_FORMAT={}".format(get_glsl_image_format()),
+        "--glslc-path=$(exe //xplat/caffe2/fb/vulkan/dotslash:glslc)",
+        "--tmp-dir-path=$TMP",
+    ]
+
+    genrule_name = "gen_{}_cpp".format(name)
+    fb_xplat_genrule(
+        name = "gen_{}_cpp".format(name),
+        outs = {
+            "{}.cpp".format(name): ["spv.cpp"],
+        },
+        cmd = " ".join(genrule_cmd),
+        default_outs = ["."],
+        labels = ["uses_dotslash"],
+    )
+
+    fb_xplat_cxx_library(
+        name = name,
+        srcs = [
+            ":{}[{}.cpp]".format(genrule_name, name),
+        ],
+        # Static initialization is used to register shaders to the global shader registry,
+        # therefore link_whole must be True to make sure unused symbols are not discarded.
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True`
+        link_whole = True,
+        # Define a soname that can be used for dynamic loading in Java, Python, etc.
+        soname = "lib{}.$(ext)".format(name),
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//xplat/caffe2:torch_vulkan_api",
+        ],
+    )
+
 def copy_metal(name, apple_sdks = None):
     cmd = []
     cmd_exe = []
@@ -802,7 +845,6 @@ def define_buck_targets(
     # @lint-ignore BUCKLINT
     fb_native.filegroup(
         name = "metal_build_srcs",
-        # @lint-ignore BUCKRESTRICTEDSYNTAX
         srcs = glob(METAL_SOURCE_LIST),
         visibility = [
             "PUBLIC",
@@ -813,7 +855,6 @@ def define_buck_targets(
     fb_native.filegroup(
         name = "templated_selective_build_srcs",
         # NB: no glob here, there are generated targets in this list!
-        # @lint-ignore BUCKRESTRICTEDSYNTAX
         srcs = glob(TEMPLATE_SOURCE_LIST) + aten_ufunc_generated_all_cpu_sources(":gen_aten[{}]"),
         visibility = [
             "PUBLIC",
@@ -955,6 +996,7 @@ def define_buck_targets(
             "Functions.h": ":gen_aten_libtorch[autograd/generated/Functions.h]",
             "VariableType.h": ":gen_aten_libtorch[autograd/generated/VariableType.h]",
             "variable_factories.h": ":gen_aten_libtorch[autograd/generated/variable_factories.h]",
+            "ViewFuncs.h": ":gen_aten_libtorch[autograd/generated/ViewFuncs.h]",
             # Don't build python bindings on mobile.
             #"python_functions.h",
         },
@@ -998,7 +1040,6 @@ def define_buck_targets(
         srcs = [
             "aten/src/ATen/native/native_functions.yaml",
             "aten/src/ATen/native/tags.yaml",
-            # @lint-ignore BUCKRESTRICTEDSYNTAX
         ] + glob(["aten/src/ATen/templates/*"]),
         visibility = [
             "PUBLIC",
@@ -1066,9 +1107,6 @@ def define_buck_targets(
             "--replace",
             "@AT_PARALLEL_NATIVE@",
             "AT_PARALLEL_NATIVE_FBXPLAT",
-            "--replace",
-            "@AT_PARALLEL_NATIVE_TBB@",
-            "AT_PARALLEL_NATIVE_TBB_FBXPLAT",
             "--replace",
             "@AT_BUILD_WITH_LAPACK@",
             "USE_LAPACK_FBXPLAT",
@@ -1461,6 +1499,7 @@ def define_buck_targets(
             "torch/csrc/jit/mobile/train/random.cpp",
             "torch/csrc/jit/mobile/train/sequential.cpp",
             ":gen_aten_libtorch[autograd/generated/Functions.cpp]",
+            ":gen_aten_libtorch[autograd/generated/ViewFuncs.cpp]",
         ],
         compiler_flags = get_pt_compiler_flags(),
         exported_preprocessor_flags = get_pt_preprocessor_flags() + ["-DUSE_MOBILE_CLASSTYPE"],
@@ -1941,7 +1980,7 @@ def define_buck_targets(
             ] + select({
                 "DEFAULT": [],
                 "ovr_config//runtime:fbcode-arm64": [
-                  third_party("sleef_arm"),
+                    third_party("sleef_arm"),
                 ],
             }),
             compiler_flags = get_aten_compiler_flags(),

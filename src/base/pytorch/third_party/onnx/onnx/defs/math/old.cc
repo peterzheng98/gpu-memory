@@ -2322,10 +2322,15 @@ ONNX_OPERATOR_SET_SCHEMA(
             auto transBAttr = ctx.getAttribute("transB");
             bool transB = transBAttr ? static_cast<int>(transBAttr->i()) != 0 : false;
 
+            checkInputRank(ctx, 0, 2);
+            checkInputRank(ctx, 1, 2);
+
+            auto& first_input_shape = getInputShape(ctx, 0);
+            auto& second_input_shape = getInputShape(ctx, 1);
             *ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape()->add_dim() =
-                ctx.getInputType(0)->tensor_type().shape().dim(transA ? 1 : 0);
+                first_input_shape.dim(transA ? 1 : 0);
             *ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape()->add_dim() =
-                ctx.getInputType(1)->tensor_type().shape().dim(transB ? 0 : 1);
+                second_input_shape.dim(transB ? 0 : 1);
           } else if (
               hasInputShape(ctx, 2) &&
               (!ctx.getAttribute("broadcast") || static_cast<int>(ctx.getAttribute("broadcast")->i()) == 0)) {
@@ -2631,10 +2636,10 @@ ONNX_OPERATOR_SET_SCHEMA(
 
 static const char* TopK_ver1_doc = R"DOC(
 Retrieve the top-K elements along a specified axis. Given an input tensor of
-shape [a_1, a_2, ..., a_n, r] and integer argument k, return two outputs:
-  -Value tensor of shape [a_1, a_2, ..., a_{axis-1}, k, a_{axis+1}, ... a_n]
+shape [a_0, a_1, ..., a_{n-1}] and integer argument k, return two outputs:
+  -Value tensor of shape [a_0, a_1, ..., a_{axis-1}, k, a_{axis+1}, ... a_{n-1}]
     which contains the values of the top k elements along the specified axis
-  -Index tensor of shape [a_1, a_2, ..., a_{axis-1}, k, a_{axis+1}, ... a_n] which
+  -Index tensor of shape [a_0, a_1, ..., a_{axis-1}, k, a_{axis+1}, ... a_{n-1}] which
    contains the indices of the top k elements (original indices from the input
    tensor).
 Given two equivalent values, this operator uses the indices along the axis  as
@@ -2646,17 +2651,17 @@ ONNX_OPERATOR_SET_SCHEMA(
     1,
     OpSchema()
         .SetDoc(TopK_ver1_doc)
-        .Input(0, "X", "Tensor of shape [a_1, a_2, ..., a_n, r]", "T")
+        .Input(0, "X", "Tensor of shape [a_0, a_1, ..., a_{n-1}]", "T")
         .Output(
             0,
             "Values",
-            "Tensor of shape [a_1, a_2, ..., a_{axis-1}, k, a_{axis+1}, ... a_n] "
+            "Tensor of shape [a_0, a_1, ..., a_{axis-1}, k, a_{axis+1}, ... a_{n-1}] "
             "containing top K values from the input tensor",
             "T")
         .Output(
             1,
             "Indices",
-            "Tensor of shape [a_1, a_2, ..., a_{axis-1}, k, a_{axis+1}, ... a_n] "
+            "Tensor of shape [a_0, a_1, ..., a_{axis-1}, k, a_{axis+1}, ... a_{n-1}] "
             "containing the corresponding input tensor indices for the top K "
             "values.",
             "I")
@@ -2697,10 +2702,10 @@ ONNX_OPERATOR_SET_SCHEMA(
 
 static const char* TopK_ver10_doc = R"DOC(
 Retrieve the top-K elements along a specified axis. Given an input tensor of
-shape [a_1, a_2, ..., a_n, r] and integer argument k, return two outputs:
-  -Value tensor of shape [a_1, a_2, ..., a_{axis-1}, k, a_{axis+1}, ... a_n]
+shape [a_0, a_1, ..., a_{n-1}] and integer argument k, return two outputs:
+  -Value tensor of shape [a_0, a_1, ..., a_{axis-1}, k, a_{axis+1}, ... a_{n-1}]
     which contains the values of the top k elements along the specified axis
-  -Index tensor of shape [a_1, a_2, ..., a_{axis-1}, k, a_{axis+1}, ... a_n] which
+  -Index tensor of shape [a_0, a_1, ..., a_{axis-1}, k, a_{axis+1}, ... a_{n-1}] which
    contains the indices of the top k elements (original indices from the input
    tensor).
 
@@ -2713,7 +2718,7 @@ ONNX_OPERATOR_SET_SCHEMA(
     10,
     OpSchema()
         .SetDoc(TopK_ver10_doc)
-        .Input(0, "X", "Tensor of shape [a_1, a_2, ..., a_n, r]", "T")
+        .Input(0, "X", "Tensor of shape [a_0, a_1, ..., a_{n-1}]", "T")
         .Input(
             1,
             "K",
@@ -2722,13 +2727,13 @@ ONNX_OPERATOR_SET_SCHEMA(
         .Output(
             0,
             "Values",
-            "Tensor of shape [a_1, a_2, ..., a_{axis-1}, k, a_{axis+1}, ... a_n] "
+            "Tensor of shape [a_0, a_1, ..., a_{axis-1}, k, a_{axis+1}, ... a_{n-1}] "
             "containing top K values from the input tensor",
             "T")
         .Output(
             1,
             "Indices",
-            "Tensor of shape [a_1, a_2, ..., a_{axis-1}, k, a_{axis+1}, ... a_n] "
+            "Tensor of shape [a_0, a_1, ..., a_{axis-1}, k, a_{axis+1}, ... a_{n-1}] "
             "containing the corresponding input tensor indices for the top K "
             "values.",
             "I")
@@ -3106,5 +3111,89 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           updateOutputShape(ctx, 0, result_shape_proto);
         }));
+
+ONNX_OPERATOR_SET_SCHEMA(
+    QLinearMatMul,
+    10,
+    OpSchema()
+        .SetDoc(defs::math::utils::QLinearMatMulDoc())
+        .Input(0, "a", "N-dimensional quantized matrix a", "T1", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
+        .Input(
+            1,
+            "a_scale",
+            "scale of quantized input a",
+            "tensor(float)",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .Input(
+            2,
+            "a_zero_point",
+            "zero point of quantized input a",
+            "T1",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .Input(3, "b", "N-dimensional quantized matrix b", "T2", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
+        .Input(
+            4,
+            "b_scale",
+            "scale of quantized input b",
+            "tensor(float)",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .Input(
+            5,
+            "b_zero_point",
+            "zero point of quantized input b",
+            "T2",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .Input(
+            6,
+            "y_scale",
+            "scale of quantized output y",
+            "tensor(float)",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .Input(
+            7,
+            "y_zero_point",
+            "zero point of quantized output y",
+            "T3",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .Output(
+            0,
+            "y",
+            "Quantized matrix multiply results from a * b",
+            "T3",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .TypeConstraint(
+            "T1",
+            {"tensor(int8)", "tensor(uint8)"},
+            "Constrain input a and its zero point data type to 8-bit integer tensor.")
+        .TypeConstraint(
+            "T2",
+            {"tensor(int8)", "tensor(uint8)"},
+            "Constrain input b and its zero point data type to 8-bit integer tensor.")
+        .TypeConstraint(
+            "T3",
+            {"tensor(int8)", "tensor(uint8)"},
+            "Constrain output y and its zero point data type to 8-bit integer tensor.")
+        .TypeAndShapeInferenceFunction(defs::math::utils::QLinearMatMulShapeInference));
 
 } // namespace ONNX_NAMESPACE

@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -64,9 +64,9 @@ typedef __m512i vuint64;
 
 typedef struct {
   vmask x, y;
-} vmask2;
+} vquad;
 
-typedef vmask2 vargquad;
+typedef vquad vargquad;
 
 //
 
@@ -142,6 +142,8 @@ static INLINE vmask vor_vm_vo32_vm(vopmask o, vmask m) { return _mm512_mask_or_e
 static INLINE vopmask vcast_vo32_vo64(vopmask o) { return o; }
 static INLINE vopmask vcast_vo64_vo32(vopmask o) { return o; }
 
+static INLINE vopmask vcast_vo_i(int i) { return i ? -1 : 0; }
+
 //
 
 static INLINE vint vrint_vi_vd(vdouble vd) {
@@ -163,15 +165,18 @@ static INLINE vdouble vrint_vd_vd(vdouble vd) {
   return _mm512_roundscale_pd(vd, _MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC);
 }
 
-static INLINE vint2 vcastu_vi2_vi(vint vi) {
+static INLINE vmask vcastu_vm_vi(vint vi) {
   return _mm512_maskz_permutexvar_epi32(0xaaaa, _mm512_set_epi32(7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 0, 0), _mm512_castsi256_si512(vi));
 }
 
-static INLINE vint vcastu_vi_vi2(vint2 vi) {
+static INLINE vint vcastu_vi_vm(vmask vi) {
   return _mm512_castsi512_si256(_mm512_maskz_permutexvar_epi32(0x00ff, _mm512_set_epi32(0, 0, 0, 0, 0, 0, 0, 0, 15, 13, 11, 9, 7, 5, 3, 1), vi));
 }
 
 static INLINE vmask vcast_vm_i_i(int i0, int i1) { return _mm512_set_epi32(i0, i1, i0, i1, i0, i1, i0, i1, i0, i1, i0, i1, i0, i1, i0, i1); }
+
+static INLINE vmask vcast_vm_i64(int64_t i) { return _mm512_set1_epi64(i); }
+static INLINE vmask vcast_vm_u64(uint64_t i) { return _mm512_set1_epi64((uint64_t)i); }
 
 static INLINE vopmask veq64_vo_vm_vm(vmask x, vmask y) { return _mm512_cmp_epi64_mask(x, y, _MM_CMPINT_EQ); }
 static INLINE vmask vadd64_vm_vm_vm(vmask x, vmask y) { return _mm512_add_epi64(x, y); }
@@ -181,8 +186,6 @@ static INLINE vmask vadd64_vm_vm_vm(vmask x, vmask y) { return _mm512_add_epi64(
 static INLINE vdouble vcast_vd_d(double d) { return _mm512_set1_pd(d); }
 static INLINE vmask vreinterpret_vm_vd(vdouble vd) { return _mm512_castpd_si512(vd); }
 static INLINE vdouble vreinterpret_vd_vm(vmask vm) { return _mm512_castsi512_pd(vm); }
-static INLINE vint2 vreinterpret_vi2_vd(vdouble vd) { return _mm512_castpd_si512(vd); }
-static INLINE vdouble vreinterpret_vd_vi2(vint2 vi) { return _mm512_castsi512_pd(vi); }
 
 static INLINE vdouble vadd_vd_vd_vd(vdouble x, vdouble y) { return _mm512_add_pd(x, y); }
 static INLINE vdouble vsub_vd_vd_vd(vdouble x, vdouble y) { return _mm512_sub_pd(x, y); }
@@ -527,7 +530,6 @@ static INLINE void vsscatter2_v_p_i_i_vd(double *ptr, int offset, int step, vdou
 //
 
 static INLINE vfloat vrev21_vf_vf(vfloat vf) { return _mm512_permute_ps(vf, 0xb1); }
-static INLINE vint2 vrev21_vi2_vi2(vint2 i) { return vreinterpret_vi2_vf(vrev21_vf_vf(vreinterpret_vf_vi2(i))); }
 
 static INLINE vfloat vreva2_vf_vf(vfloat vf) {
   return vreinterpret_vf_vm(_mm512_permutexvar_epi32(_mm512_set_epi32(1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14), vreinterpret_vm_vf(vf)));
@@ -550,14 +552,23 @@ static INLINE void vsscatter2_v_p_i_i_vf(float *ptr, int offset, int step, vfloa
 
 //
 
-static vmask2 vloadu_vm2_p(void *p) {
-  vmask2 vm2;
-  memcpy(&vm2, p, VECTLENDP * 16);
-  return vm2;
+static vquad loadu_vq_p(void *p) {
+  vquad vq;
+  memcpy(&vq, p, VECTLENDP * 16);
+  return vq;
 }
 
-static INLINE vmask2 vcast_vm2_aq(vargquad aq) { return aq; }
-static INLINE vargquad vcast_aq_vm2(vmask2 vm2) { return vm2; }
+static INLINE vquad cast_vq_aq(vargquad aq) {
+  vquad vq;
+  memcpy(&vq, &aq, VECTLENDP * 16);
+  return vq;
+}
+
+static INLINE vargquad cast_aq_vq(vquad vq) {
+  vargquad aq;
+  memcpy(&aq, &vq, VECTLENDP * 16);
+  return aq;
+}
 
 #ifdef __INTEL_COMPILER
 static INLINE int vtestallzeros_i_vo64(vopmask g) { return _mm512_mask2int(g) == 0; }

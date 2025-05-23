@@ -1,5 +1,5 @@
 ################################################################################
-# Copyright 2020-2023 Intel Corporation
+# Copyright 2020-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -317,6 +317,22 @@ def convert_dts(mds, prim_kind):
             dt += " " + f"--bia_dt={bias_dt}"
         return dt
 
+    def convert_dts_with_ss(mds):
+        dt = convert_dts_multiple(mds)
+        mds_scale = [md for md in mds if "scale" in md["arg"]]
+        mds_shift = [md for md in mds if "shift" in md["arg"]]
+
+        if len(mds_scale) != 0:
+            md_scale = mds_scale[0]
+            scale_dt = md_scale["data_type"]
+            dt += " " + f"--ss_dt={scale_dt}"
+        elif len(mds_shift) != 0:
+            md_shift = mds_shift[0]
+            shift_dt = md_shift["data_type"]
+            dt += " " + f"--ss_dt={shift_dt}"
+
+        return dt
+
     convert_dts = {
         "batch_normalization": convert_dts_common,
         "binary": convert_dts_multiple_src,
@@ -326,7 +342,7 @@ def convert_dts(mds, prim_kind):
         "eltwise": convert_dts_common,
         "inner_product": convert_dts_multiple,
         "group_normalization": convert_dts_multiple,
-        "layer_normalization": convert_dts_multiple,
+        "layer_normalization": convert_dts_with_ss,
         "lrn": convert_dts_common,
         "matmul": convert_dts_with_bias,
         "pooling": convert_dts_multiple,
@@ -397,11 +413,19 @@ def convert_tags(mds, prim_kind):
                 tags += f" --{md_arg}tag=any"
             else:
                 md_strides = md["strides"]
-                if md_strides == "":
+
+                def tag_has_blocks(string):
+                    for l in string:
+                        if l.isupper():
+                            return True
+                    return False
+
+                md_tag_has_blocks = tag_has_blocks(md["tag"])
+                if md_strides != "" and not md_tag_has_blocks:
+                    strides += f"{md_strides}"
+                else:
                     md_tag = md["tag"]
                     tags += f" --{md_arg}tag={md_tag}"
-                else:
-                    strides += f"{md_strides}"
             if md_arg != "d":
                 strides += f":"
 
@@ -463,16 +487,27 @@ def convert_tags(mds, prim_kind):
         return f" --stag={data_tag}:{weights_tag}"
 
     def convert_tags_rnn(mds):
-        tags = ""
+        tags = "--tag="
+        with_proj = ""
+        with_peep = ""
+        skip_colon = True
         for md in mds:
             md_arg = md["arg"]
             md_tag = md["tag"]
+            if md_arg == "src_layer" or md_arg == "wei_layer" or md_arg == "dst_layer":
+                if not skip_colon:
+                    tags += f":"
+                if "a" in md["properties"]:
+                    tags += f"any"
+                else:
+                    tags += f"{md_tag}"
+                skip_colon = False
             if md_arg == "wei_proj" and md_tag != "undef":
-                tags += " --with-projection=true"
+                with_proj = " --with-projection=true"
             if md_arg == "wei_peephole" and md_tag != "undef":
-                tags += " --with-peephole=true"
+                with_peep = " --with-peephole=true"
 
-        return tags
+        return tags + with_proj + with_peep
 
     def convert_tags_lnorm(mds):
         tag = convert_tags_multiple(mds)
@@ -498,7 +533,7 @@ def convert_tags(mds, prim_kind):
         "pooling": convert_tags_common,
         "prelu": convert_tags_prelu,
         "reduction": convert_tags_all,
-        "reorder": convert_tags_all,
+        "reorder": convert_tags_and_strides,
         "resampling": convert_tags_common,
         "rnn": convert_tags_rnn,
         "shuffle": convert_tags_common,
@@ -587,10 +622,18 @@ def extract_attr(attrs, type):
 def convert_scale_policy(value, prim_kind):
     if prim_kind == "reorder":
         masks = {0: "common", 1: "per_dim_0", 2: "per_dim_1", 3: "per_dim_01"}
+    elif prim_kind == "matmul":
+        masks = {
+            0: "common",
+            1: "per_oc",
+            2: "per_oc",
+            3: "per_ocic",
+            4: "per_oc",
+            6: "per_ocic",
+            12: "per_ocic",
+        }
     else:
-        # 4 is used by batched matmul
-        # TODO: split further
-        masks = {0: "common", 1: "per_oc", 2: "per_oc", 3: "per_oc", 4: "per_oc"}
+        masks = {0: "common", 1: "per_oc", 2: "per_oc", 3: "per_oc"}
 
     mask = masks.get(int(value))
     if mask:
@@ -599,9 +642,18 @@ def convert_scale_policy(value, prim_kind):
     return "per_tensor"
 
 
-def convert_zp_policy(value):
-    # 4 is used by batched matmul
-    masks = {0: "common", 2: "per_dim_1", 4: "per_dim_2"}
+def convert_zp_policy(value, prim_kind):
+    if prim_kind == "matmul":
+        masks = {
+            0: "common",
+            2: "per_oc",
+            3: "per_ocic",
+            4: "per_oc",
+            6: "per_ocic",
+            12: "per_ocic",
+        }
+    else:
+        masks = {0: "common", 2: "per_dim_1"}
     mask = masks.get(int(value))
     if mask:
         return mask
@@ -617,18 +669,7 @@ def convert_post_ops(post_ops, prim_kind):
         return po
 
     def convert_dw_post_op(post_op):
-        policy = convert_scale_policy(post_op["scales"]["mask"], prim_kind)
-        po = (
-            post_op["alg"]
-            + ":"
-            + post_op["ksp"]
-            + ":"
-            + post_op["dst_dt"]
-            + ":"
-            + policy
-        )
-        if post_op["scales"]["value"] != None:
-            po += ":" + post_op["scales"]["value"]
+        po = post_op["alg"] + ":" + post_op["ksp"] + ":" + post_op["dst_dt"]
         return po
 
     def convert_eltwise_post_op(post_op):
@@ -681,24 +722,34 @@ def convert_post_ops(post_ops, prim_kind):
     return benchdnn_postops
 
 
-def convert_scales(scales, prim_kind):
+def convert_quantization(q_param, prim_kind, def_value, def_type):
     res = []
-    for arg in scales.keys():
-        s = scales[arg]
-        benchdnn_scale = (
-            arg + ":" + convert_scale_policy(s["mask"], prim_kind) + ":0.5*"
-        )
-        res.append(benchdnn_scale)
+    for arg in q_param.keys():
+        p = q_param[arg]
+        policy = convert_scale_policy(p["mask"], prim_kind)
+        benchdnn_p = arg + ":" + policy
+        if policy == "common":
+            benchdnn_p += ":" + def_value
+        dt = p["data_type"]
+        groups = p["groups"]
+        if dt != def_type or groups != "":
+            benchdnn_p += ":" + dt
+        if groups != "":
+            benchdnn_p += ":" + groups
+        res.append(benchdnn_p)
     return "+".join(res)
+
+
+def convert_scales(scales, prim_kind):
+    return convert_quantization(
+        q_param=scales, prim_kind=prim_kind, def_value="0.5", def_type="f32"
+    )
 
 
 def convert_zero_points(zero_points, prim_kind):
-    res = []
-    for arg in zero_points.keys():
-        zp = zero_points[arg]
-        benchdnn_zp = arg + ":" + convert_zp_policy(zp["mask"]) + ":1*"
-        res.append(benchdnn_zp)
-    return "+".join(res)
+    return convert_quantization(
+        q_param=zero_points, prim_kind=prim_kind, def_value="1", def_type="s32"
+    )
 
 
 def convert_scratchpad_mode(scratchpad_mode, prim_kind):
@@ -709,6 +760,14 @@ def convert_fpmath_mode(fpmath_mode, prim_kind):
     return fpmath_mode
 
 
+def convert_acc_mode(acc_mode, prim_kind):
+    return acc_mode
+
+
+def convert_deterministic(deterministic, prim_kind):
+    return deterministic
+
+
 def convert_attrs(exts, prim_kind):
     converters = {
         "attr-post-ops": convert_post_ops,
@@ -716,6 +775,8 @@ def convert_attrs(exts, prim_kind):
         "attr-zero-points": convert_zero_points,
         "attr-scratchpad": convert_scratchpad_mode,
         "attr-fpmath": convert_fpmath_mode,
+        "attr-acc": convert_acc_mode,
+        "attr-deterministic": convert_deterministic,
     }
 
     benchdnn_attrs = ""

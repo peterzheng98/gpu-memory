@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2020-2023 Intel Corporation
+ * Copyright 2020-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,11 @@
 #define GRAPH_BACKEND_GRAPH_COMPILER_CORE_SRC_OPS_TEMPLATES_CONV_FWD_HPP
 
 #include <memory>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <compiler/ir/graph/graph.hpp>
 #include <ops/body_generator.hpp>
 #include <util/any_map.hpp>
 
@@ -87,6 +89,8 @@ public:
     const context_ptr &ctx, conv_fwd_config_t &cfg) const;
   void adjust_config_for_cache_efficiency(
     const context_ptr &ctx, conv_fwd_config_t &cfg) const;
+  void adjust_config_for_brgemm_efficiency(
+    const context_ptr &ctx, conv_fwd_config_t &cfg) const;
 
   float get_gflop() const override;
 
@@ -113,14 +117,35 @@ public:
   sc_data_type_t get_weight_dtype() const { return in_tensors_[1].dtype_; }
   sc_data_type_t get_output_dtype() const { return out_tensors_[0].dtype_; }
 
+  std::vector<expr> data_offset(const expr &N, const expr &G, const expr &C,
+    const expr &D, const expr &H, const expr &W, const expr &C_block,
+    const expr &c_idx = expr(0), const bool &force_3d = false) const;
+  std::vector<expr> output_offset(const expr &N, const expr &G, const expr &C,
+    const expr &D, const expr &H, const expr &W, const expr &C_block,
+    const expr &c_idx = expr(0)) const;
+  std::vector<expr> weight_offset(const expr &G, const expr &K, const expr &C,
+    const expr &D, const expr &R, const expr &S) const;
+  void create_anchor(fusion_anchor_mgr_t *fusion,
+    const graph_tensor_ptr &output_gt, const expr &n, const int n_len,
+    const expr &g, const expr &g_len, const expr &k, const int k_len,
+    const expr &d, const int d_len, const expr &p, const expr &p_len,
+    const expr &q, const int q_len, const int K_block) const;
+
   bool generate(context_ptr ctx, const conv_fwd_config_t &config,
-    fusion_manager *fusion, const std::vector<expr> &inputs,
+    fusion_anchor_mgr_t *fusion, const std::vector<expr> &inputs,
     const std::vector<expr> &outputs,
     std::vector<for_loop> &loops) const override;
   config_ptr get_default_config(context_ptr ctx) const override;
 
   void schedule_loops(context_ptr ctx, const conv_fwd_config_t &config,
     stmt body, std::vector<for_loop> &fors) const override;
+  void bind_output_loop_axis(const for_loop &loop,
+    const std::vector<std::string> &axis, bool is_block = false) const;
+  void bind_output_loop_axis(
+    const for_loop &loop, const std::string axis, bool is_block = false) const {
+    this->bind_output_loop_axis(
+      loop, std::vector<std::string> {axis}, is_block);
+  }
 
   std::vector<int> get_os_factors();
 
@@ -128,7 +153,7 @@ public:
 
 #define CONV_ARG_LIST \
   const context_ptr &ctx, const conv_fwd_config_t &config, \
-    fusion_manager *fusion, expr &output, const expr &input, \
+    fusion_anchor_mgr_t *fusion, expr &output, const expr &input, \
     const expr &weight, std::vector<for_loop> &loops, const int K_num_block, \
     const int C_num_block, const int os, \
     const int kpack = 1, const bool use_os_blocking = false, \
@@ -156,6 +181,7 @@ public:
   bool try_os_blocking_ = false;
   bool is_1x1_conv_ = false;
   bool is_3d_ = false;
+  bool is_group_conv_ = false;
   bool blocking_input_ = false;
   bool blocking_output_ = false;
   any_map_t attrs_;

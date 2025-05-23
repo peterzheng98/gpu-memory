@@ -30,9 +30,6 @@
 #include <utility>
 #include <vector>
 
-#include <cudnn.h>
-#include <cudnn_backend.h>
-
 #include "cudnn_frontend_OperationGraph.h"
 #include "cudnn_frontend_utils.h"
 
@@ -107,7 +104,7 @@ class Engine_v8 : public BackendDescriptor {
        private:
         cudnnBackendKnobType_t knobType = CUDNN_KNOB_TYPE_COUNTS;
         int64_t maxValue = 0, minValue = 0, stride = 0;  //!< min, max and stride of the knob value
-        int64_t choice = -1;                              //!< Choice set by the user
+        int64_t choice = -1;                             //!< Choice set by the user
     };
 
     ManagedOpaqueDescriptor opGraph = nullptr;
@@ -126,14 +123,14 @@ class Engine_v8 : public BackendDescriptor {
             cudnnBackendKnobType_t type;
             int64_t maxValue, minValue, stride, elemCount;
             status =
-                cudnnBackendGetAttribute(bKnob, CUDNN_ATTR_KNOB_INFO_TYPE, CUDNN_TYPE_KNOB_TYPE, 1, &elemCount, &type);
+                detail::get_attribute(bKnob, CUDNN_ATTR_KNOB_INFO_TYPE, CUDNN_TYPE_KNOB_TYPE, 1, &elemCount, &type);
             if (status != CUDNN_STATUS_SUCCESS) {
                 set_error_and_throw_exception(this,
                                               status,
                                               "CUDNN_BACKEND_ENGINE_DESCRIPTOR: CUDNN_BACKEND_KNOB_INFO_DESCRIPTOR "
                                               "GetAttribute CUDNN_ATTR_KNOB_INFO_TYPE failed");
             }
-            status = cudnnBackendGetAttribute(
+            status = detail::get_attribute(
                 bKnob, CUDNN_ATTR_KNOB_INFO_MAXIMUM_VALUE, CUDNN_TYPE_INT64, 1, &elemCount, &maxValue);
             if (status != CUDNN_STATUS_SUCCESS) {
                 set_error_and_throw_exception(this,
@@ -141,7 +138,7 @@ class Engine_v8 : public BackendDescriptor {
                                               "CUDNN_BACKEND_ENGINE_DESCRIPTOR: CUDNN_BACKEND_KNOB_INFO_DESCRIPTOR "
                                               "GetAttribute CUDNN_ATTR_KNOB_INFO_MAXIMUM_VALUE Failed");
             }
-            status = cudnnBackendGetAttribute(
+            status = detail::get_attribute(
                 bKnob, CUDNN_ATTR_KNOB_INFO_MINIMUM_VALUE, CUDNN_TYPE_INT64, 1, &elemCount, &minValue);
             if (status != CUDNN_STATUS_SUCCESS) {
                 set_error_and_throw_exception(this,
@@ -150,7 +147,7 @@ class Engine_v8 : public BackendDescriptor {
                                               "GetAttribute CUDNN_ATTR_KNOB_INFO_MINIMUM_VALUE Failed");
             }
             status =
-                cudnnBackendGetAttribute(bKnob, CUDNN_ATTR_KNOB_INFO_STRIDE, CUDNN_TYPE_INT64, 1, &elemCount, &stride);
+                detail::get_attribute(bKnob, CUDNN_ATTR_KNOB_INFO_STRIDE, CUDNN_TYPE_INT64, 1, &elemCount, &stride);
             if (status != CUDNN_STATUS_SUCCESS) {
                 set_error_and_throw_exception(this,
                                               status,
@@ -175,7 +172,7 @@ class Engine_v8 : public BackendDescriptor {
 
     Engine_v8 &
     operator=(Engine_v8 &&) = default;
-    ~Engine_v8() = default;
+    ~Engine_v8()            = default;
 
     std::string const &
     getTag() const {
@@ -194,10 +191,11 @@ class Engine_v8 : public BackendDescriptor {
         return knobs;
     }
 
-    bool knobs_set() const {
+    bool
+    knobs_set() const {
         bool is_knob_set = false;
         for (auto i = 0; i < numKnobs; i++) {
-            if(knobs[i].getChoice() != -1) {
+            if (knobs[i].getChoice() != -1) {
                 is_knob_set = true;
                 break;
             }
@@ -264,11 +262,11 @@ class EngineBuilder_v8 {
             return std::move(m_engine);
         }
 
-        status = cudnnBackendSetAttribute(m_engine.pointer->get_backend_descriptor(),
-                                          CUDNN_ATTR_ENGINE_OPERATION_GRAPH,
-                                          CUDNN_TYPE_BACKEND_DESCRIPTOR,
-                                          1,
-                                          &(m_engine.opGraph->get_backend_descriptor()));
+        status = detail::set_attribute(m_engine.pointer->get_backend_descriptor(),
+                                       CUDNN_ATTR_ENGINE_OPERATION_GRAPH,
+                                       CUDNN_TYPE_BACKEND_DESCRIPTOR,
+                                       1,
+                                       &(m_engine.opGraph->get_backend_descriptor()));
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
                 &m_engine,
@@ -277,11 +275,11 @@ class EngineBuilder_v8 {
             return std::move(m_engine);
         }
 
-        status = cudnnBackendSetAttribute(m_engine.pointer->get_backend_descriptor(),
-                                          CUDNN_ATTR_ENGINE_GLOBAL_INDEX,
-                                          CUDNN_TYPE_INT64,
-                                          1,
-                                          &m_engine.idx);
+        status = detail::set_attribute(m_engine.pointer->get_backend_descriptor(),
+                                       CUDNN_ATTR_ENGINE_GLOBAL_INDEX,
+                                       CUDNN_TYPE_INT64,
+                                       1,
+                                       &m_engine.idx);
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
                 &m_engine,
@@ -291,12 +289,11 @@ class EngineBuilder_v8 {
         }
 
         // Finalizing the descriptor
-        status = cudnnBackendFinalize(m_engine.pointer->get_backend_descriptor());
+        status = detail::finalize(m_engine.pointer->get_backend_descriptor());
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(&m_engine, status, "CUDNN_BACKEND_ENGINE_DESCRIPTOR: cudnnFinalize Failed");
             return std::move(m_engine);
         }
-
 
         for (size_t i = 0; i < m_engine.bKnobs.size(); i++) {
             m_engine.bKnobs[i] = make_shared_backend_pointer(CUDNN_BACKEND_KNOB_INFO_DESCRIPTOR);
@@ -314,18 +311,20 @@ class EngineBuilder_v8 {
         for (std::uint32_t i = 0; i < m_engine.bKnobs.size(); i++) {
             bKnobs_[i] = m_engine.bKnobs[i]->get_backend_descriptor();
         }
-        status = cudnnBackendGetAttribute(m_engine.pointer->get_backend_descriptor(),
-                                          CUDNN_ATTR_ENGINE_KNOB_INFO,
-                                          CUDNN_TYPE_BACKEND_DESCRIPTOR,
-                                          CUDNN_KNOB_TYPE_COUNTS,
-                                          &m_engine.numKnobs,
-                                          bKnobs_.data());
+        status = detail::get_attribute(m_engine.pointer->get_backend_descriptor(),
+                                       CUDNN_ATTR_ENGINE_KNOB_INFO,
+                                       CUDNN_TYPE_BACKEND_DESCRIPTOR,
+                                       CUDNN_KNOB_TYPE_COUNTS,
+                                       &m_engine.numKnobs,
+                                       bKnobs_.data());
         if (status != CUDNN_STATUS_SUCCESS) {
             set_error_and_throw_exception(
-                &m_engine, status, "CUDNN_BACKEND_ENGINE_DESCRIPTOR: GetAttribute CUDNN_ATTR_ENGINE_KNOB_INFO Query Failed");
+                &m_engine,
+                status,
+                "CUDNN_BACKEND_ENGINE_DESCRIPTOR: GetAttribute CUDNN_ATTR_ENGINE_KNOB_INFO Query Failed");
         }
         m_engine.buildKnobs();
-        getLogger() << "[cudnn_frontend] " << m_engine << std::endl;
+        CUDNN_FE_LOG_LABEL_ENDL(m_engine);
         return std::move(m_engine);
     }
 
@@ -339,4 +338,4 @@ class EngineBuilder_v8 {
    private:
     Engine_v8 m_engine;
 };
-}
+}  // namespace cudnn_frontend

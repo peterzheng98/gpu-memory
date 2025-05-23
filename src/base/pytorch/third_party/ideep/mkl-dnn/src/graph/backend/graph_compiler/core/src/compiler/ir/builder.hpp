@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2020-2023 Intel Corporation
+ * Copyright 2020-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,19 +55,20 @@ public:
      * statements in a basic-block into a stmts node.
      * */
     struct basic_block_t {
-        std::vector<stmt> body;
+        stmts body;
         /**
          * Appends a stmt into the BB
          * @param stmt the statement
          * */
         void emit(const stmt &stmt);
         /**
-         * Compose a stmts node with the stmt that are previously
-         * pushed into this BB. Will clear the `body` field
-         * @return the composed stmts
+         * Get the contained body and clear this field
+         * @return the `body` stmts
          * */
         stmt get();
-        basic_block_t() = default;
+        // return `seq_` field of `body`, which is std::vector<stmt> type
+        std::vector<stmt> &as_seq() { return body->seq_; }
+        basic_block_t();
         basic_block_t(basic_block_t &&other) : body(std::move(other.body)) {}
     };
 
@@ -176,7 +177,8 @@ public:
             const expr_c &K, const expr_c &lda, const expr_c &ldb,
             const expr_c &ldc, const expr_c &a_stride, const expr_c &b_stride,
             const std::vector<expr> &postops_data, const expr_c &c_buf,
-            const expr_c &bd_mask_idx, const brgemm_args::extra_args_t &extras);
+            const expr_c &bd_mask_idx, const expr_c &top_pad,
+            const expr_c &bottom_pad, const brgemm_args::extra_args_t &extras);
 
     /**
      * Makes a brgemm-call node and evaluates it
@@ -187,6 +189,7 @@ public:
             const expr_c &ldc, const expr_c &a_stride, const expr_c &b_stride,
             const expr_c &len, const std::vector<expr> &postops_data,
             const expr_c &c_buf, const expr_c &bd_mask_idx,
+            const expr_c &top_pad, const expr_c &bottom_pad,
             const brgemm_args::extra_args_t &extras);
 
     /**
@@ -458,6 +461,15 @@ expr make_broadcast(const expr_c &v, int lanes);
 expr make_fmadd(const expr_c &v_a, const expr_c &v_b, const expr_c &v_c);
 
 /**
+ * Makes an fnmadd node
+ * @param v_a the first input value
+ * @param v_b the second input value
+ * @param v_c the third input value
+ * @return the created node
+ * */
+expr make_fnmadd(const expr_c &v_a, const expr_c &v_b, const expr_c &v_c);
+
+/**
  * Makes an unpack_low node
  * Unpack and interleave elements from the low half of each 128-bit lane
  * in v_a and v_b
@@ -624,6 +636,28 @@ expr make_insert(const expr_c &v_a, const expr_c &v_b, const int imm);
  * @return the created node
  * */
 expr make_extract(const expr_c &v_a, const int imm, const int lanes = 1);
+
+/**
+ * Update the 2d value into v_a at the location specified by row and col.
+ * @param v_a the larger 2D tile
+ * @param v_b the smaller 2D tile to be inserted to v_a
+ * @param row the row location for v_b to be inserted to v_a
+ * @param col the col location for v_b to be inserted to v_a
+ * @return the created node as the updated value
+ * */
+expr make_insert(const expr_c &v_a, const expr_c &v_b, const expr_c &row,
+        const expr_c &col);
+/**
+ * Extract the 2d region from v_a at the location specified by row and col.
+ * @param v_a the 2D tile value
+ * @param row the row location for v_b to be inserted to v_a
+ * @param col the col location for v_b to be inserted to v_a
+ * @param rows_count the number of rows to be extracted
+ * @param cols_count the number of cols to be extracted
+ * @return the created node as the extracted SIMD value of shape [rows x cols]
+ * */
+expr make_extract(const expr_c &v_a, const expr_c &row, const expr_c &col,
+        uint32_t rows_count, uint32_t cols_count);
 
 /**
  * Makes an gather node
@@ -822,12 +856,12 @@ expr make_clip(
  * @return the created node
  * */
 expr make_indexing(const expr &ptr, const std::vector<expr> &idx,
-        uint16_t length = 1, const expr &mask = expr());
+        uint16_t length = 1, const expr &mask = expr(), uint16_t rows = 0);
 expr make_indexing(const expr &ptr, std::initializer_list<expr> idx,
-        uint16_t length = 1, const expr &mask = expr());
+        uint16_t length = 1, const expr &mask = expr(), uint16_t rows = 0);
 
 expr make_indexing(const expr_c &ptr, const std::vector<expr_c> &idx,
-        uint16_t length = 1, const expr_c &mask = expr_c());
+        uint16_t length = 1, const expr_c &mask = expr_c(), uint16_t rows = 0);
 
 /**
  * Makes a indexing node of single dimemsion
@@ -838,7 +872,7 @@ expr make_indexing(const expr_c &ptr, const std::vector<expr_c> &idx,
  * @return the created node
  * */
 expr make_indexing(const expr_c &ptr, const expr_c &idx, uint16_t length = 1,
-        const expr_c &mask = expr_c());
+        const expr_c &mask = expr_c(), uint16_t rows = 0);
 
 /**
  * Makes a call node

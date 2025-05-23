@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2023 Intel Corporation
+* Copyright 2019-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -45,8 +45,8 @@ namespace dnnl {
 namespace impl {
 namespace cpu {
 
-template <alg_kind_t alg_kind, prop_kind_t prop_kind>
-float activation(float s, float alpha, float cliping);
+float activation(alg_kind_t alg_kind, prop_kind_t prop_kind, float s,
+        float alpha, float cliping);
 
 template <prop_kind_t aprop, impl::data_type_t src_type,
         impl::data_type_t scratch_type, impl::data_type_t acc_type>
@@ -88,22 +88,6 @@ struct rnn_postgemm_dispatcher {
                 break;
             case alg_kind::vanilla_rnn:
                 postgemm_func = &class_name::rnn_postgemm;
-                switch (pd->activation_kind()) {
-                    case alg_kind::eltwise_relu:
-                        activation_func
-                                = &activation<alg_kind::eltwise_relu, aprop>;
-                        break;
-                    case alg_kind::eltwise_tanh:
-                        activation_func
-                                = &activation<alg_kind::eltwise_tanh, aprop>;
-                        break;
-                    case alg_kind::eltwise_logistic:
-                        activation_func
-                                = &activation<alg_kind::eltwise_logistic,
-                                        aprop>;
-                        break;
-                    default: assert(!"Unsupported activation function"); break;
-                }
                 break;
             case alg_kind::vanilla_gru:
             case alg_kind::vanilla_augru:
@@ -118,7 +102,7 @@ struct rnn_postgemm_dispatcher {
         }
     }
 
-    ~rnn_postgemm_dispatcher() = default;
+    virtual ~rnn_postgemm_dispatcher() = default;
 
     status_t init(const rnn_utils::rnn_conf_t &rnn) {
         DNNL_X64_ONLY(CHECK(initialize_jit(rnn)));
@@ -232,14 +216,13 @@ struct rnn_postgemm_dispatcher {
                 block_step);
     }
 
-private:
-    float (*activation_func)(float s, float alpha, float cliping);
-    rnn_postgemm_sig(rnn_postgemm);
-    rnn_postgemm_sig(lstm_postgemm);
-    rnn_postgemm_sig(lstm_projection_postgemm);
-    rnn_postgemm_sig(gru_part1_postgemm);
-    rnn_postgemm_sig(gru_part2_postgemm);
-    rnn_postgemm_sig(gru_lbr_postgemm);
+protected:
+    virtual rnn_postgemm_sig(rnn_postgemm) = 0;
+    virtual rnn_postgemm_sig(lstm_postgemm) = 0;
+    virtual rnn_postgemm_sig(lstm_projection_postgemm) = 0;
+    virtual rnn_postgemm_sig(gru_part1_postgemm) = 0;
+    virtual rnn_postgemm_sig(gru_part2_postgemm) = 0;
+    virtual rnn_postgemm_sig(gru_lbr_postgemm) = 0;
 
     const rnn_pd_t *pd_;
 
@@ -259,9 +242,16 @@ private:
 
         const bool jit_fwd = pd_->is_fwd()
                 && utils::one_of(src_type, data_type::f32, data_type::u8,
-                        data_type::s8, data_type::bf16);
+                        data_type::s8, data_type::bf16, data_type::f16);
         const bool jit_bwd = !pd_->is_fwd()
-                && utils::one_of(src_type, data_type::f32, data_type::bf16);
+                && utils::one_of(src_type, data_type::f32, data_type::bf16,
+                        data_type::f16);
+
+        // Note: Using ref (no-jit) post-gemm for avx2_vnni_2 for now.
+        // Implement jit version of post-gemm if perf becomes a concern.
+        if (utils::one_of(src_type, data_type::bf16, data_type::f16)
+                && !mayiuse(avx512_core))
+            return status::success;
 
 #define CREATE_WITH_DIR(k, ker_t) \
     do { \
@@ -301,20 +291,79 @@ private:
 #endif
 };
 
-using rnn_postgemm_fwd_f32_t = rnn_postgemm_dispatcher<prop_kind::forward,
-        data_type::f32, data_type::f32, data_type::f32>;
-using rnn_postgemm_bwd_f32_t = rnn_postgemm_dispatcher<prop_kind::backward,
-        data_type::f32, data_type::f32, data_type::f32>;
+template <impl::data_type_t src_type, impl::data_type_t scratch_type,
+        impl::data_type_t acc_type>
+struct rnn_postgemm_fwd_t : public rnn_postgemm_dispatcher<prop_kind::forward,
+                                    src_type, scratch_type, acc_type> {
+    using base_t = rnn_postgemm_dispatcher<prop_kind::forward, src_type,
+            scratch_type, acc_type>;
+    using base_t::base_t;
+    using src_layer_t = typename base_t::src_layer_t;
+    using src_iter_t = typename base_t::src_iter_t;
+    using dst_layer_t = typename base_t::dst_layer_t;
+    using dst_iter_t = typename base_t::dst_iter_t;
+    using gemm_acc_t = typename base_t::gemm_acc_t;
+    using scratch_t = typename base_t::scratch_t;
+    using ht_t = typename base_t::ht_t;
+    using gates_t = typename base_t::gates_t;
 
-using rnn_postgemm_fwd_bf16_t = rnn_postgemm_dispatcher<prop_kind::forward,
-        data_type::bf16, data_type::f32, data_type::f32>;
-using rnn_postgemm_bwd_bf16_t = rnn_postgemm_dispatcher<prop_kind::backward,
-        data_type::bf16, data_type::bf16, data_type::f32>;
+    virtual rnn_postgemm_sig(rnn_postgemm) override;
+    virtual rnn_postgemm_sig(lstm_postgemm) override;
+    virtual rnn_postgemm_sig(lstm_projection_postgemm) override;
+    virtual rnn_postgemm_sig(gru_part1_postgemm) override;
+    virtual rnn_postgemm_sig(gru_part2_postgemm) override;
+    virtual rnn_postgemm_sig(gru_lbr_postgemm) override;
 
-using rnn_postgemm_fwd_u8_t = rnn_postgemm_dispatcher<prop_kind::forward,
-        data_type::u8, data_type::s32, data_type::s32>;
-using rnn_postgemm_fwd_s8_t = rnn_postgemm_dispatcher<prop_kind::forward,
-        data_type::s8, data_type::s32, data_type::s32>;
+    using base_t::postgemm_func;
+    using base_t::postgemm_part2_func;
+};
+
+template <impl::data_type_t src_type, impl::data_type_t scratch_type,
+        impl::data_type_t acc_type>
+struct rnn_postgemm_bwd_t : public rnn_postgemm_dispatcher<prop_kind::backward,
+                                    src_type, scratch_type, acc_type> {
+    using base_t = rnn_postgemm_dispatcher<prop_kind::backward, src_type,
+            scratch_type, acc_type>;
+    using base_t::base_t;
+    using src_layer_t = typename base_t::src_layer_t;
+    using src_iter_t = typename base_t::src_iter_t;
+    using dst_layer_t = typename base_t::dst_layer_t;
+    using dst_iter_t = typename base_t::dst_iter_t;
+    using gemm_acc_t = typename base_t::gemm_acc_t;
+    using scratch_t = typename base_t::scratch_t;
+    using ht_t = typename base_t::ht_t;
+    using gates_t = typename base_t::gates_t;
+
+    virtual rnn_postgemm_sig(rnn_postgemm) override;
+    virtual rnn_postgemm_sig(lstm_postgemm) override;
+    virtual rnn_postgemm_sig(lstm_projection_postgemm) override;
+    virtual rnn_postgemm_sig(gru_part1_postgemm) override;
+    virtual rnn_postgemm_sig(gru_part2_postgemm) override;
+    virtual rnn_postgemm_sig(gru_lbr_postgemm) override;
+
+    using base_t::postgemm_func;
+    using base_t::postgemm_part2_func;
+};
+
+using rnn_postgemm_fwd_f32_t
+        = rnn_postgemm_fwd_t<data_type::f32, data_type::f32, data_type::f32>;
+using rnn_postgemm_bwd_f32_t
+        = rnn_postgemm_bwd_t<data_type::f32, data_type::f32, data_type::f32>;
+
+using rnn_postgemm_fwd_bf16_t
+        = rnn_postgemm_fwd_t<data_type::bf16, data_type::f32, data_type::f32>;
+using rnn_postgemm_bwd_bf16_t
+        = rnn_postgemm_bwd_t<data_type::bf16, data_type::bf16, data_type::f32>;
+
+using rnn_postgemm_fwd_f16_t
+        = rnn_postgemm_fwd_t<data_type::f16, data_type::f32, data_type::f32>;
+using rnn_postgemm_bwd_f16_t
+        = rnn_postgemm_bwd_t<data_type::f16, data_type::f16, data_type::f32>;
+
+using rnn_postgemm_fwd_u8_t
+        = rnn_postgemm_fwd_t<data_type::u8, data_type::s32, data_type::s32>;
+using rnn_postgemm_fwd_s8_t
+        = rnn_postgemm_fwd_t<data_type::s8, data_type::s32, data_type::s32>;
 
 } // namespace cpu
 } // namespace impl

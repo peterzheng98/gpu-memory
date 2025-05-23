@@ -16,6 +16,7 @@ where *lnorm-knobs* are:
             to `any`. Refer to [tags](knobs_tag.md) for details.
  - `--stat_tag={tn [default], ...}` -- physical mean and variance memory format.
             Refer to [tags](knobs_tag.md) for details.
+ - `--ss_dt={f32 [default], ...}` -- data type of scale and shift.
  - `--flags=[|G|C|H]` -- layer normalization flags, default `none`; where
             multiple simultaneous flags are supported.
             `G` is dnnl_use_global_stats;
@@ -23,9 +24,6 @@ where *lnorm-knobs* are:
             `H` is dnnl_use_shift;
             Refer to [layer normalization primitive](https://oneapi-src.github.io/oneDNN/dev_guide_layer_normalization.html)
             for details.
- - `--attr-scales=STRING` -- per argument scales primitive attribute. No
-            scales are set by default. Refer to [attributes](knobs_attr.md) for
-            details.
  - `--inplace=BOOL` -- memory mode for the primitive. If `true`, it uses input
             memory as output, otherwise, input and output are separate.
             Default is `false`.
@@ -33,6 +31,7 @@ where *lnorm-knobs* are:
             `REGEX`. By default no pattern is applied (run everything).
             Note: Windows may interpret only string arguments surrounded by
             double quotation marks.
+ - Any attributes options. Refer to [attributes](knobs_attr.md) for details.
 
 and *lnorm-desc* is a problem descriptor. The canonical form is:
 ```

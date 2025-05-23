@@ -13,9 +13,12 @@
 #include <unordered_map>
 #include <vector>
 
+// TODO(T90238193)
+// @lint-ignore-every CLANGTIDY facebook-hte-RelativeInclude
 #include "Config.h"
 #include "GenericTraceActivity.h"
 #include "output_base.h"
+#include "ActivityBuffers.h"
 
 namespace KINETO_NAMESPACE {
 
@@ -96,6 +99,18 @@ class MemoryTraceLogger : public ActivityLogger {
     logger.finalizeTrace(*config_, nullptr, endTime_, loggerMetadata_);
   }
 
+  void setLoggerMetadata(
+      std::unordered_map<std::string, std::vector<std::string>>&& lmd) {
+    loggerMetadata_ = std::move(lmd);
+  }
+
+  void setChromeLogger(std::shared_ptr<ActivityLogger> logger) {
+    chrome_logger_ = logger;
+  }
+
+  std::shared_ptr<ActivityLogger> getChromeLogger() {
+    return chrome_logger_;
+  }
  private:
 
   std::unique_ptr<Config> config_;
@@ -108,6 +123,7 @@ class MemoryTraceLogger : public ActivityLogger {
   std::unordered_map<std::string, std::string> metadata_;
   std::unordered_map<std::string, std::vector<std::string>> loggerMetadata_;
   int64_t endTime_{0};
+  std::shared_ptr<ActivityLogger> chrome_logger_;
 };
 
 } // namespace KINETO_NAMESPACE

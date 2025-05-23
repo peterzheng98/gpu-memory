@@ -7,10 +7,10 @@
 
 #include "onnx/defs/parser.h"
 
+#include <cctype>
 #include <iostream>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -316,12 +316,44 @@ Status OnnxParser::Parse(ValueInfoProto& valueinfo) {
   return Status::OK();
 }
 
-Status OnnxParser::Parse(ValueInfoList& vilist) {
+Status OnnxParser::Parse(char open, ValueInfoList& vilist, char close) {
+  MATCH(open);
+  if (!Matches(close)) {
+    do {
+      PARSE(*vilist.Add());
+    } while (Matches(','));
+    MATCH(close);
+  }
+  return Status::OK();
+}
+
+Status OnnxParser::ParseGraphInputOutput(ValueInfoList& vilist) {
   vilist.Clear();
+  PARSE('(', vilist, ')');
+  return Status::OK();
+}
+
+Status OnnxParser::ParseFunctionInputOutput(IdList& idlist, ValueInfoList& vilist) {
+  // Do not clear vilist, as it accumulates values over inputs and outputs.
+  idlist.Clear();
   MATCH('(');
   if (!Matches(')')) {
     do {
-      PARSE(*vilist.Add());
+      // Function inputs/outputs can be optionally typed.
+      // Syntax: Name | Type Name
+      // The name is added to idlist. If the optional type is present, an entry is
+      // added to vilist.
+
+      std::string* name = idlist.Add();
+      ValueInfoProto* vi = nullptr;
+
+      if (NextIsType()) {
+        vi = vilist.Add();
+        PARSE(*(vi->mutable_type()));
+      }
+      CHECK_PARSER_STATUS(ParseIdentifier(*name));
+      if (vi != nullptr)
+        vi->set_name(*name);
     } while (Matches(','));
     MATCH(')');
   }
@@ -377,6 +409,19 @@ Status OnnxParser::ParseValueInfo(ValueInfoList& value_infos, TensorList& initia
   return Status::OK();
 }
 
+Status OnnxParser::Parse(StringStringList& stringStringList) {
+  std::string strval;
+  do {
+    auto* metadata = stringStringList.Add();
+    PARSE_TOKEN(strval);
+    metadata->set_key(strval);
+    MATCH(':');
+    PARSE_TOKEN(strval);
+    metadata->set_value(strval);
+  } while (Matches(','));
+  return Status::OK();
+}
+
 Status OnnxParser::Parse(TensorProto& tensorProto) {
   tensorProto = TensorProto();
   // Parse the concrete tensor-type with numeric dimensions:
@@ -410,46 +455,52 @@ Status OnnxParser::Parse(TensorProto& tensorProto, const TypeProto& tensorTypePr
   float floatval = 0.0;
   double dblval = 0.0;
   std::string strval;
-  MATCH('{');
-  if (!Matches('}')) {
-    do {
-      switch (static_cast<TensorProto::DataType>(elem_type)) {
-        case TensorProto::DataType::TensorProto_DataType_INT8:
-        case TensorProto::DataType::TensorProto_DataType_INT16:
-        case TensorProto::DataType::TensorProto_DataType_INT32:
-        case TensorProto::DataType::TensorProto_DataType_UINT8:
-        case TensorProto::DataType::TensorProto_DataType_UINT16:
-        case TensorProto::DataType::TensorProto_DataType_BOOL:
-          PARSE_TOKEN(intval);
-          // TODO: check values are in the correct range.
-          tensorProto.add_int32_data(intval);
-          break;
-        case TensorProto::DataType::TensorProto_DataType_INT64:
-          PARSE_TOKEN(intval);
-          tensorProto.add_int64_data(intval);
-          break;
-        case TensorProto::DataType::TensorProto_DataType_UINT32:
-        case TensorProto::DataType::TensorProto_DataType_UINT64:
-          PARSE_TOKEN(uintval);
-          tensorProto.add_uint64_data(uintval);
-          break;
-        case TensorProto::DataType::TensorProto_DataType_FLOAT:
-          PARSE_TOKEN(floatval);
-          tensorProto.add_float_data(floatval);
-          break;
-        case TensorProto::DataType::TensorProto_DataType_DOUBLE:
-          PARSE_TOKEN(dblval);
-          tensorProto.add_double_data(dblval);
-          break;
-        case TensorProto::DataType::TensorProto_DataType_STRING:
-          PARSE_TOKEN(strval);
-          tensorProto.add_string_data(strval);
-          break;
-        default:
-          return ParseError("Unhandled type: %d", elem_type);
-      }
-    } while (Matches(','));
-    MATCH('}');
+  if (Matches('{')) {
+    if (!Matches('}')) {
+      do {
+        switch (static_cast<TensorProto::DataType>(elem_type)) {
+          case TensorProto::DataType::TensorProto_DataType_INT8:
+          case TensorProto::DataType::TensorProto_DataType_INT16:
+          case TensorProto::DataType::TensorProto_DataType_INT32:
+          case TensorProto::DataType::TensorProto_DataType_UINT8:
+          case TensorProto::DataType::TensorProto_DataType_UINT16:
+          case TensorProto::DataType::TensorProto_DataType_BOOL:
+            PARSE_TOKEN(intval);
+            // TODO: check values are in the correct range.
+            tensorProto.add_int32_data(intval);
+            break;
+          case TensorProto::DataType::TensorProto_DataType_INT64:
+            PARSE_TOKEN(intval);
+            tensorProto.add_int64_data(intval);
+            break;
+          case TensorProto::DataType::TensorProto_DataType_UINT32:
+          case TensorProto::DataType::TensorProto_DataType_UINT64:
+            PARSE_TOKEN(uintval);
+            tensorProto.add_uint64_data(uintval);
+            break;
+          case TensorProto::DataType::TensorProto_DataType_FLOAT:
+            PARSE_TOKEN(floatval);
+            tensorProto.add_float_data(floatval);
+            break;
+          case TensorProto::DataType::TensorProto_DataType_DOUBLE:
+            PARSE_TOKEN(dblval);
+            tensorProto.add_double_data(dblval);
+            break;
+          case TensorProto::DataType::TensorProto_DataType_STRING:
+            PARSE_TOKEN(strval);
+            tensorProto.add_string_data(strval);
+            break;
+          default:
+            return ParseError("Unhandled type: %d", elem_type);
+        }
+      } while (Matches(','));
+      MATCH('}');
+    }
+  } else if (Matches('[')) {
+    tensorProto.set_data_location(TensorProto::DataLocation::TensorProto_DataLocation_EXTERNAL);
+    auto& externalData = *tensorProto.mutable_external_data();
+    PARSE(externalData);
+    MATCH(']');
   }
   return Status::OK();
 }
@@ -664,6 +715,12 @@ Status OnnxParser::Parse(NodeProto& node) {
   }
   node.set_domain(domain);
   node.set_op_type(id);
+
+  if (Matches(':')) {
+    std::string overload;
+    ParseIdentifier(overload);
+    node.set_overload(overload);
+  }
   PARSE(*node.mutable_attribute());
   MATCH('(');
   PARSE(*node.mutable_input());
@@ -696,7 +753,7 @@ Status OnnxParser::Parse(std::string name, GraphProto& graph) {
   CHECK_PARSER_STATUS(ParseInput(*graph.mutable_input(), *graph.mutable_initializer()));
   MATCH('=');
   MATCH('>', false);
-  PARSE(*graph.mutable_output());
+  CHECK_PARSER_STATUS(ParseGraphInputOutput(*graph.mutable_output()));
   CHECK_PARSER_STATUS(ParseValueInfo(*graph.mutable_value_info(), *graph.mutable_initializer()));
   return Parse(*graph.mutable_node());
 }
@@ -721,6 +778,10 @@ Status OnnxParser::Parse(FunctionProto& fn) {
           PARSE_TOKEN(strval);
           fn.set_domain(strval);
           break;
+        case KeyWordMap::KeyWord::OVERLOAD_KW:
+          PARSE_TOKEN(strval);
+          fn.set_overload(strval);
+          break;
         default:
           return ParseError("Unhandled keyword.");
       }
@@ -732,10 +793,14 @@ Status OnnxParser::Parse(FunctionProto& fn) {
   fn.set_name(id);
 
   PARSE('<', *fn.mutable_attribute(), *fn.mutable_attribute_proto(), '>');
-  PARSE('(', *fn.mutable_input(), ')');
+  fn.mutable_value_info()->Clear();
+  CHECK_PARSER_STATUS(ParseFunctionInputOutput(*fn.mutable_input(), *fn.mutable_value_info()));
   MATCH('=');
   MATCH('>', false);
-  PARSE('(', *fn.mutable_output(), ')');
+  CHECK_PARSER_STATUS(ParseFunctionInputOutput(*fn.mutable_output(), *fn.mutable_value_info()));
+  if (NextChar() == '<') {
+    PARSE('<', *fn.mutable_value_info(), '>');
+  }
   return Parse(*fn.mutable_node());
 }
 
@@ -798,14 +863,7 @@ Status OnnxParser::Parse(ModelProto& model) {
           auto& metadata_props = *model.mutable_metadata_props();
           MATCH('[');
           if (!Matches(']')) {
-            do {
-              auto* metadata = metadata_props.Add();
-              PARSE_TOKEN(strval);
-              metadata->set_key(strval);
-              MATCH(':');
-              PARSE_TOKEN(strval);
-              metadata->set_value(strval);
-            } while (Matches(','));
+            PARSE(metadata_props);
             MATCH(']');
           }
           break;

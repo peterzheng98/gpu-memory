@@ -97,6 +97,8 @@
  *      - Simpler samples on how to use the new API.
  */
 
+#include <cudnn.h>
+
 #include "cudnn_frontend_ConvDesc.h"
 #include "cudnn_frontend_Heuristics.h"
 #include "cudnn_frontend_Engine.h"
@@ -118,14 +120,12 @@
 
 #include "cudnn_frontend_Resample.h"
 
-#define CUDNN_FRONTEND_MAJOR_VERSION 0
-#define CUDNN_FRONTEND_MINOR_VERSION 9
-#define CUDNN_FRONTEND_PATCH_VERSION 2
-#define CUDNN_FRONTEND_VERSION ((CUDNN_FRONTEND_MAJOR_VERSION * 10000) + (CUDNN_FRONTEND_MINOR_VERSION * 100) + CUDNN_FRONTEND_PATCH_VERSION)
+#include "cudnn_frontend/graph_interface.h"
+#include "cudnn_frontend/utils/serialize.h"
+
+#include "cudnn_frontend_version.h"
 
 namespace cudnn_frontend {
-using Tensor                    = Tensor_v8;
-using TensorBuilder             = TensorBuilder_v8;
 using ConvDesc                  = ConvDesc_v8;
 using ConvDescBuilder           = ConvDescBuilder_v8;
 using ReductionDesc             = ReductionDesc_v8;
@@ -136,14 +136,8 @@ using EngineBuilder             = EngineBuilder_v8;
 using Engine                    = Engine_v8;
 using EngineConfig              = EngineConfig_v8;
 using EngineConfigBuilder       = EngineConfigBuilder_v8;
-using VariantPack               = VariantPack_v8;
-using VariantPackBuilder        = VariantPackBuilder_v8;
 using EngineFallbackList        = EngineFallbackList_v8;
 using EngineFallbackListBuilder = EngineFallbackListBuilder_v8;
 using ResampleDesc              = ResampleDesc_v8;
 using ResampleDescBuilder       = ResampleDescBuilder_v8;
-using RngDesc                   = RngDesc_v8;
-using RngDescBuilder            = RngDescBuilder_v8;
-}
-
-
+}  // namespace cudnn_frontend

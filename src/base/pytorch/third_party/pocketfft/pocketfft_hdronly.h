@@ -1,7 +1,7 @@
 /*
 This file is part of pocketfft.
 
-Copyright (C) 2010-2021 Max-Planck-Society
+Copyright (C) 2010-2022 Max-Planck-Society
 Copyright (C) 2019-2020 Peter Bell
 
 For the odd-sized DCT-IV transforms:
@@ -43,7 +43,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #error This file is C++ and requires a C++ compiler.
 #endif
 
-#if !(__cplusplus >= 201103L || _MSVC_LANG+0L >= 201103L)
+#if !(__cplusplus >= 201103L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201103L))
 #error This file requires at least C++11 support.
 #endif
 
@@ -149,7 +149,10 @@ template<> struct VLEN<double> { static constexpr size_t val=2; };
 #endif
 #endif
 
-#if __cplusplus >= 201703L
+// the __MINGW32__ part in the conditional below works around the problem that
+// the standard C++ library on Windows does not provide aligned_alloc() even
+// though the MinGW compiler and MSVC may advertise C++17 compliance.
+#if (__cplusplus >= 201703L) && (!defined(__MINGW32__)) && (!defined(_MSC_VER))
 inline void *aligned_alloc(size_t align, size_t size)
   {
   // aligned_alloc() requires that the requested size is a multiple of "align"
@@ -2630,11 +2633,13 @@ template<typename T0> class T_dcst23
         if (!cosine)
           for (size_t k=0, kc=N-1; k<kc; ++k, --kc)
             std::swap(c[k], c[kc]);
-        if (ortho) c[0]*=sqrt2*T0(0.5);
+        if (ortho)
+          cosine ? c[0]*=sqrt2*T0(0.5) : c[N-1]*=sqrt2*T0(0.5);
         }
       else
         {
-        if (ortho) c[0]*=sqrt2;
+        if (ortho)
+          cosine ? c[0]*=sqrt2 : c[N-1]*=sqrt2;
         if (!cosine)
           for (size_t k=0, kc=N-1; k<NS2; ++k, --kc)
             std::swap(c[k], c[kc]);

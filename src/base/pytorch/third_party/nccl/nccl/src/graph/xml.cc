@@ -9,9 +9,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <float.h>
 #include "core.h"
 #include "nvmlwrap.h"
 #include "xml.h"
+#if defined(__x86_64__)
+#include <cpuid.h>
+#endif
 
 /*******************/
 /* XML File Parser */
@@ -168,8 +172,8 @@ struct xmlHandler {
 ncclResult_t xmlLoadSub(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head, struct xmlHandler handlers[], int nHandlers) {
   if (head && head->type == NODE_TYPE_SINGLE) return ncclSuccess;
   while (1) {
-    if (xml->maxIndex == MAX_NODES) {
-      WARN("Error : XML parser is limited to 1024 nodes");
+    if (xml->maxIndex == xml->maxNodes) {
+      WARN("Error : XML parser is limited to %d nodes", xml->maxNodes);
       return ncclInternalError;
     }
     struct ncclXmlNode* node = xml->nodes+xml->maxIndex;
@@ -194,7 +198,13 @@ ncclResult_t xmlLoadSub(FILE* file, struct ncclXml* xml, struct ncclXmlNode* hea
     int found = 0;
     for (int h=0; h<nHandlers; h++) {
       if (strcmp(node->name, handlers[h].name) == 0) {
-        if (head) head->subs[head->nSubs++] = node;
+        if (head) {
+          if (head->nSubs == MAX_SUBS) {
+            WARN("Error : XML parser is limited to %d subnodes", MAX_SUBS);
+            return ncclInternalError;
+          }
+          head->subs[head->nSubs++] = node;
+        }
         node->parent = head;
         node->nSubs = 0;
         xml->maxIndex++;
@@ -213,6 +223,23 @@ ncclResult_t xmlLoadSub(FILE* file, struct ncclXml* xml, struct ncclXmlNode* hea
 /**************/
 /* XML Writer */
 /**************/
+
+// exp == 1 -- serialize; exp == 0 -- deserialize
+ncclResult_t ncclTopoConvertXml(struct ncclXml* xml, uintptr_t base, int exp) {
+  for (int n = 0; n < xml->maxIndex; n++) {
+    struct ncclXmlNode *node = &xml->nodes[n];
+
+    // For "parent", we shift the base by 1 so that we can distinguish actual
+    // NULL pointers from pointers pointing to the first node.
+    if (node->parent)
+      node->parent = (struct ncclXmlNode *) (exp ? ((uintptr_t)node->parent - base + 1) : (base - 1 + (uintptr_t)node->parent));
+
+    for (int s = 0; s < node->nSubs; s++) {
+      node->subs[s] = (struct ncclXmlNode *) (exp ? ((uintptr_t)node->subs[s] - base) : (base + (uintptr_t)node->subs[s]));
+    }
+  }
+  return ncclSuccess;
+}
 
 ncclResult_t ncclTopoDumpXmlRec(int indent, FILE* file, struct ncclXmlNode* node) {
   for (int i=0; i<indent; i++) fprintf(file, " ");
@@ -244,6 +271,60 @@ ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml)
   fclose(file);
   return ncclSuccess;
 }
+
+ncclResult_t ncclTopoFuseXml(struct ncclXml* dst, struct ncclXml* src) {
+  struct ncclXmlNode* topNode;
+  NCCLCHECK(xmlFindTag(dst, "system", &topNode));
+
+  if (topNode == NULL) {
+    xmlAddTree(dst, NULL, src->nodes);
+    return ncclSuccess;
+  }
+
+  // Fuse the CPUs with the first XML
+  struct ncclXmlNode* srcCpu;
+  NCCLCHECK(xmlFindTag(src, "cpu", &srcCpu));
+  while (srcCpu) {
+    const char* srcNumaId;
+    const char* srcHostHash;
+    NCCLCHECK(xmlGetAttr(srcCpu, "numaid", &srcNumaId));
+    if (srcNumaId == NULL) {
+      WARN("TopoFuseXmls : could not find CPU numa ID.");
+      return ncclInternalError;
+    }
+    xmlGetAttr(srcCpu, "host_hash", &srcHostHash);
+    if (srcHostHash == NULL)
+      srcHostHash = "0";
+
+    // Search through the destination for a duplicate.  Note that
+    // this makes the complexity of this whole function O(n^2), but n
+    // is expected to be small.
+    struct ncclXmlNode* dstCpu;
+    NCCLCHECK(xmlFindTag(dst, "cpu", &dstCpu));
+    while (dstCpu) {
+      const char* dstNumaId;
+      const char* dstHostHash;
+      NCCLCHECK(xmlGetAttr(dstCpu, "numaid", &dstNumaId));
+      if (dstNumaId == NULL) {
+        WARN("TopoFuseXmls : could not find CPU numa ID.");
+        return ncclInternalError;
+      }
+      xmlGetAttr(dstCpu, "host_hash", &dstHostHash);
+      if (dstHostHash == NULL)
+        dstHostHash = "0";
+      if (strcmp(srcNumaId, dstNumaId) == 0 && strcmp(srcHostHash, dstHostHash) == 0)
+        break;
+
+      NCCLCHECK(xmlFindNextTag(dst, "cpu", dstCpu, &dstCpu));
+    }
+    // Only add the CPU if no duplicate was found
+    if (dstCpu == NULL)
+      NCCLCHECK(xmlAddTree(dst, topNode, srcCpu));
+    NCCLCHECK(xmlFindNextTag(src, "cpu", srcCpu, &srcCpu));
+  }
+  return ncclSuccess;
+}
+
 
 /****************************************/
 /* Parser rules for our specific format */
@@ -412,7 +493,8 @@ ncclResult_t ncclTopoGetXmlFromCpu(struct ncclXmlNode* cpuNode, struct ncclXml* 
       char vendor[12];
     } cpuid0;
 
-    asm volatile("cpuid" : "=b" (cpuid0.ebx), "=c" (cpuid0.ecx), "=d" (cpuid0.edx) : "a" (0) : "memory");
+    unsigned unused;
+    __cpuid(0, unused, cpuid0.ebx, cpuid0.ecx, cpuid0.edx);
     char vendor[13];
     strncpy(vendor, cpuid0.vendor, 12);
     vendor[12] = '\0';
@@ -434,7 +516,8 @@ ncclResult_t ncclTopoGetXmlFromCpu(struct ncclXmlNode* cpuNode, struct ncclXml* 
       };
       uint32_t val;
     } cpuid1;
-    asm volatile("cpuid" : "=a" (cpuid1.val) : "a" (1) : "memory");
+    unsigned unused;
+    __cpuid(1, cpuid1.val, unused, unused, unused);
     int familyId = cpuid1.familyId + (cpuid1.extFamilyId << 4);
     int modelId = cpuid1.modelId + (cpuid1.extModelId << 4);
     NCCLCHECK(xmlSetAttrInt(cpuNode, "familyid", familyId));
@@ -500,11 +583,11 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
   if (index == -1) {
     if (path) {
       char deviceSpeedStr[MAX_STR_LEN];
-      float deviceSpeed;
+      float deviceSpeed = FLT_MAX;
       NCCLCHECK(ncclTopoGetStrFromSys(path, "max_link_speed", deviceSpeedStr));
       sscanf(deviceSpeedStr, "%f GT/s", &deviceSpeed);
       char portSpeedStr[MAX_STR_LEN];
-      float portSpeed;
+      float portSpeed = FLT_MAX;
       NCCLCHECK(ncclTopoGetStrFromSys(path, "../max_link_speed", portSpeedStr));
       sscanf(portSpeedStr, "%f GT/s", &portSpeed);
       NCCLCHECK(xmlSetAttr(pciNode, "link_speed", portSpeed < deviceSpeed ? portSpeedStr : deviceSpeedStr));
@@ -550,6 +633,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
             NCCLCHECK(xmlGetSubKv(topNode, "cpu", &parent, "numaid", numaIdStr));
             if (parent == NULL) {
               NCCLCHECK(xmlAddNode(xml, topNode, "cpu", &parent));
+              NCCLCHECK(xmlSetAttrLong(parent, "host_hash", getHostHash()));
               NCCLCHECK(xmlSetAttr(parent, "numaid", numaIdStr));
             }
           } else if (slashCount == 2) {
@@ -575,6 +659,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
         struct ncclXmlNode* topNode;
         NCCLCHECK(xmlFindTag(xml, "system", &topNode));
         NCCLCHECK(xmlAddNode(xml, topNode, "cpu", &parent));
+        NCCLCHECK(xmlSetAttrLong(parent, "host_hash", getHostHash()));
         NCCLCHECK(xmlSetAttr(parent, "numaid", "-1"));
         NCCLCHECK(ncclTopoGetXmlFromCpu(parent, xml));
       }
@@ -586,8 +671,12 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
     NCCLCHECK(xmlGetAttrStr(pciNode, "busid", &newBusId));
     for (int s=0; s<parent->nSubs; s++) {
       const char* busId;
-      NCCLCHECK(xmlGetAttrStr(parent->subs[s], "busid", &busId));
-      if (strcmp(newBusId, busId) < 0) { subIndex = s; break; }
+      NCCLCHECK(xmlGetAttr(parent->subs[s], "busid", &busId));
+      if (busId != NULL && strcmp(newBusId, busId) < 0) { subIndex = s; break; }
+    }
+    if (parent->nSubs == MAX_SUBS) {
+      WARN("Error : XML parser is limited to %d subnodes", MAX_SUBS);
+      return ncclInternalError;
     }
     for (int s = parent->nSubs; s > subIndex; s--) parent->subs[s] = parent->subs[s-1];
     parent->subs[subIndex] = pciNode;

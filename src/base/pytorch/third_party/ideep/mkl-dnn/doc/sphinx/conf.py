@@ -1,5 +1,5 @@
 ################################################################################
-# Copyright 2021-2023 Intel Corporation
+# Copyright 2021-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -51,7 +51,7 @@ sys.path.insert(1, os.path.abspath(doxyrest_share_path))
 # -- Project information -----------------------------------------------------
 
 project = 'oneDNN'
-copyright = '2016-2022 Intel Corporation'
+copyright = '2016-2024 Intel Corporation'
 author = ''
 
 # -- General configuration ---------------------------------------------------
@@ -106,7 +106,10 @@ imgmath_latex_preamble = '''\\usepackage[T1]{fontenc}
 \\newcommand{\\diffdstiterc}{\\operatorname{diff\\_dst\\_iter\\_c}}
 \\newcommand{\\diffgamma}{\\operatorname{diff\\_\\gamma}}
 \\newcommand{\\diffbeta}{\\operatorname{diff\\_\\beta}}
-\\newcommand{\\workspace}{\\operatorname{workspace}}'''
+\\newcommand{\\workspace}{\\operatorname{workspace}}
+\\newcommand{\\srcshape}{\\operatorname{src\\_\\shape}}
+\\newcommand{\\dstshape}{\\operatorname{dst\\_\\shape}}'''
+
 
 
 
@@ -187,7 +190,7 @@ def setup(app):
 
 def fixFileNameRefs(app, env, docnames):
 
-    replacements = {"page_dev_guide": "dev_guide", "group_Dnnl":"group_dnnl"}
+    replacements = {"page_dev_guide":"dev_guide", "group_Dnnl":"group_dnnl", "brgemm_pack_B":"brgemm_pack_b"}
     targetDir = "rst"
 
     fileExtension = ".rst"
@@ -210,8 +213,15 @@ def fixFileNameRefs(app, env, docnames):
 
 def addTocTrees(app, env, docnames):
 
-    trees2Add = {'rst/dev_guide_inference_and_training_aspects.rst':['dev_guide_inference.rst','dev_guide_inference_int8.rst','dev_guide_training_bf16.rst'],
-                 'rst/dev_guide_attributes.rst':['dev_guide_attributes_fpmath_mode.rst','dev_guide_attributes_quantization.rst','dev_guide_attributes_post_ops.rst','dev_guide_attributes_scratchpad.rst']}
+    trees2Add = {'rst/dev_guide_inference_and_training_aspects.rst':['dev_guide_inference.rst',
+                                                                     'dev_guide_inference_int8.rst',
+                                                                     'dev_guide_training_bf16.rst'],
+                 'rst/dev_guide_attributes.rst':['dev_guide_attributes_fpmath_mode.rst',
+                                                 'dev_guide_attributes_accumulation_mode.rst',
+                                                 'dev_guide_attributes_deterministic.rst',
+                                                 'dev_guide_attributes_quantization.rst',
+                                                 'dev_guide_attributes_post_ops.rst',
+                                                 'dev_guide_attributes_scratchpad.rst']}
 
 
     for rstFile in trees2Add:

@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2024.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -12,16 +12,19 @@
 #include <float.h>
 #endif
 
+#include "quaddef.h"
 #include "misc.h"
 
-#ifndef ENABLE_CUDA
+#ifndef SLEEF_ENABLE_CUDA
 extern const float Sleef_rempitabsp[];
 #endif
 
 #define __SLEEFSIMDSP_C__
 
-#if (defined(_MSC_VER))
+#if defined(_MSC_VER) && !defined (__clang__)
 #pragma fp_contract (off)
+#else
+#pragma STDC FP_CONTRACT OFF
 #endif
 
 // Intel
@@ -318,6 +321,59 @@ extern const float Sleef_rempitabsp[];
 #endif
 #endif
 
+// RISC-V
+#ifdef ENABLE_RVVM1
+#define CONFIG 1
+#define ENABLE_RVV_SP
+#if !defined(SLEEF_GENHEADER)
+#include "helperrvv.h"
+#else
+#include "macroonlyRVVM1.h"
+#endif
+#ifdef DORENAME
+#include "renamervvm1.h"
+#endif
+#endif
+
+#ifdef ENABLE_RVVM1NOFMA
+#define CONFIG 2
+#define ENABLE_RVV_SP
+#if !defined(SLEEF_GENHEADER)
+#include "helperrvv.h"
+#else
+#include "macroonlyRVVM1NOFMA.h"
+#endif
+#ifdef DORENAME
+#include "renamervvm1nofma.h"
+#endif
+#endif
+
+#ifdef ENABLE_RVVM2
+#define CONFIG 1
+#define ENABLE_RVV_SP
+#if !defined(SLEEF_GENHEADER)
+#include "helperrvv.h"
+#else
+#include "macroonlyRVVM2.h"
+#endif
+#ifdef DORENAME
+#include "renamervvm2.h"
+#endif
+#endif
+
+#ifdef ENABLE_RVVM2NOFMA
+#define CONFIG 2
+#define ENABLE_RVV_SP
+#if !defined(SLEEF_GENHEADER)
+#include "helperrvv.h"
+#else
+#include "macroonlyRVVM2NOFMA.h"
+#endif
+#ifdef DORENAME
+#include "renamervvm2nofma.h"
+#endif
+#endif
+
 // Generic
 
 #ifdef ENABLE_VECEXT
@@ -364,7 +420,7 @@ extern const float Sleef_rempitabsp[];
 #endif
 #endif
 
-#ifdef ENABLE_CUDA
+#ifdef SLEEF_ENABLE_CUDA
 #define CONFIG 3
 #if !defined(SLEEF_GENHEADER)
 #include "helperpurec_scalar.h"
@@ -398,6 +454,7 @@ static INLINE CONST VECTOR_CC vmask vsignbit_vm_vf(vfloat f) {
   return vand_vm_vm_vm(vreinterpret_vm_vf(f), vreinterpret_vm_vf(vcast_vf_f(-0.0f)));
 }
 
+#if !(defined(ENABLE_RVVM1) || defined(ENABLE_RVVM1NOFMA) || defined(ENABLE_RVVM2) || defined(ENABLE_RVVM2NOFMA))
 static INLINE CONST VECTOR_CC vfloat vmulsign_vf_vf_vf(vfloat x, vfloat y) {
   return vreinterpret_vf_vm(vxor_vm_vm_vm(vreinterpret_vm_vf(x), vsignbit_vm_vf(y)));
 }
@@ -410,6 +467,7 @@ static INLINE CONST VECTOR_CC vfloat vcopysign_vf_vf_vf(vfloat x, vfloat y) {
 static INLINE CONST VECTOR_CC vfloat vsign_vf_vf(vfloat f) {
   return vreinterpret_vf_vm(vor_vm_vm_vm(vreinterpret_vm_vf(vcast_vf_f(1.0f)), vand_vm_vm_vm(vreinterpret_vm_vf(vcast_vf_f(-0.0f)), vreinterpret_vm_vf(f))));
 }
+#endif
 
 static INLINE CONST VECTOR_CC vopmask vsignbit_vo_vf(vfloat d) {
   return veq_vo_vi2_vi2(vand_vi2_vi2_vi2(vreinterpret_vi2_vf(d), vcast_vi2_i(0x80000000)), vcast_vi2_i(0x80000000));
@@ -484,7 +542,7 @@ static INLINE CONST VECTOR_CC vfloat vldexp3_vf_vf_vi2(vfloat d, vint2 q) {
 
 EXPORT CONST VECTOR_CC vfloat xldexpf(vfloat x, vint2 q) { return vldexp_vf_vf_vi2(x, q); }
 
-#if !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA))
+#if !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA) || defined(ENABLE_RVVM1) || defined(ENABLE_RVVM1NOFMA) || defined(ENABLE_RVVM2) || defined(ENABLE_RVVM2NOFMA))
 typedef struct {
   vfloat d;
   vint2 i;
@@ -514,9 +572,11 @@ static dfi_t dfisetdf_dfi_dfi_vf2(dfi_t dfi, vfloat2 v) {
 }
 #endif
 
+#if !(defined(ENABLE_RVVM1) || defined(ENABLE_RVVM1NOFMA) || defined(ENABLE_RVVM2) || defined(ENABLE_RVVM2NOFMA))
 static INLINE CONST VECTOR_CC vfloat vorsign_vf_vf_vf(vfloat x, vfloat y) {
   return vreinterpret_vf_vm(vor_vm_vm_vm(vreinterpret_vm_vf(x), vsignbit_vm_vf(y)));
 }
+#endif
 
 static INLINE CONST fi_t rempisubf(vfloat x) {
 #ifdef FULL_FP_ROUNDING
@@ -2325,11 +2385,10 @@ EXPORT CONST VECTOR_CC vfloat xpowf(vfloat x, vfloat y) {
 												      vcast_vf_f(SLEEF_INFINITYf))))),
 			    result);
 
-  result = vsel_vf_vo_vf_vf(vor_vo_vo_vo(visinf_vo_vf(x), veq_vo_vf_vf(x, vcast_vf_f(0))),
-			    vmul_vf_vf_vf(vsel_vf_vo_vf_vf(yisodd, vsign_vf_vf(x), vcast_vf_f(1)),
-					  vreinterpret_vf_vm(vandnot_vm_vo32_vm(vlt_vo_vf_vf(vsel_vf_vo_vf_vf(veq_vo_vf_vf(x, vcast_vf_f(0)), vneg_vf_vf(y), y), vcast_vf_f(0)),
-										vreinterpret_vm_vf(vcast_vf_f(SLEEF_INFINITYf))))),
-			    result);
+  result = vsel_vf_vo_vf_vf(vor_vo_vo_vo(visinf_vo_vf(x), veq_vo_vf_vf(x, vcast_vf_f(0.0))),
+			    vmulsign_vf_vf_vf(vsel_vf_vo_vf_vf(vxor_vo_vo_vo(vsignbit_vo_vf(y), veq_vo_vf_vf(x, vcast_vf_f(0.0f))),
+							       vcast_vf_f(0), vcast_vf_f(SLEEF_INFINITYf)),
+					      vsel_vf_vo_vf_vf(yisodd, x, vcast_vf_f(1))), result);
 
   result = vreinterpret_vf_vm(vor_vm_vo32_vm(vor_vo_vo_vo(visnan_vo_vf(x), visnan_vo_vf(y)), vreinterpret_vm_vf(result)));
 
@@ -2930,10 +2989,6 @@ EXPORT CONST VECTOR_CC vfloat xfmaf(vfloat x, vfloat y, vfloat z) {
 }
 #endif // #if !defined(DETERMINISTIC)
 
-#if !defined(SLEEF_GENHEADER)
-static INLINE CONST VECTOR_CC vint2 vcast_vi2_i_i(int i0, int i1) { return vcast_vi2_vm(vcast_vm_i_i(i0, i1)); }
-#endif
-
 SQRTFU05_FUNCATR VECTOR_CC vfloat xsqrtf_u05(vfloat d) {
 #if defined(ENABLE_FMA_SP)
   vfloat q, w, x, y, z;
@@ -3052,11 +3107,11 @@ EXPORT CONST VECTOR_CC vfloat xnextafterf(vfloat x, vfloat y) {
   vint2 xi2 = vreinterpret_vi2_vf(x);
   vopmask c = vxor_vo_vo_vo(vsignbit_vo_vf(x), vge_vo_vf_vf(y, x));
 
-  xi2 = vsel_vi2_vo_vi2_vi2(c, vsub_vi2_vi2_vi2(vcast_vi2_i(0), vxor_vi2_vi2_vi2(xi2, vcast_vi2_i(1U << 31))), xi2);
+  xi2 = vsel_vi2_vo_vi2_vi2(c, vsub_vi2_vi2_vi2(vcast_vi2_i(0), vxor_vi2_vi2_vi2(xi2, vcast_vi2_i((int)(1U << 31)))), xi2);
 
   xi2 = vsel_vi2_vo_vi2_vi2(vneq_vo_vf_vf(x, y), vsub_vi2_vi2_vi2(xi2, vcast_vi2_i(1)), xi2);
 
-  xi2 = vsel_vi2_vo_vi2_vi2(c, vsub_vi2_vi2_vi2(vcast_vi2_i(0), vxor_vi2_vi2_vi2(xi2, vcast_vi2_i(1U << 31))), xi2);
+  xi2 = vsel_vi2_vo_vi2_vi2(c, vsub_vi2_vi2_vi2(vcast_vi2_i(0), vxor_vi2_vi2_vi2(xi2, vcast_vi2_i((int)(1U << 31)))), xi2);
 
   vfloat ret = vreinterpret_vf_vi2(xi2);
 
@@ -3292,7 +3347,7 @@ EXPORT CONST VECTOR_CC vfloat xcospif_u05(vfloat d) {
 }
 #endif // #if !defined(DETERMINISTIC)
 
-#if !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA))
+#if !(defined(ENABLE_SVE) || defined(ENABLE_SVENOFMA) || defined(ENABLE_RVVM1) || defined(ENABLE_RVVM1NOFMA) || defined(ENABLE_RVVM2) || defined(ENABLE_RVVM2NOFMA))
   typedef struct {
     vfloat2 a, b;
   } df2;
@@ -3308,7 +3363,7 @@ static vfloat2 df2getb_vf2_df2(df2 d) { return d.b; }
 /* TODO AArch64: potential optimization by using `vfmad_lane_f64` */
 static CONST df2 gammafk(vfloat a) {
   vfloat2 clc = vcast_vf2_f_f(0, 0), clln = vcast_vf2_f_f(1, 0), clld = vcast_vf2_f_f(1, 0);
-  vfloat2 v = vcast_vf2_f_f(1, 0), x, y, z;
+  vfloat2 x, y, z;
   vfloat t, u;
 
   vopmask otiny = vlt_vo_vf_vf(vabs_vf_vf(a), vcast_vf_f(1e-30f)), oref = vlt_vo_vf_vf(a, vcast_vf_f(0.5));

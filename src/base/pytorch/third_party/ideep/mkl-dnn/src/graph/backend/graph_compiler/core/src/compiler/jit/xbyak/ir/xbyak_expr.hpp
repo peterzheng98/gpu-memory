@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2022-2023 Intel Corporation
+ * Copyright 2022-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,6 +99,7 @@ enum class xbyak_intrin_type {
     sqrt,
     rsqrt,
     fmadd,
+    fnmadd,
     blend,
     pshuffle,
     shuffle,
@@ -136,6 +137,7 @@ enum class xbyak_intrin_format {
     directed_end_mem, // [directed_assign], only end can be mem
     directed_dst_mem, // [directed_assign], dst can be mem
     directed_dst_reg, // [directed_assign], dst must be reg
+    compound_end_mem, // [compound_assign], only end can be mem
     compound_dst_mem, // [compound_assign], dst can be mem
     compound_dst_reg, // [compound_assign], dst must be reg
 };

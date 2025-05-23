@@ -31,6 +31,10 @@
   string: "Bankers Rounding (NC, F16)"
 - name: xnn_operator_type_bankers_rounding_nc_f32
   string: "Bankers Rounding (NC, F32)"
+- name: xnn_operator_type_batch_matrix_multiply_nc_f16
+  string: "Batch Matrix Multiply (NC, F16)"
+- name: xnn_operator_type_batch_matrix_multiply_nc_f32
+  string: "Batch Matrix Multiply (NC, F32)"
 - name: xnn_operator_type_ceiling_nc_f16
   string: "Ceiling (NC, F16)"
 - name: xnn_operator_type_ceiling_nc_f32
@@ -55,16 +59,24 @@
   string: "Constant Pad (ND, X32)"
 - name: xnn_operator_type_convert_nc_f16_f32
   string: "Convert (NC, F16, F32)"
+- name: xnn_operator_type_convert_nc_f16_qd8
+  string: "Convert (NC, F16, QD8)"
 - name: xnn_operator_type_convert_nc_f32_f16
   string: "Convert (NC, F32, F16)"
+- name: xnn_operator_type_convert_nc_f32_qd8
+  string: "Convert (NC, F32, QD8)"
 - name: xnn_operator_type_convert_nc_f32_qs8
   string: "Convert (NC, F32, QS8)"
 - name: xnn_operator_type_convert_nc_f32_qu8
   string: "Convert (NC, F32, QU8)"
 - name: xnn_operator_type_convert_nc_qs8
   string: "Convert (NC, QS8)"
+- name: xnn_operator_type_convert_nc_qs8_f16
+  string: "Convert (NC, QS8, F16)"
 - name: xnn_operator_type_convert_nc_qs8_f32
   string: "Convert (NC, QS8, F32)"
+- name: xnn_operator_type_convert_nc_qs16_qs8
+  string: "Convert (NC, QS16, QS8)"
 - name: xnn_operator_type_convert_nc_qu8
   string: "Convert (NC, QU8)"
 - name: xnn_operator_type_convert_nc_qu8_f32
@@ -77,6 +89,10 @@
   string: "Convolution (NHWC, F16)"
 - name: xnn_operator_type_convolution_nhwc_f32
   string: "Convolution (NHWC, F32)"
+- name: xnn_operator_type_convolution_nhwc_qd8_f16_qc8w
+  string: "Convolution (NHWC, QD8, F16, QC8W)"
+- name: xnn_operator_type_convolution_nhwc_qd8_f32_qc8w
+  string: "Convolution (NHWC, QD8, F32, QC8W)"
 - name: xnn_operator_type_convolution_nhwc_qc8
   string: "Convolution (NHWC, QC8)"
 - name: xnn_operator_type_convolution_nhwc_qs8
@@ -111,6 +127,10 @@
   string: "Divide (ND, F16)"
 - name: xnn_operator_type_divide_nd_f32
   string: "Divide (ND, F32)"
+- name: xnn_operator_type_dynamic_fully_connected_nc_f16
+  string: "Dynamic Fully Connected (NC, F16)"
+- name: xnn_operator_type_dynamic_fully_connected_nc_f32
+  string: "Dynamic Fully Connected (NC, F32)"
 - name: xnn_operator_type_elu_nc_f16
   string: "ELU (NC, F16)"
 - name: xnn_operator_type_elu_nc_f32
@@ -125,8 +145,22 @@
   string: "Fully Connected (NC, F16)"
 - name: xnn_operator_type_fully_connected_nc_f32
   string: "Fully Connected (NC, F32)"
+- name: xnn_operator_type_fully_connected_nc_f32_qc4w
+  string: "Fully Connected (NC, F32, QC4W)"
+- name: xnn_operator_type_fully_connected_nc_f32_qc8w
+  string: "Fully Connected (NC, F32, QC8W)"
+- name: xnn_operator_type_fully_connected_nc_qd8_f16_qc8w
+  string: "Fully Connected (NC, QD8, F16, QC8W)"
+- name: xnn_operator_type_fully_connected_nc_qd8_f16_qc4w
+  string: "Fully Connected (NC, QD8, F16, QC4W)"
+- name: xnn_operator_type_fully_connected_nc_qd8_f32_qc4w
+  string: "Fully Connected (NC, QD8, F32, QC4W)"
+- name: xnn_operator_type_fully_connected_nc_qd8_f32_qc8w
+  string: "Fully Connected (NC, QD8, F32, QC8W)"
 - name: xnn_operator_type_fully_connected_nc_qs8
   string: "Fully Connected (NC, QS8)"
+- name: xnn_operator_type_fully_connected_nc_qs8_qc8w
+  string: "Fully Connected (NC, QS8, QC8W)"
 - name: xnn_operator_type_fully_connected_nc_qu8
   string: "Fully Connected (NC, QU8)"
 - name: xnn_operator_type_global_average_pooling_ncw_f16
@@ -141,6 +175,10 @@
   string: "Global Average Pooling (NWC, QS8)"
 - name: xnn_operator_type_global_average_pooling_nwc_qu8
   string: "Global Average Pooling (NWC, QU8)"
+- name: xnn_operator_type_global_sum_pooling_nwc_f16
+  string: "Global Sum Pooling (NWC, F16)"
+- name: xnn_operator_type_global_sum_pooling_nwc_f32
+  string: "Global Sum Pooling (NWC, F32)"
 - name: xnn_operator_type_hardswish_nc_f16
   string: "HardSwish (NC, F16)"
 - name: xnn_operator_type_hardswish_nc_f32
@@ -165,6 +203,10 @@
   string: "Maximum (ND, F16)"
 - name: xnn_operator_type_maximum_nd_f32
   string: "Maximum (ND, F32)"
+- name: xnn_operator_type_mean_nd_f16
+  string: "Mean (ND, F16)"
+- name: xnn_operator_type_mean_nd_f32
+  string: "Mean (ND, F32)"
 - name: xnn_operator_type_minimum_nd_f16
   string: "Minimum (ND, F16)"
 - name: xnn_operator_type_minimum_nd_f32
@@ -185,6 +227,8 @@
   string: "PReLU (NC, F16)"
 - name: xnn_operator_type_prelu_nc_f32
   string: "PReLU (NC, F32)"
+- name: xnn_operator_type_reciprocal_square_root_nc_f32
+  string: "Reciprocal Square Root (NC, F32)"
 - name: xnn_operator_type_resize_bilinear_nchw_f16
   string: "Resize Bilinear (NCHW, F16)"
 - name: xnn_operator_type_resize_bilinear_nchw_f32
@@ -197,6 +241,14 @@
   string: "Resize Bilinear (NHWC, S8)"
 - name: xnn_operator_type_resize_bilinear_nhwc_u8
   string: "Resize Bilinear (NHWC, U8)"
+- name: xnn_operator_type_rope_nthc_f16
+  string: "RoPE (NTHC, F16)"
+- name: xnn_operator_type_rope_nthc_f32
+  string: "RoPE (NTHC, F32)"
+- name: xnn_operator_type_scaled_dot_product_attention_nhtc_f16
+  string: "Scaled Dot-Product Attention (NHTC, F16)"
+- name: xnn_operator_type_scaled_dot_product_attention_nhtc_f32
+  string: "Scaled Dot-Product Attention (NHTC, F32)"
 - name: xnn_operator_type_sigmoid_nc_f16
   string: "Sigmoid (NC, F16)"
 - name: xnn_operator_type_sigmoid_nc_f32
@@ -243,6 +295,10 @@
   string: "Subtract (ND, QS8)"
 - name: xnn_operator_type_subtract_nd_qu8
   string: "Subtract (ND, QU8)"
+- name: xnn_operator_type_tanh_nc_f16
+  string: "Tanh (NC, F16)"
+- name: xnn_operator_type_tanh_nc_f32
+  string: "Tanh (NC, F32)"
 - name: xnn_operator_type_tanh_nc_qs8
   string: "Tanh (NC, QS8)"
 - name: xnn_operator_type_tanh_nc_qu8
@@ -253,6 +309,8 @@
   string: "Transpose (ND, X16)"
 - name: xnn_operator_type_transpose_nd_x32
   string: "Transpose (ND, X32)"
+- name: xnn_operator_type_transpose_nd_x64
+  string: "Transpose (ND, X64)"
 - name: xnn_operator_type_truncation_nc_f16
   string: "Truncation (NC, F16)"
 - name: xnn_operator_type_truncation_nc_f32

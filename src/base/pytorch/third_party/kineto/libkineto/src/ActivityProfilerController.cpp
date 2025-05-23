@@ -45,6 +45,20 @@ void ActivityProfilerController::setLoggerCollectorFactory(
 ActivityProfilerController::ActivityProfilerController(
     ConfigLoader& configLoader, bool cpuOnly)
     : configLoader_(configLoader) {
+  // Initialize ChromeTraceBaseTime first of all.
+  ChromeTraceBaseTime::singleton().init();
+
+#if !USE_GOOGLE_LOG
+  // Initialize LoggerCollector before ActivityProfiler to log
+  // CUPTI and CUDA driver versions.
+  if (loggerCollectorFactory()) {
+    // Keep a reference to the logger collector factory to handle safe
+    // static de-initialization.
+    loggerCollectorFactory_ = loggerCollectorFactory();
+    Logger::addLoggerObserver(loggerCollectorFactory_.get());
+  }
+#endif // !USE_GOOGLE_LOG
+
 #ifdef HAS_ROCTRACER
   profiler_ = std::make_unique<CuptiActivityProfiler>(
       RoctracerActivityApi::singleton(), cpuOnly);
@@ -53,15 +67,6 @@ ActivityProfilerController::ActivityProfilerController(
       CuptiActivityApi::singleton(), cpuOnly);
 #endif
   configLoader_.addHandler(ConfigLoader::ConfigKind::ActivityProfiler, this);
-
-#if !USE_GOOGLE_LOG
-  if (loggerCollectorFactory()) {
-    // Keep a reference to the logger collector factory to handle safe
-    // static de-initialization.
-    loggerCollectorFactory_ = loggerCollectorFactory();
-    Logger::addLoggerObserver(loggerCollectorFactory_.get());
-  }
-#endif // !USE_GOOGLE_LOG
 }
 
 ActivityProfilerController::~ActivityProfilerController() {
@@ -310,6 +315,10 @@ void ActivityProfilerController::prepareTrace(const Config& config) {
   profiler_->configure(config, now);
 }
 
+void ActivityProfilerController::toggleCollectionDynamic(const bool enable) {
+  profiler_->toggleCollectionDynamic(enable);
+}
+
 void ActivityProfilerController::startTrace() {
   UST_LOGGER_MARK_COMPLETED(kWarmUpStage);
   profiler_->startTrace(std::chrono::system_clock::now());
@@ -322,6 +331,14 @@ std::unique_ptr<ActivityTraceInterface> ActivityProfilerController::stopTrace() 
   profiler_->processTrace(*logger);
   // Will follow up with another patch for logging URLs when ActivityTrace is moved.
   UST_LOGGER_MARK_COMPLETED(kPostProcessingStage);
+
+  // Logger Metadata contains a map of LOGs collected in Kineto
+  //   logger_level -> List of log lines
+  // This will be added into the trace as metadata.
+  std::unordered_map<std::string, std::vector<std::string>>
+    loggerMD = profiler_->getLoggerMetadata();
+  logger->setLoggerMetadata(std::move(loggerMD));
+
   profiler_->reset();
   return std::make_unique<ActivityTrace>(std::move(logger), loggerFactory());
 }

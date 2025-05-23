@@ -56,6 +56,16 @@ class tensor : public memory {
       set_g(1);
     }
 
+    // Construct a memory descriptor from a binary blob.
+    // The API is available since oneDNN v3.4.1
+    desc(const std::vector<uint8_t> &blob) : memory::desc(get_dnnl_blob(blob)) {
+      // The groups is serialized into the last sizeof(int) item
+      // We use little endian encoding here for the groups_bytes
+      std::vector<uint8_t> groups_bytes(blob.end() - sizeof(int), blob.end());
+      int groups = *reinterpret_cast<int*>(groups_bytes.data());
+      set_g(groups);
+    }
+
     void to_bytes(utils::bytestring& bytes) const {
       utils::to_bytes(bytes, get_data_type());
       utils::to_bytes(bytes, format_kind());
@@ -330,7 +340,12 @@ class tensor : public memory {
 
     desc to_grouped(int groups, bool is_deconv = false) const {
       auto grouped_dims = utils::group_dims(get_internal_dims(), groups);
-      auto grouped_desc = desc(grouped_dims, get_data_type());
+      // preserve tag `any` otherwise use plain format tag since we don't know the exact original tag
+      format_tag f_tag = get_default_format(grouped_dims);
+      if (get_format_kind() == format_kind::any) {
+        f_tag = format_tag::any;
+      }
+      auto grouped_desc = desc(grouped_dims, get_data_type(), f_tag);
       grouped_desc.set_g(groups);
       return grouped_desc;
     }
@@ -387,6 +402,23 @@ class tensor : public memory {
       return ret;
     }
 
+    // Returns a binary blob associated with the given memory descriptor
+    // API available since oneDNN v3.4.1
+    std::vector<uint8_t> get_blob() {
+      std::vector<uint8_t> out_blob = memory::desc::get_blob();
+      
+      int groups = g();
+      // We need to add the groups info into the serialized ideep desc.
+      // For example, a 4D FWK weight with groups > 1 will become a 5D oneDNN md,
+      // while FWK still needs it to be a 4D tensor.
+      // ideep desc will wrap the 5D oneDNN md back to a 4D ideep desc
+      // when interacting with the FWK.
+      // We use little endian encoding here when serializing groups
+      out_blob.insert(out_blob.end(), (uint8_t*)&groups, (uint8_t*)&groups + sizeof(int));
+      
+      return out_blob;
+    }
+
    private:
     /// Returns dimension vector
     inline dims get_internal_dims() const {
@@ -418,6 +450,14 @@ class tensor : public memory {
 
     inline bool is_grouped() const {
       return g() > 1;
+    }
+
+    // We add the groups information into the last sizeof(int) item in the oneDNN blob vector
+    // during the serialization.
+    // We exclude the groups blob here when constructing oneDNN md.
+    std::vector<uint8_t> get_dnnl_blob(const std::vector<uint8_t> &blob) {
+      std::vector<uint8_t> dnnl_blob(blob.begin(), blob.end() - sizeof(int));
+      return dnnl_blob;
     }
 
     int groups = 1;

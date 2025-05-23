@@ -3,8 +3,8 @@ from typing import no_type_check, Optional, Tuple
 
 import torch
 from torch.distributed._functional_collectives import AsyncCollectiveTensor
-from torch.distributed._tensor import DTensor
-from torch.distributed._tensor.placement_types import DTensorSpec
+from torch.distributed.tensor import DTensor
+from torch.distributed.tensor._dtensor_spec import DTensorSpec
 
 
 @no_type_check
@@ -36,6 +36,8 @@ def _unflatten_tensor(tensor, spec, *, device_handle=None, compute_stream=None):
         spec.mesh,
         spec.placements,
         run_check=False,
+        shape=spec.shape,
+        stride=spec.stride,
     )
     if tensor.requires_grad:
         # only register the hook if the tensor requires grad

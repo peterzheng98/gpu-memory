@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2022 Intel Corporation
+* Copyright 2020-2023 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -41,46 +41,13 @@ namespace pass {
 using pb_graph_t = utils::pm::pb_graph_t;
 
 class pass_base;
-class pattern;
 using pass_base_ptr = std::shared_ptr<pass_base>;
 
 // FCreatePattern: a function for defining pattern.
 // One pass can have several FCreatePattern functions.
 using FCreatePattern
         = std::function<void(const std::shared_ptr<pb_graph_t> &pattern_graph)>;
-
-class pattern {
-private:
-    /*! \brief ops in this pattern */
-    std::vector<std::shared_ptr<op_t>> ops_;
-
-public:
-    /*!
-     * \brief Create and add a op to this pattern.
-     * \param aop_kind The operator used to create the op
-     * \return op* created op
-     */
-    op_t *create_op(op_kind_t aop_kind) {
-        ops_.push_back(std::make_shared<op_t>(aop_kind));
-        return ops_.back().get();
-    }
-
-    /*!
-     * \brief Get the starter op of this pattern.
-     *        Any op in the vector of ops_ can be the starter
-     *        Any op except "any" in the vector of ops_ can be the starter
-     *        By default we use the first op in the vector
-     * \return op* starter op
-     */
-    op_t *get_starter_op() {
-        auto it = std::find_if(ops_.begin(), ops_.end(),
-                [&](std::vector<std::shared_ptr<op_t>>::value_type &op)
-                        -> bool {
-                    return op->get_kind() != op_kind::Wildcard;
-                });
-        return it->get();
-    }
-};
+using Pattern = std::shared_ptr<pb_graph_t>;
 
 /*!
  * \brief pass_base provides a base class for pass creation.
@@ -211,6 +178,11 @@ private:
     partition_kind_t pkind_ {partition_kind_t::undef};
     engine_kind_t engine_kind_ {engine_kind::any_engine};
 };
+
+template <>
+pass_base &pass_base::set_attr<FCreatePattern>(
+        const std::string &attr_name, // NOLINT(*)
+        const FCreatePattern &func);
 
 } // namespace pass
 } // namespace graph

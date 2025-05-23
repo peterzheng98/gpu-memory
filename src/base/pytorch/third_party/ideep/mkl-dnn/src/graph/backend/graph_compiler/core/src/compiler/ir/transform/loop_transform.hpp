@@ -43,7 +43,7 @@ void remove_parallel(func_t body, bool ignore_nested_parallel = false);
  * Only loop 1 and 3 are returned.
  * @param body the stmts for collection
  * */
-std::vector<for_loop> collect_loops(stmt body);
+std::vector<for_loop> collect_loops(const stmt &body);
 
 /**
  * Collect nested loops inside this body.
@@ -69,6 +69,14 @@ for_loop get_inner_for_loop(const for_loop_node_t *f);
 
 // get last for_loop in body
 for_loop get_last_loop_in_body(const stmt &body);
+
+/**
+ * Normalize a parallel loop and the parallel loops in the body to make the
+ * iter_begin=0 and step=1. If all the loops are already normalized, return the
+ * loop without changing. Otherwise it returns the new loop and it will not
+ * change the given loop.
+ */
+for_loop_c normalize_parallel_for_loop(const for_loop_c &loop);
 
 } // namespace gc
 } // namespace graph

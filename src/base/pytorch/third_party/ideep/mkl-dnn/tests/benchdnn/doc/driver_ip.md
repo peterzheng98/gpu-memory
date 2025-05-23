@@ -21,13 +21,6 @@ where *ip-knobs* are:
             Refer to [tags](knobs_tag.md) for details.
  - `--dtag={any [default], ...}` -- physical dst memory layout.
             Refer to [tags](knobs_tag.md) for details.
- - `--attr-scales=STRING` -- scale primitive attribute. No scale is
-            set by default. Refer to [attributes](knobs_attr.md) for details.
- - `--attr-post-ops=STRING` -- post operation primitive attribute. No post
-            operations are set by default. Refer to [attributes](knobs_attr.md)
-            for details.
- - `--attr-fpmath=STRING` -- fpmath mode primitive attribute. `strict` math mode
-            is set by default. Refer to [attributes](knobs_attr.md) for details.
  - `--mb=INT` -- override minibatch size specified in the problem description.
              When set to `0`, use minibatch size as defined by the individual
              problem descriptor. The default is `0`.
@@ -35,6 +28,7 @@ where *ip-knobs* are:
             `REGEX`. By default no pattern is applied (run everything).
             Note: Windows may interpret only string arguments surrounded by
             double quotation marks.
+ - Any attributes options. Refer to [attributes](knobs_attr.md) for details.
 
 and *ip-desc* is a problem descriptor. The canonical form is:
 ```
@@ -54,7 +48,7 @@ prop_kind, applying output scale of `2.25`, appending the result into dst with
 output scale of `0.5`, and applying tanh as a post op:
 ``` sh
     ./benchdnn --ip --dir=BWD_D \
-               --attr-scales=dst:common:2.25* \
+               --attr-scales=dst:common:2.25 \
                --attr-post-ops=sum:0.5+tanh \
                mb112ic2048_ih1iw1_oc1000_n"resnet:ip1"
 ```

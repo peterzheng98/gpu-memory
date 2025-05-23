@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2022-2023 Intel Corporation
+* Copyright 2022-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -39,20 +39,34 @@
 #include "oneapi/dnnl/dnnl_graph_sycl.hpp"
 #endif
 
+#include "common.hpp"
 #include "dnnl_common.hpp"
 
 namespace graph {
 
 struct deserialized_lt;
 
-#define DNN_GRAPH_SAFE(f, s) \
+struct bdnn_state_t {
+    res_state_t state;
+    skip_reason_t reason;
+};
+
+extern bdnn_state_t convert_state(const dnnl_status_t &s);
+
+#define DNN_GRAPH_SAFE(f, s, ss) \
     do { \
         try { \
             f; \
         } catch (const dnnl::error &e) { \
             if (s == CRIT || s == WARN) { \
-                BENCHDNN_PRINT(0, "error [%s:%d]: '%s' -> %s\n", \
-                        __PRETTY_FUNCTION__, __LINE__, #f, e.what()); \
+                bdnn_state_t bs = convert_state(e.status); \
+                ss->state = bs.state; \
+                if (ss->state == res_state_t::SKIPPED) { \
+                    ss->reason = bs.reason; \
+                } \
+                BENCHDNN_PRINT(0, \
+                        "Error: Function '%s' at (%s:%d) returned '%s'\n", \
+                        __FUNCTION__, __FILE__, __LINE__, e.what()); \
                 fflush(0); \
                 if (s == CRIT) exit(2); \
             } \
@@ -107,6 +121,7 @@ int measure_perf(timer::timer_t &t,
 dnnl::graph::op::kind opstr2kind(const std::string &kind);
 dnnl::graph::op::attr attrstr2kind(const std::string &attr_name);
 
+std::string get_default_tag(size_t length);
 std::string strides2memory_tag(const size_t ndims,
         const dnnl::graph::logical_tensor::dims &strides,
         bool use_x_tag = true);
@@ -160,8 +175,8 @@ bool is_nxc_lt_arg(const std::string &kind, const int exec_arg);
 int get_prim_arg_name_from_graph_op_output_offset(
         dnnl::graph::op::kind op_kind, size_t output_offset);
 // get primitive's arg name according to graph op's input offset
-int get_prim_arg_name_from_graph_op_input_offset(
-        dnnl::graph::op::kind op_kind, int input_offset, bool use_dst = false);
+int get_prim_arg_name_from_graph_op_input_offset(dnnl::graph::op::kind op_kind,
+        size_t input_offset, bool use_dst = false);
 
 /// Get logical tensor layout type based on string
 ///
@@ -171,6 +186,13 @@ dnnl::graph::logical_tensor::layout_type str2layout(
         const std::string &layout_type);
 
 void change_format_to_ncx(dims_t &dims);
+
+// For a given vector of partitions provide a string with number of ops in
+// every partition in format: `{N} {M} ...`.
+std::string verbose_partitions_n_ops(
+        const std::vector<dnnl::graph::partition> &partitions);
+// Returns logical dims as a string object in dims_t format
+std::string lt_dims2str(const dnnl::graph::logical_tensor::dims &dims);
 
 template <typename First, typename... Rest>
 void change_format_to_ncx(First &first, Rest &...rest) {
@@ -209,6 +231,8 @@ inline const cpp_engine_t &get_graph_engine() {
     static const cpp_engine_t instance;
     return instance;
 }
+
+bool is_gc_backend();
 
 } // namespace graph
 #endif

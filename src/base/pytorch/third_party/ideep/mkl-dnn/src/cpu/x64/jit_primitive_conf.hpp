@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -166,6 +166,7 @@ struct jit_conv_conf_t {
     data_type_t ddst_dt;
     data_type_t dsrc_dt;
     data_type_t dwei_dt;
+    bool is_bf32 {false};
     bool expl_bcast;
     bool large_spatial, large_w_filter;
     int is_ic_scale, is_oc_scale;
@@ -687,11 +688,18 @@ struct jit_brgemm_conv_conf_t {
     int od_block, oh_block, nb_od,
             nb_oh; // blocking  - included in parallelization
     int id_block, ih_block, nb_id, nb_ih;
-    dim_t inp_buffer_size, inp_buffer_mask_size;
+    dim_t inp_buffer_size, inp_buffer_mask_size, out_buffer_size;
     conv_brgemm_exec_type_t exec_type;
-    bool is_relo {false};
+
     conv_brgemm_relo_type_t relo_type {conv_brgemm_relo_type_t::undefined};
     bool relo_conv_weights {true};
+    inline bool is_relo_whi() const {
+        return (relo_type == conv_brgemm_relo_type_t::whi);
+    }
+    inline bool is_relo_wi() const {
+        return (relo_type == conv_brgemm_relo_type_t::wi);
+    }
+    inline bool is_relo() const { return is_relo_whi() || is_relo_wi(); }
 
     int id, ih, iw, od, oh, ow, os, is, idp, ihp, iwp, icp, odp, ohp, owp, ocp;
     int f_pad, l_pad, t_pad;
@@ -712,6 +720,8 @@ struct jit_brgemm_conv_conf_t {
     bool is_is_blocking;
     bool is_os_blocking;
     bool is_rtus;
+    bool is_reduced_rtus;
+    size_t rtus_ic_size, rtus_padded_ic_size;
     bool ununroll_bd_loop {false};
     int nb_ic, ic_block, inp_ic_block;
     int nb_tr_ic, tr_ic_block, tr_ic_tail;
@@ -746,8 +756,10 @@ struct jit_brgemm_conv_conf_t {
     int is_ic_scale, is_oc_scale;
 
     int LDA, LDB, LDC, LDD;
+
     int M, N, K, M_tail, N_tail, K_tail;
-    // M for brgemm kernel. For use_store_mask it is usually greater than M (M_tail). Otherwise it is equal to M (M_tail)
+    // Note: M for brgemm kernel. For use_store_mask it is usually greater than
+    // M (M_tail). Otherwise it is equal to M (M_tail).
     int brgM, brgM_tail;
     int gemm_batch_size, adjusted_batch_size;
     brgemm_batch_kind_t brg_type;
@@ -762,7 +774,6 @@ struct jit_brgemm_conv_conf_t {
     bool wei_plain;
     bool is_rd_padded_to_block {false}, is_rd_padded_to_vnni {false},
             is_oc_padded;
-    int kw_sets, kh_sets;
     bool copy_input {true};
     bool copy_block_only;
     bool amx_tile_load_xx;
@@ -800,6 +811,8 @@ struct jit_brgemm_conv_conf_t {
     bool tr_ocb_chunk = false;
     bool tr_icb_chunk = false;
     int vnni_block {1};
+    bool has_uneven_iw;
+    int trans_dim_koef {1};
 };
 
 struct jit_shuffle_conf_t {

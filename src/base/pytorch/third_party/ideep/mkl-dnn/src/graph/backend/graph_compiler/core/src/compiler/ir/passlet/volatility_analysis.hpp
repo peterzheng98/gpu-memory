@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2022-2023 Intel Corporation
+ * Copyright 2022-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,14 @@
 
 #include <vector>
 #include "passlet.hpp"
+#include <compiler/ir/attr_keys.hpp>
 
 namespace dnnl {
 namespace impl {
 namespace graph {
 namespace gc {
 namespace passlet {
+
 struct volatility_result_t {
     enum state_t {
         UNDEF,
@@ -34,12 +36,19 @@ struct volatility_result_t {
     state_t is_volatile_ = UNDEF;
 };
 
+inline bool is_tensor_read_only(const expr_base *s) {
+    return (s->node_type_ == sc_expr_type::tensor)
+            && any_map_t::fetch_or_else(
+                    s->attr_.get(), attr_keys::read_only_tensor, false);
+}
+
 inline bool non_volatile_expr(const expr_base *s) {
     switch (s->node_type_) {
         case sc_expr_type::var:
         case sc_expr_type::cast:
         case sc_expr_type::select:
         case sc_expr_type::constant:
+        case sc_expr_type::tensorptr:
         case sc_expr_type::ssa_phi: return true; break;
         case sc_expr_type::intrin_call: {
             switch (static_cast<const intrin_call_node *>(s)->type_) {
@@ -58,6 +67,7 @@ inline bool non_volatile_expr(const expr_base *s) {
                 case intrin_type::reduce_mul:
                 case intrin_type::reduce_max:
                 case intrin_type::reduce_min:
+                case intrin_type::fnmadd:
                 case intrin_type::fmadd:
                 case intrin_type::unpack_low:
                 case intrin_type::unpack_high:
@@ -73,11 +83,13 @@ inline bool non_volatile_expr(const expr_base *s) {
                 case intrin_type::insert:
                 case intrin_type::extract:
                 case intrin_type::isnan:
+                case intrin_type::get_group_thread_id:
+                case intrin_type::get_group_id:
                 case intrin_type::saturated_cast:
                 case intrin_type::round_and_cast:
                 case intrin_type::shl:
                 case intrin_type::shr:
-                case intrin_type::load_const_mem: return true; break;
+                case intrin_type::constant_load: return true; break;
                 default: break;
             }
             return false;
@@ -88,7 +100,9 @@ inline bool non_volatile_expr(const expr_base *s) {
             switch (intrin->kind_) {
                 case low_level_intrin_kind::x86_general:
                     switch (intrin->type_) {
-                        case x86_intrin_type::avx_broadcast_idx:
+                        case x86_intrin_type::avx_broadcast_idx: {
+                            return is_tensor_read_only(intrin->args_[0].get());
+                        } break;
                         case x86_intrin_type::avx_mask_cast:
                         case x86_intrin_type::avx_compare: return true; break;
                         default: break;

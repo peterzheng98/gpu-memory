@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -261,6 +261,13 @@ public:
 #endif
         return rsp + saved_regs_size + first_params_and_return_addr_size;
     }
+
+    // The function is intended for faster and easier debugging.
+    // It inserts int3 instruction which causes a SIGTRAP, which is basically
+    // a breakpoint in a debugger. It's much faster way to dispatch into a
+    // desired place in a JITted kernel instead of going through the `execute`
+    // call stack.
+    void set_breakpoint() { db(0xcc); }
 
     void uni_vzeroupper() {
         if (mayiuse(avx)) vzeroupper();
@@ -718,7 +725,7 @@ public:
         if (is_valid_isa(avx))
             vaddps(x, op1, op2);
         else {
-            assert(x.getIdx() == op1.getIdx());
+            if (!x.isEqualIfNotInherited(op1)) movups(x, op1);
             addps(x, op2);
         }
     }
@@ -2111,6 +2118,13 @@ public:
             minps(vmm, vmm_ubound);
     }
 
+    template <typename Vmm>
+    void saturate_cvt_f32(const Vmm &vmm, const Vmm &vmm_lbound,
+            const Vmm &vmm_ubound, data_type_t odt, bool force_lbound = false) {
+        saturate_f32(vmm, vmm_lbound, vmm_ubound, odt, force_lbound);
+        uni_vcvtps2dq(vmm, vmm);
+    }
+
     /**
     * load_bytes is the utility function to facilitate loading of
     * load_size (0 <= load_size <= 32) many contiguous bytes into the Xmm/Ymm
@@ -2636,7 +2650,7 @@ public:
         Xbyak::Label label_tbl, label_tbl_end;
         std::vector<Xbyak::Label> l_case(simd_w);
 
-        mov(reg_tmp, label_tbl);
+        lea(reg_tmp, ptr[rip + label_tbl]);
         const Xbyak::Address label_address
                 = ptr[reg_tmp + reg_tail * sizeof(void *)];
         jmp(label_address, T_NEAR);
@@ -2657,18 +2671,30 @@ public:
         L(label_tbl_end);
     }
 
+    void init_f32_avx2_mask_ymm(
+            Xbyak::Ymm &ymm_mask, const Xbyak::Reg64 &reg_tmp, int tail_size) {
+        static const uint32_t mask_in[16] = {0xffffffff, 0xffffffff, 0xffffffff,
+                0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0,
+                0, 0, 0, 0, 0, 0, 0};
+        constexpr int max_words_in_ymm = 8;
+        auto mask_in_offset = max_words_in_ymm - tail_size;
+        mov(reg_tmp, reinterpret_cast<size_t>(&mask_in[mask_in_offset]));
+        vmovups(ymm_mask, ptr[reg_tmp]);
+    }
+
+    void transpose(const Xbyak::Reg64 &reg_src, const Xbyak::Reg64 &reg_dst,
+            dim_t src_stride, dim_t dst_stride, int nrows, int ncolumns,
+            data_type_t dt,
+            /*rest of vmms used only if there are tails*/ Xbyak::Ymm &ymm_tmp,
+            Xbyak::Ymm &ymm_mask, Xbyak::Xmm &xmm_upper_mask);
     DNNL_DISALLOW_COPY_AND_ASSIGN(jit_generator);
 
 public:
     /* All uni_ instructions -- apart from uni_vzeroupper() -- will comply with
      * the max_cpu_isa argument */
-    jit_generator(const char *name, void *code_ptr = nullptr,
-            size_t code_size = MAX_CODE_SIZE, bool use_autogrow = true,
-            cpu_isa_t max_cpu_isa = get_max_cpu_isa())
+    jit_generator(const char *name, cpu_isa_t max_cpu_isa = get_max_cpu_isa())
         : Xbyak::MmapAllocator(name)
-        , Xbyak::CodeGenerator(code_size,
-                  (code_ptr == nullptr && use_autogrow) ? Xbyak::AutoGrow
-                                                        : code_ptr,
+        , Xbyak::CodeGenerator(MAX_CODE_SIZE, Xbyak::AutoGrow,
                   /*allocator=*/this)
         , max_cpu_isa_(max_cpu_isa) {}
 

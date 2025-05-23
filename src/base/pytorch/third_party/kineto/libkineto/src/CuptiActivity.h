@@ -14,10 +14,9 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-RelativeInclude
 #include "ITraceActivity.h"
 #include "GenericTraceActivity.h"
-#include "CuptiActivityPlatform.h"
-#include "GenericTraceActivity.h"
 #include "ThreadUtil.h"
 #include "cupti_strings.h"
+#include "ApproximateClock.h"
 
 namespace libkineto {
   class ActivityLogger;
@@ -28,6 +27,10 @@ namespace KINETO_NAMESPACE {
 using namespace libkineto;
 struct TraceSpan;
 
+// This function allows us to activate/deactivate TSC CUPTI callbacks 
+// via a killswitch
+bool& use_cupti_tsc();
+
 // These classes wrap the various CUPTI activity types
 // into subclasses of ITraceActivity so that they can all be accessed
 // using the ITraceActivity interface and logged via ActivityLogger.
@@ -37,11 +40,31 @@ template<class T>
 struct CuptiActivity : public ITraceActivity {
   explicit CuptiActivity(const T* activity, const ITraceActivity* linked)
       : activity_(*activity), linked_(linked) {}
+  // If we are running on Windows or are on a CUDA version < 11.6,
+  // we use the default system clock so no conversion needed same for all
+  // ifdefs below
   int64_t timestamp() const override {
-    return nsToUs(unixEpochTimestamp(activity_.start));
+  #if defined(_WIN32) || CUDA_VERSION < 11060
+    return activity_.start;
+  #else
+    if (use_cupti_tsc()){
+      return get_time_converter()(activity_.start);
+    } else {
+      return activity_.start;
+    }
+  #endif
   }
+
   int64_t duration() const override {
-    return nsToUs(activity_.end - activity_.start);
+  #if defined(_WIN32) || CUDA_VERSION < 11060
+    return activity_.end - activity_.start;
+  #else
+    if (use_cupti_tsc()){
+      return get_time_converter()(activity_.end) - get_time_converter()(activity_.start);
+    } else {
+      return activity_.end - activity_.start;
+    }
+  #endif
   }
   // TODO(T107507796): Deprecate ITraceActivity
   int64_t correlationId() const override {return 0;}
@@ -105,12 +128,31 @@ struct OverheadActivity : public CuptiActivity<CUpti_ActivityOverhead> {
       int32_t threadId=0)
       : CuptiActivity(activity, linked), threadId_(threadId) {}
 
+
   int64_t timestamp() const override {
-    return nsToUs(unixEpochTimestamp(activity_.start));
+  #if defined(_WIN32) || CUDA_VERSION < 11060
+    return activity_.start;
+  #else
+    if (use_cupti_tsc()){
+      return get_time_converter()(activity_.start);
+    } else {
+      return activity_.start;
+    }
+  #endif
   }
+
   int64_t duration() const override {
-    return nsToUs(activity_.end - activity_.start);
+  #if defined(_WIN32) || CUDA_VERSION < 11060
+    return activity_.end - activity_.start;
+  #else
+    if (use_cupti_tsc()){
+      return get_time_converter()(activity_.end) - get_time_converter()(activity_.start);
+    } else {
+      return activity_.end - activity_.start;
+    }
+  #endif
   }
+
   // TODO: Update this with PID ordering
   int64_t deviceId() const override {return -1;}
   int64_t resourceId() const override {return threadId_;}
@@ -148,7 +190,6 @@ struct CudaSyncActivity : public CuptiActivity<CUpti_ActivitySynchronization> {
   const int32_t srcStream_;
   const int32_t srcCorrId_;
 };
-
 
 // Base class for GPU activities.
 // Can also be instantiated directly.

@@ -7,7 +7,7 @@
 #include "argcheck.h"
 #include "comm.h"
 
-static ncclResult_t CudaPtrCheck(const void* pointer, struct ncclComm* comm, const char* ptrname, const char* opname) {
+ncclResult_t CudaPtrCheck(const void* pointer, struct ncclComm* comm, const char* ptrname, const char* opname) {
   cudaPointerAttributes attr;
   cudaError_t err = cudaPointerGetAttributes(&attr, pointer);
   if (err != cudaSuccess || attr.devicePointer == NULL) {
@@ -28,6 +28,15 @@ static ncclResult_t CudaPtrCheck(const void* pointer, struct ncclComm* comm, con
 ncclResult_t PtrCheck(void* ptr, const char* opname, const char* ptrname) {
   if (ptr == NULL) {
     WARN("%s : %s argument is NULL", opname, ptrname);
+    return ncclInvalidArgument;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t CommCheck(struct ncclComm* comm, const char* opname, const char* ptrname) {
+  NCCLCHECK(PtrCheck(comm, opname, ptrname));
+  if (comm->startMagic != NCCL_MAGIC || comm->endMagic != NCCL_MAGIC) {
+    WARN("Error: corrupted comm object detected");
     return ncclInvalidArgument;
   }
   return ncclSuccess;

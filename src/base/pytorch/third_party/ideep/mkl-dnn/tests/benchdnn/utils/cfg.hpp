@@ -125,6 +125,11 @@ struct base_cfg_t {
     dnnl_data_type_t get_dt(data_kind_t dk) const {
         return cfg_entry_.at(dk).get_dt();
     }
+    // Returns a valid data type if swap is needed and `undef` otherwise.
+    dnnl_data_type_t get_swapped_dt(data_kind_t dk) const {
+        const bool swap_dt = dk == DST && get_orig_dt(dk) != get_dt(dk);
+        return swap_dt ? get_dt(dk) : dnnl_data_type_undef;
+    }
 
     // This type allows to differentiate density in filling functions by certain
     // criteria. Members used in each driver may be different.
@@ -153,7 +158,13 @@ protected:
     }
 
     bool is_int8(data_kind_t dk = WEI) const {
-        return dnnl_data_type_size(cfg_entry_.at(dk).get_dt()) == 1;
+        // This function is designed to bump density for int8 cases to trigger
+        // saturation and rounding. However, with s32 output data type bumped
+        // density can exceed safe f32 reference output value and lead to
+        // mismatching results. Thus, remove x8s8s32 configuration from int8
+        // definition.
+        return dnnl_data_type_size(cfg_entry_.at(dk).get_dt()) == 1
+                && cfg_entry_.at(output_data_kind_).get_dt() != dnnl_s32;
     }
 
     // Find the number of accumulators safe to use with the following equations:

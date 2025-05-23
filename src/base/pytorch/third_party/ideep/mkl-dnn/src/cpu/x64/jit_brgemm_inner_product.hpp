@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -24,12 +24,14 @@
 #include "common/utils.hpp"
 
 #include "cpu/cpu_inner_product_pd.hpp"
+#include "cpu/scale_utils.hpp"
 
 #include "cpu/x64/amx_tile_configure.hpp"
 #include "cpu/x64/brgemm/brgemm.hpp"
 #include "cpu/x64/brgemm/brgemm_containers.hpp"
 #include "cpu/x64/cpu_barrier.hpp"
 #include "cpu/x64/cpu_reducer.hpp"
+#include "cpu/x64/jit_avx512_core_scale_precompute.hpp"
 #include "cpu/x64/jit_brgemm_inner_product_utils.hpp"
 #include "cpu/x64/jit_brgemm_post_ops.hpp"
 #include "cpu/x64/jit_brgemm_transpose_utils.hpp"
@@ -60,20 +62,35 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             const bool is_int8 = one_of(src_dt, u8, s8);
 
             using skip_mask_t = primitive_attr_t::skip_mask_t;
-            auto skip_mask = skip_mask_t::post_ops | skip_mask_t::sum_dt;
+            auto skip_mask = skip_mask_t::post_ops | skip_mask_t::sum_dt
+                    | skip_mask_t::fpmath_mode;
             if (is_int8) skip_mask |= skip_mask_t::scales_runtime;
 
-            bool ok = is_fwd() && mayiuse(isa)
-                    && expect_data_types(src_dt, wei_dt, data_type::undef,
-                            dst_dt, data_type::undef)
-                    && IMPLICATION(with_bias() && is_int8,
-                            one_of(bias_md_.data_type, f32, bf16, s32, s8, u8))
-                    && IMPLICATION(with_bias() && !is_int8,
-                            one_of(bias_md_.data_type, f32, src_dt))
-                    && attr()->has_default_values(skip_mask, dst_dt)
-                    && attr()->post_ops_.check_sum_consistency(dst_dt, is_int8)
-                    && !has_zero_dim_memory() && arg_scales_ok();
-            if (!ok) return status::unimplemented;
+            if (!mayiuse(isa)) return status::unimplemented;
+
+            VDISPATCH_INNER_PRODUCT(is_fwd(), VERBOSE_BAD_PROPKIND);
+            VDISPATCH_INNER_PRODUCT(
+                    expect_data_types(src_dt, wei_dt, data_type::undef, dst_dt,
+                            data_type::undef),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_INNER_PRODUCT(
+                    IMPLICATION(with_bias() && is_int8,
+                            one_of(bias_md_.data_type, f32, bf16, s32, s8, u8)),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_INNER_PRODUCT(
+                    IMPLICATION(with_bias() && !is_int8,
+                            one_of(bias_md_.data_type, f32, src_dt)),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_INNER_PRODUCT(
+                    attr()->has_default_values(skip_mask, dst_dt),
+                    VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_INNER_PRODUCT(
+                    attr()->post_ops_.check_sum_consistency(dst_dt, is_int8),
+                    VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_INNER_PRODUCT(
+                    !has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
+            VDISPATCH_INNER_PRODUCT(
+                    arg_scales_ok(), VERBOSE_UNSUPPORTED_SCALES_CFG);
 
             CHECK(jbgp_.init_conf(isa, *desc(), src_md_, weights_md_, dst_md_,
                     bias_md_, attr_, dnnl_get_max_threads()));
@@ -99,14 +116,13 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                 int bs = get_brg_batchsize(i_bs, i_K);
                 int idx = get_brg_kernel_idx(i_bs, i_init, i_M, i_N, i_K, bs);
                 if (idx < 0) continue;
-                brgemm_t &brg = brg_descs_[idx];
+                brgemm_desc_t &brg = brg_descs_[idx];
                 CHECK(brgemm_desc_init(&brg, isa, jbgp_.brg_type, jbgp_.src_dt,
                         jbgp_.wei_dt, false, false, brgemm_row_major, alpha,
                         vbeta, jbgp_.LDA, jbgp_.LDB, jbgp_.LDC, vM, vN, vK));
 
-                auto LDD = jbgp_.oc_without_padding;
                 CHECK(brgemm_desc_set_postops(
-                        &brg, attr(), &dst_md_, LDD, jbgp_.bia_dt));
+                        &brg, attr(), &dst_md_, jbgp_.LDD, jbgp_.bia_dt));
 
                 brgemm_attr_t brgattr;
                 if (jbgp_.is_amx) {
@@ -119,7 +135,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                     brgattr.use_uker = jbgp_.use_uker;
                     brgattr.use_interleave_stores = jbgp_.use_interleave_stores;
                     brgattr.hint_prefetching = jbgp_.hint_prefetching;
-                    brgattr.fpmath_mode = attr()->fpmath_mode_;
+                    brgattr.fpmath_mode = attr()->fpmath_.mode_;
                 }
                 if (are_post_ops_applicable && jbgp_.nthr_ic_b > 1) {
                     brgattr.generate_skip_accumulation = true;
@@ -171,7 +187,8 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             return bs;
         }
 
-        brgemm_t brg_descs_[brgemm_inner_product_utils::max_num_brg_kernels_ip];
+        brgemm_desc_t
+                brg_descs_[brgemm_inner_product_utils::max_num_brg_kernels_ip];
         brgemm_inner_product_utils::jit_brgemm_ip_fwd_conf_t jbgp_;
     };
 
@@ -200,6 +217,20 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                     acc_ker_, new cpu_accumulator_1d_t<data_type::f32>()));
             CHECK(acc_ker_->create_kernel());
         }
+
+        // JIT to precompute scales
+        const bool is_jit_supported = mayiuse(avx512_core);
+        const auto attr = pd()->attr();
+        if (is_jit_supported && pd()->OC() > 1 && req_copy_scales(attr)) {
+            const auto &attr_scales = attr->scales_;
+            int wei_scale_mask = attr_scales.get(DNNL_ARG_WEIGHTS).mask_;
+            if (wei_scale_mask != 0) {
+                CHECK(safe_ptr_assign(jit_scale_precompute_,
+                        new jit_avx512_core_scale_precompute_t(attr)));
+                CHECK(jit_scale_precompute_->create_kernel());
+            }
+        }
+
         return status::success;
     }
 
@@ -215,6 +246,7 @@ private:
             brg_kernels_[brgemm_inner_product_utils::max_num_brg_kernels_ip];
     std::unique_ptr<jit_brgemm_copy_to_coarse_t> copy_src_kernel_;
     std::unique_ptr<cpu_accumulator_1d_t<data_type::f32>> acc_ker_;
+    std::unique_ptr<jit_avx512_core_scale_precompute_t> jit_scale_precompute_;
     brgemm_containers::brgemm_palette_container_t brgemm_palettes_ {
             brgemm_inner_product_utils::max_num_brg_kernels_ip};
 };
@@ -230,20 +262,29 @@ struct brgemm_inner_product_bwd_data_t : public primitive_t {
                 brgemm_inner_product_bwd_data_t);
 
         status_t init(engine_t *engine) {
+            using skip_mask_t = primitive_attr_t::skip_mask_t;
 
             auto diff_src_dt = invariant_src_md()->data_type;
             auto diff_dst_dt = invariant_dst_md()->data_type;
             auto wei_dt = invariant_wei_md()->data_type;
 
-            bool ok = true && desc()->prop_kind == prop_kind::backward_data
-                    && !has_zero_dim_memory() && mayiuse(isa)
-                    && utils::one_of(diff_dst_dt, data_type::f32,
-                            data_type::bf16, data_type::f16)
-                    && wei_dt == diff_dst_dt
-                    && utils::one_of(diff_src_dt, data_type::f32, diff_dst_dt)
-                    && attr()->has_default_values(
-                            primitive_attr_t::skip_mask_t::post_ops);
-            if (!ok) return status::unimplemented;
+            if (!mayiuse(isa)) return status::unimplemented;
+            VDISPATCH_INNER_PRODUCT(
+                    desc()->prop_kind == prop_kind::backward_data,
+                    VERBOSE_BAD_PROPKIND);
+            VDISPATCH_INNER_PRODUCT(
+                    !has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
+            VDISPATCH_INNER_PRODUCT(utils::one_of(diff_dst_dt, data_type::f32,
+                                            data_type::bf16, data_type::f16),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_INNER_PRODUCT(wei_dt == diff_dst_dt,
+                    VERBOSE_INCONSISTENT_DT, "weights", "diff_dst");
+            VDISPATCH_INNER_PRODUCT(
+                    utils::one_of(diff_src_dt, data_type::f32, diff_dst_dt),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_INNER_PRODUCT(
+                    attr()->has_default_values(skip_mask_t::fpmath_mode),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             memory_desc_t dummy_bias_md;
             CHECK(jbgp_.init_conf(isa, *desc(), diff_src_md_, weights_md_,
@@ -270,14 +311,13 @@ struct brgemm_inner_product_bwd_data_t : public primitive_t {
                 int idx = get_brg_kernel_idx(i_bs, i_init, i_M, i_N, i_K, bs);
                 if (idx < 0) continue;
 
-                brgemm_t &brg = brg_descs_[idx];
+                brgemm_desc_t &brg = brg_descs_[idx];
                 CHECK(brgemm_desc_init(&brg, isa, jbgp_.brg_type, diff_dst_dt,
                         dt_b, false, false, brgemm_row_major, alpha, vbeta,
                         jbgp_.LDA, jbgp_.LDB, jbgp_.LDC, vM, vN, vK));
 
-                auto LDD = jbgp_.ic_without_padding;
                 CHECK(brgemm_desc_set_postops(
-                        &brg, attr(), &diff_src_md_, LDD, jbgp_.bia_dt));
+                        &brg, attr(), &diff_src_md_, jbgp_.LDD, jbgp_.bia_dt));
                 if (jbgp_.is_amx) {
                     brgemm_attr_t brgattr;
                     brgattr.max_bs = bs;
@@ -289,7 +329,7 @@ struct brgemm_inner_product_bwd_data_t : public primitive_t {
                     brgattr.use_uker = jbgp_.use_uker;
                     brgattr.use_interleave_stores = jbgp_.use_interleave_stores;
                     brgattr.hint_prefetching = jbgp_.hint_prefetching;
-                    brgattr.fpmath_mode = attr()->fpmath_mode_;
+                    brgattr.fpmath_mode = attr()->fpmath_.mode_;
 
                     CHECK(brgemm_desc_set_attr(&brg, brgattr));
                     jbgp_.amx_buf_size_per_thread
@@ -329,7 +369,8 @@ struct brgemm_inner_product_bwd_data_t : public primitive_t {
             return bs;
         }
 
-        brgemm_t brg_descs_[brgemm_inner_product_utils::max_num_brg_kernels_ip];
+        brgemm_desc_t
+                brg_descs_[brgemm_inner_product_utils::max_num_brg_kernels_ip];
         brgemm_inner_product_utils::jit_brgemm_ip_bwd_d_conf_t jbgp_;
     };
 
@@ -397,20 +438,29 @@ struct brgemm_inner_product_bwd_weights_t : public primitive_t {
                 brgemm_inner_product_bwd_weights_t);
 
         status_t init(engine_t *engine) {
+            using skip_mask_t = primitive_attr_t::skip_mask_t;
 
             auto src_dt = invariant_src_md()->data_type;
             auto diff_wei_type = invariant_wei_md()->data_type;
             auto diff_dst_type = invariant_dst_md()->data_type;
 
-            bool ok = true && desc()->prop_kind == prop_kind::backward_weights
-                    && !has_zero_dim_memory() && mayiuse(isa)
-                    && utils::one_of(src_dt, data_type::f32, data_type::bf16,
-                            data_type::f16)
-                    && diff_dst_type == src_dt
-                    && utils::one_of(diff_wei_type, data_type::f32, src_dt)
-                    && attr()->has_default_values(
-                            primitive_attr_t::skip_mask_t::post_ops);
-            if (!ok) return status::unimplemented;
+            if (!mayiuse(isa)) return status::unimplemented;
+            VDISPATCH_INNER_PRODUCT(
+                    desc()->prop_kind == prop_kind::backward_weights,
+                    VERBOSE_BAD_PROPKIND);
+            VDISPATCH_INNER_PRODUCT(
+                    !has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
+            VDISPATCH_INNER_PRODUCT(utils::one_of(src_dt, data_type::f32,
+                                            data_type::bf16, data_type::f16),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_INNER_PRODUCT(diff_dst_type == src_dt,
+                    VERBOSE_INCONSISTENT_DT, "diff_dst", "src");
+            VDISPATCH_INNER_PRODUCT(
+                    utils::one_of(diff_wei_type, data_type::f32, src_dt),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_INNER_PRODUCT(
+                    attr()->has_default_values(skip_mask_t::fpmath_mode),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             CHECK(jbgp_.init_conf(isa, *desc(), src_md_, diff_weights_md_,
                     diff_dst_md_, diff_bias_md_, attr_,
@@ -438,7 +488,7 @@ struct brgemm_inner_product_bwd_weights_t : public primitive_t {
                 int bs = get_brg_batchsize(i_bs, i_K);
                 int idx = get_brg_kernel_idx(i_bs, i_init, i_M, i_N, i_K, bs);
                 if (idx < 0) continue;
-                brgemm_t &brg = brg_descs_[idx];
+                brgemm_desc_t &brg = brg_descs_[idx];
                 CHECK(brgemm_desc_init(&brg, isa, jbgp_.brg_type, dt_a, dt_b,
                         false, false, brgemm_row_major, alpha, vbeta, jbgp_.LDA,
                         jbgp_.LDB, jbgp_.LDC, vM, vN, vK));
@@ -453,7 +503,7 @@ struct brgemm_inner_product_bwd_weights_t : public primitive_t {
                     brgattr.use_uker = jbgp_.use_uker;
                     brgattr.use_interleave_stores = jbgp_.use_interleave_stores;
                     brgattr.hint_prefetching = jbgp_.hint_prefetching;
-                    brgattr.fpmath_mode = attr()->fpmath_mode_;
+                    brgattr.fpmath_mode = attr()->fpmath_.mode_;
 
                     CHECK(brgemm_desc_set_attr(&brg, brgattr));
                     jbgp_.amx_buf_size_per_thread
@@ -489,7 +539,8 @@ struct brgemm_inner_product_bwd_weights_t : public primitive_t {
             return bs;
         }
 
-        brgemm_t brg_descs_[brgemm_inner_product_utils::max_num_brg_kernels_ip];
+        brgemm_desc_t
+                brg_descs_[brgemm_inner_product_utils::max_num_brg_kernels_ip];
         brgemm_inner_product_utils::jit_brgemm_ip_bwd_w_conf_t jbgp_;
     };
 
@@ -579,15 +630,14 @@ private:
             int trans_batch, int current_m, int current_k) const;
     void transform_matrix_b_chunk(char *tr_diff_dst, const char *diff_dst,
             int trans_batch, int current_col_size, int current_row_size) const;
-    void transpose_matrix_c_chunk(const thread_info_t *ti, const int ocb,
-            const int icb, int oc_size, int ic_size,
-            bool is_reduction = false) const;
+    void transpose_matrix_c_chunk(const thread_info_t *ti, const dim_t ocb,
+            const dim_t icb, int oc_size, int ic_size, dim_t kd, dim_t kh,
+            dim_t kw, bool is_reduction = false) const;
 
     brgemm_containers::brgemm_palette_container_t brgemm_palettes_ {
             brgemm_inner_product_utils::max_num_brg_kernels_ip};
-    dim_t get_wei_offset(int ocb, int icb) const;
-    char *get_wei_acc_ptr(const thread_info_t *ti, int ocb, int icb,
-            int reduction_buf_idx = -1) const;
+    char *get_wei_acc_ptr(const thread_info_t *ti, dim_t ocb, dim_t icb,
+            dim_t kd, dim_t kh, dim_t kw, int reduction_buf_idx = -1) const;
 
     int ext_ic_block_ = 0;
     int ext_oc_block_ = 0;

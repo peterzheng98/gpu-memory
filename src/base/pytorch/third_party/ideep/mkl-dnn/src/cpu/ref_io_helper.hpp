@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021-2023 Intel Corporation
+* Copyright 2021-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 
 #include "common/c_types_map.hpp"
 #include "common/dnnl_traits.hpp"
+#include "common/type_helpers.hpp"
 
 #include "cpu/simple_q10n.hpp"
 
@@ -59,12 +60,28 @@ inline float load_float_value(data_type_t dt, const void *ptr, dim_t idx) {
 
     using namespace data_type;
     switch (dt) {
+        CASE(f8_e5m2);
+        CASE(f8_e4m3);
         CASE(bf16);
         CASE(f16);
         CASE(f32);
         CASE(s32);
         CASE(s8);
         CASE(u8);
+        case s4: {
+            const auto shift = idx % 2 ? int4_extract_t::high_half
+                                       : int4_extract_t::low_half;
+            auto val = int4_t::extract(
+                    reinterpret_cast<const uint8_t *>(ptr)[idx / 2], shift);
+            return static_cast<float>(val);
+        }
+        case u4: {
+            const auto shift = idx % 2 ? int4_extract_t::high_half
+                                       : int4_extract_t::low_half;
+            auto val = uint4_t::extract(
+                    reinterpret_cast<const uint8_t *>(ptr)[idx / 2], shift);
+            return static_cast<float>(val);
+        }
         default: assert(!"bad data_type");
     }
 
@@ -78,11 +95,13 @@ inline void store_float_value(data_type_t dt, float val, void *ptr, dim_t idx) {
     case dt: { \
         using type_ = typename prec_traits<dt>::type; \
         *(reinterpret_cast<type_ *>(ptr) + idx) \
-                = cpu::saturate_and_round<type_>(val); \
+                = cpu::q10n::saturate_and_round<type_>(val); \
     } break;
 
     using namespace data_type;
     switch (dt) {
+        CASE(f8_e5m2);
+        CASE(f8_e4m3);
         CASE(bf16);
         CASE(f16);
         CASE(f32);

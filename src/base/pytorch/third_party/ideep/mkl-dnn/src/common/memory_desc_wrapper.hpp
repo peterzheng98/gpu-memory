@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -22,8 +22,12 @@
 #include "c_types_map.hpp"
 #include "nstl.hpp"
 #include "utils.hpp"
+#include "verbose.hpp"
 
 #include "type_helpers.hpp"
+
+#define VCHECK_MEMORY(cond, stat, msg, ...) \
+    VCONDCHECK(common, create, check, memory, (cond), stat, msg, ##__VA_ARGS__)
 
 namespace dnnl {
 namespace impl {
@@ -53,6 +57,12 @@ struct memory_desc_wrapper : public c_compatible {
     bool is_blocking_desc() const {
         return format_kind() == format_kind::blocked;
     }
+
+    bool is_sparse_packed_desc() const {
+        return is_sparse_desc()
+                && sparse_desc().encoding == sparse_encoding::packed;
+    }
+
     bool is_wino_desc() const { return format_kind() == format_kind::wino; }
     bool is_rnn_packed_desc() const {
         return format_kind() == format_kind::rnn_packed;
@@ -60,8 +70,9 @@ struct memory_desc_wrapper : public c_compatible {
     bool is_sparse_desc() const { return format_kind() == format_kind::sparse; }
 
     const blocking_desc_t &blocking_desc() const {
-        assert(is_blocking_desc());
-        return md_->format_desc.blocking;
+        assert(is_blocking_desc() || is_sparse_packed_desc());
+        if (!is_sparse_desc()) return md_->format_desc.blocking;
+        return sparse_desc().packed_desc;
     }
     const wino_desc_t &wino_desc() const {
         assert(is_wino_desc());
@@ -119,6 +130,13 @@ struct memory_desc_wrapper : public c_compatible {
 
     /** return the size of data type (a shortcut) */
     size_t data_type_size() const { return types::data_type_size(data_type()); }
+
+    /** For sub-byte data types returns number of elements per byte.
+     * For the rest data types returns 1. */
+    size_t sub_byte_data_type_multiplier() const {
+        if (utils::one_of(data_type(), data_type::s4, data_type::u4)) return 2;
+        return 1;
+    }
 
     /** return the size of data type of additional buffer */
     size_t additional_buffer_data_size(uint64_t flag_select) const {
@@ -180,6 +198,12 @@ struct memory_desc_wrapper : public c_compatible {
         return 0;
     }
 
+    int blk_size() const {
+        assert(is_blocking_desc() || is_sparse_packed_desc());
+        const auto &bd = blocking_desc();
+        return utils::array_product(bd.inner_blks, bd.inner_nblks);
+    }
+
     /** returns the size of the appended buffer when the memory descriptor
      * requires extra space to hold compensation data */
     size_t additional_buffer_size() const {
@@ -231,7 +255,8 @@ struct memory_desc_wrapper : public c_compatible {
                 max_size = utils::array_product(bd.inner_blks, bd.inner_nblks);
             }
 
-            size_t data_size = max_size * data_type_size();
+            size_t data_size = max_size * data_type_size()
+                    / sub_byte_data_type_multiplier();
             if (is_additional_buffer()) {
                 // The additional buffers, typically of data type int32_t, float
                 // are stored at the end of data. Pad the data, so that the
@@ -256,7 +281,25 @@ struct memory_desc_wrapper : public c_compatible {
                         const auto ptr_dt = metadata_type(1);
                         return (dims()[0] + 1) * types::data_type_size(ptr_dt);
                     }
-                    default: assert(!"unknown component"); return 0;
+                    default: assert(!"unknown index"); return 0;
+                }
+            } else if (sparse_desc().encoding == sparse_encoding::packed) {
+                // If the size if queried from a user-created memory descriptor.
+                if (blocking_desc().strides[0] == 0) return 0;
+
+                switch (index) {
+                    case 0:
+                        // Return size for values.
+                        return nnz() * data_type_size();
+                    case 1: {
+                        // Return size for offsets.
+                        return (nelems(true) / blk_size()) * sizeof(int64_t);
+                    }
+                    case 2:
+                        // Return size for bitmask. The bitmask has 1 bit
+                        // per each value.
+                        return utils::div_up(nelems(true), CHAR_BIT);
+                    default: assert(!"unknown index"); return 0;
                 }
             } else {
                 assert(!"unknown sparse encoding");
@@ -291,6 +334,7 @@ struct memory_desc_wrapper : public c_compatible {
             return false;
         if (has_runtime_dims_or_strides() || has_broadcast()) return false;
         return nelems(with_padding) * data_type_size()
+                / sub_byte_data_type_multiplier()
                 == size(0, /* include_additional_size = */ false);
     }
 
@@ -401,7 +445,7 @@ struct memory_desc_wrapper : public c_compatible {
      * an array \param pos. if \param is_pos_padded is true \param pos
      * represents the position in already padded area */
     dim_t off_v(const dims_t pos, bool is_pos_padded = false) const {
-        assert(is_blocking_desc());
+        assert(is_blocking_desc() || is_sparse_packed_desc());
         const blocking_desc_t &blk = blocking_desc();
 
         dims_t pos_copy = {0};
@@ -511,7 +555,7 @@ private:
 
     template <int ORIG_LEN, typename T, typename... Args>
     dim_t _blk_off(T xc, Args... args) const {
-        assert(is_blocking_desc());
+        assert(is_blocking_desc() || is_sparse_packed_desc());
         constexpr int dc = ORIG_LEN - sizeof...(args) - 1;
         return xc * blocking_desc().strides[dc]
                 + _blk_off<ORIG_LEN, Args...>(args...);

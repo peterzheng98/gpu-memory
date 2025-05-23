@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2022-2023 Intel Corporation
+ * Copyright 2022-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -132,7 +132,7 @@ inline void compute_pooling_ref_bwd(std::string &pooling_type, const int64_t MB,
         Store_type *dst = dst_delta + nc_offset;
 
         int64_t max_offset = -1;
-        Store_type max_val = std::numeric_limits<Compute_type>::lowest();
+        Store_type max_val = -std::numeric_limits<Compute_type>::infinity();
 
         bool has_max_indices = max_indices != nullptr;
         if (has_max_indices) {
@@ -147,13 +147,8 @@ inline void compute_pooling_ref_bwd(std::string &pooling_type, const int64_t MB,
                 const int64_t ow = iw * SW - PW + kw;
                 int64_t cur_offset = oh * OW + ow;
 
-                if (oh < 0 || oh >= OH || ow < 0 || ow >= OW) {
-                    if (!has_max_indices && pooling_type == "max"
-                            && max_val < 0.f) {
-                        max_offset = -1;
-                        max_val = static_cast<Compute_type>(0);
-                    }
-                } else {
+                bool is_out_of_bound = oh < 0 || oh >= OH || ow < 0 || ow >= OW;
+                if (!is_out_of_bound) {
                     if (pooling_type == "max") {
                         if (has_max_indices) {
                             if (max_offset == cur_offset)
@@ -161,7 +156,7 @@ inline void compute_pooling_ref_bwd(std::string &pooling_type, const int64_t MB,
                                         dst[cur_offset] + s_delta);
                         } else {
                             if (input_tensor[nc_offset + cur_offset]
-                                    >= max_val) {
+                                    > max_val) {
                                 max_offset = cur_offset;
                                 max_val = input_tensor[nc_offset + cur_offset];
                             }
@@ -189,9 +184,10 @@ inline void compute_pooling_ref_bwd(std::string &pooling_type, const int64_t MB,
                 }
             }
         }
-        if (!has_max_indices && pooling_type == "max" && max_offset >= 0)
+        if (!has_max_indices && pooling_type == "max" && max_offset >= 0) {
             dst[max_offset]
-                    = static_cast<Store_type>(dst[max_offset] + s_delta);
+                    = dst[max_offset] + static_cast<Store_type>(s_delta);
+        }
     };
 
     sc::utils::parallel_for(
@@ -220,6 +216,7 @@ inline void compute_pooling_ref_fwd(std::string &pooling_type, const int64_t MB,
         const Store_type *src_loc = src_m + (mb * IC + oc) * IH * IW;
 
         int count = 0;
+        SC_UNUSED(count);
         if (pooling_type == "max")
             d = std::numeric_limits<Compute_type>::lowest();
         else
@@ -228,10 +225,7 @@ inline void compute_pooling_ref_fwd(std::string &pooling_type, const int64_t MB,
             for (int64_t kw = 0; kw < KW; ++kw) {
                 const int64_t ih = oh * SH - PH + kh;
                 const int64_t iw = ow * SW - PW + kw;
-                if (ih < 0 || ih >= IH || iw < 0 || iw >= IW) {
-                    if (pooling_type == "max") d = std::max(d, zero);
-                    continue;
-                }
+                if (ih < 0 || ih >= IH || iw < 0 || iw >= IW) { continue; }
                 int64_t src_off = ih * IW + iw;
                 if (pooling_type == "max")
                     d = std::max(
@@ -295,7 +289,7 @@ void compute_conv_pooling_postops_ref(const int64_t MB, const int64_t OC,
             nullptr, conv_ouput, dir_t::FWD_I, mul_m, add_m, false);
     compute_pooling_ref_fwd<src_type, src_type>(pooling_type, MB, OC, OH, OW,
             p_OH, p_OW, p_KH, p_KW, p_SH, p_SW, p_PH, p_PW, conv_ouput,
-            final_output, mul_m, add_m, true, exclude_pad);
+            final_output, mul_m, add_m, bn_relu, exclude_pad);
 }
 
 template <typename src_type, typename wei_type, typename dst_type>

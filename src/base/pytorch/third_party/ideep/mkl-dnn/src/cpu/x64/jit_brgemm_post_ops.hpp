@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -51,7 +51,7 @@ struct brgemm_kernel_diff_bias_t {
 template <typename Vmm>
 struct jit_brgemm_kernel_diff_bias_t : public jit_generator {
     jit_brgemm_kernel_diff_bias_t(
-            const jit_brgemm_primitive_conf_t &ajbgp, const brgemm_t &abrg)
+            const jit_brgemm_primitive_conf_t &ajbgp, const brgemm_desc_t &abrg)
         : jit_generator(jit_name())
         , brg_(abrg)
         , ddst_dt_(ajbgp.dst_dt)
@@ -70,7 +70,7 @@ struct jit_brgemm_kernel_diff_bias_t : public jit_generator {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_brgemm_kernel_diff_bias_t)
 
 private:
-    brgemm_t brg_;
+    brgemm_desc_t brg_;
     data_type_t ddst_dt_;
     data_type_t bia_dt_;
     data_type_t acc_dt_;
@@ -264,8 +264,8 @@ private:
             mov(reg_mask, half_mask);
             kmovq(k_f16_perm_mask, reg_mask);
 
-            mov(reg_mask, f16_perm_table_);
-            vmovups(vreg_perm | k_f16_perm_mask | T_z, ptr[reg_mask]);
+            vmovups(vreg_perm | k_f16_perm_mask | T_z,
+                    ptr[rip + f16_perm_table_]);
         }
 
         if (tail_length == 0) return;
@@ -278,8 +278,7 @@ private:
             kmovq(k_tail_mask, reg_mask);
 
         } else {
-            mov(reg_mask, mask_label_);
-            vmovups(vmm_tail_mask, ptr[reg_mask]);
+            vmovups(vmm_tail_mask, ptr[rip + mask_label_]);
         }
     }
 
@@ -365,8 +364,8 @@ template <cpu_isa_t isa>
 struct jit_brgemm_kernel_post_ops : public jit_generator {
 
     jit_brgemm_kernel_post_ops(const jit_brgemm_conv_conf_t &ajcp,
-            const brgemm_t &abrg, const primitive_attr_t &aattr)
-        : jit_generator(jit_name())
+            const brgemm_desc_t &abrg, const primitive_attr_t &aattr)
+        : jit_generator(jit_name(), abrg.isa_impl)
         , brg(abrg)
         , jcp(ajcp)
         , attr(aattr)
@@ -374,8 +373,8 @@ struct jit_brgemm_kernel_post_ops : public jit_generator {
         , with_binary_non_scalar_bcast_(brg.with_binary
                   && binary_injector::
                           any_binary_postop_rhs_non_scalar_broadcast(
-                                  brg.attr->post_ops_,
-                                  memory_desc_wrapper(brg.dst_md))) {
+                                  brg.attr()->post_ops_,
+                                  memory_desc_wrapper(brg.dst_md()))) {
 
         if (brg.beta != 0) {
             static constexpr bool preserve_gpr = true;
@@ -386,7 +385,7 @@ struct jit_brgemm_kernel_post_ops : public jit_generator {
                     static_cast<size_t>(vmm_tmp(4).getIdx()), this->r14,
                     this->r15, this->r13, preserve_gpr, preserve_vmm,
                     GET_OFF(ptr_binary_post_ops_rhs), GET_OFF(dst_orig),
-                    memory_desc_wrapper(brg.dst_md),
+                    memory_desc_wrapper(brg.dst_md()),
                     static_cast<size_t>(brg.load_dim % brg.ld_block),
                     k_tail_mask, use_exact_tail_scalar_bcast};
             const binary_injector::static_params_t bsp {this->param1, rhs_sp};
@@ -426,7 +425,7 @@ struct jit_brgemm_kernel_post_ops : public jit_generator {
 
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_brgemm_kernel_post_ops)
 
-    brgemm_t brg;
+    brgemm_desc_t brg;
     jit_brgemm_conv_conf_t jcp;
     const primitive_attr_t &attr;
 
@@ -844,8 +843,7 @@ private:
             const auto addr = ptr[aux_reg_out + offset];
 
             if (dt_requires_saturation) {
-                saturate_f32(vmm, vmm_lbound, vmm_ubound, out_dt_);
-                vcvtps2dq(vmm, vmm);
+                saturate_cvt_f32(vmm, vmm_lbound, vmm_ubound, out_dt_);
             }
 
             if (is_superset(isa, avx512_core)) {
@@ -1089,7 +1087,8 @@ private:
 
         postamble();
 
-        if (postops_injector_) postops_injector_->prepare_table();
+        if (postops_injector_)
+            postops_injector_->prepare_table(/* generate = */ true);
     }
 };
 

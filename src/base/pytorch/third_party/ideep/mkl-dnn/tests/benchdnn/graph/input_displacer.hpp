@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2023 Intel Corporation
+* Copyright 2023-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -17,13 +17,24 @@
 #ifndef BENCHDNN_GRAPH_INPUT_DISPLACER_HPP
 #define BENCHDNN_GRAPH_INPUT_DISPLACER_HPP
 
-#include "graph_bridge.hpp"
+#include "ref_primitive.hpp"
 
 namespace graph {
 
-// tuple< main op, main op offset, the tensor as a displace starting point, data type >
+enum class filling_type_t {
+    undef = 0,
+    quantization,
+    pow2,
+};
+
+// tuple<
+//     main op,
+//     main op offset,
+//     the tensor as a displace starting point,
+//     filling_type
+// >
 using displace_t = ::std::tuple<::graph::deserialized_op, size_t,
-        ::graph::deserialized_lt>;
+        ::graph::deserialized_lt, filling_type_t>;
 
 class partition_data_displacer_t {
 public:
@@ -33,14 +44,17 @@ public:
     int displace_input_data(size_t lt_id, dnn_mem_t &mem, res_t *res);
 
 private:
-    op_ref_list_t ops_ref_;
-    std::unordered_map<size_t, std::reference_wrapper<const deserialized_op>>
-            out_lt_2_op_;
+    const deserialized_graph *dg_ = nullptr;
+    // A set of op_id values from a partition came to a displacer. Used to
+    // identify at displacement stage if Deq is the starting point or not.
+    std::unordered_set<size_t> op_ids_set_;
+    ::std::unordered_map<size_t, displace_t> quantize_displace_;
 
-    ::std::unordered_map<size_t, displace_t> quantize_displace;
-
-    int gen_quantize_filling(const ::graph::deserialized_op &main_op,
-            dnn_mem_map_t &mem_map, const ::std::string &dt, res_t *res);
+    int gen_quantize_filling(const ::graph::deserialized_op &main_op, int arg,
+            dnn_mem_t &mem, const ::std::string &dt, res_t *res);
+    // Generates floating-point power-of-2 values in the target memory.
+    int gen_pow2_filling(
+            dnn_mem_t &mem, const_dnnl_memory_desc_t lt, res_t *res) const;
 };
 
 } // namespace graph

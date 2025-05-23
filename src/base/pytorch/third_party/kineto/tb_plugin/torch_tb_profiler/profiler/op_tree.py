@@ -32,7 +32,7 @@ class OpTreeBuilder:
 
         # if could not find any forward/backward association, skip the processing
         if not fwd_bwd_map:
-            logger.debug('there is no any forwarwd backward association, skip processing backward correlation.')
+            logger.debug('there is no any forward backward association, skip processing backward correlation.')
             return self.tid2tree
 
         self._set_main_tid()
@@ -271,8 +271,8 @@ class OpTreeBuilder:
             return
 
         if isinstance(node, ModuleNode):
-            backward_node = BackwardNode(name=node.name + '.backward', start_time=None, end_time=None,
-                                         type='backward', tid=0)
+            backward_node = BackwardNode(name=node.name + '.backward', start_time=node.start_time,
+                                         end_time=node.end_time, type='backward', tid=node.tid)
             if parent is None:
                 result.append(backward_node)
             else:

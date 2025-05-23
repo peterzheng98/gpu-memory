@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2017-2023 Intel Corporation
+* Copyright 2017-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ enum { CRIT = 1, WARN = 2 };
         if (status__ != OK) { \
             if (s == CRIT || s == WARN) { \
                 BENCHDNN_PRINT(0, \
-                        "Error: Fuction '%s' at (%s:%d) returned '%d'\n", \
+                        "Error: Function '%s' at (%s:%d) returned '%d'\n", \
                         __FUNCTION__, __FILE__, __LINE__, status__); \
                 fflush(0); \
                 if (s == CRIT) exit(1); \
@@ -82,7 +82,7 @@ enum { CRIT = 1, WARN = 2 };
         int status__ = (f); \
         if (status__ != OK) { \
             BENCHDNN_PRINT(0, \
-                    "Error: Fuction '%s' at (%s:%d) returned '%d'\n", \
+                    "Error: Function '%s' at (%s:%d) returned '%d'\n", \
                     __FUNCTION__, __FILE__, __LINE__, status__); \
             fflush(0); \
             exit(1); \
@@ -118,7 +118,8 @@ extern int default_fix_times_per_prb; // 0, rely on time criterion
 extern int repeats_per_prb; // test repeats per prb
 extern int default_repeats_per_prb; // default test repeats per prb
 
-extern bool fast_ref_gpu;
+extern bool fast_ref;
+extern bool default_fast_ref;
 extern bool allow_enum_tags_only;
 extern int test_start;
 
@@ -162,14 +163,33 @@ enum skip_reason_t {
 };
 const char *skip_reason2str(skip_reason_t skip_reason);
 
+enum dir_t {
+    DIR_UNDEF = 0,
+    FLAG_DAT = 1,
+    FLAG_WEI = 2,
+    FLAG_BIA = 4,
+    FLAG_FWD = 32,
+    FLAG_BWD = 64,
+    FLAG_INF = 128,
+    FWD_D = FLAG_FWD + FLAG_DAT,
+    FWD_I = FLAG_FWD + FLAG_DAT + FLAG_INF,
+    FWD_B = FLAG_FWD + FLAG_DAT + FLAG_BIA,
+    BWD_D = FLAG_BWD + FLAG_DAT,
+    BWD_DW = FLAG_BWD + FLAG_DAT + FLAG_WEI,
+    BWD_W = FLAG_BWD + FLAG_WEI,
+    BWD_WB = FLAG_BWD + FLAG_WEI + FLAG_BIA,
+};
+dir_t str2dir(const char *str);
+
 struct res_t {
     res_state_t state;
     size_t errors, total;
     timer::timer_map_t timer_map;
     std::string impl_name;
+    std::string prim_ref_repro;
     skip_reason_t reason;
     size_t ibytes, obytes;
-    bool mem_check_done;
+    dir_t mem_check_dir = DIR_UNDEF;
 };
 
 void parse_result(res_t &res, const char *pstr);

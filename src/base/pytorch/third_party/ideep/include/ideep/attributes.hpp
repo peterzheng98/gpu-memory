@@ -480,6 +480,12 @@ struct attr_t : public dnnl::primitive_attr {
       }
     }
 
+    // encode computation modes
+    utils::to_bytes(bytes, get_fpmath_mode()); // fpmath mode
+    utils::to_bytes(bytes, get_scratchpad_mode()); // scratchpad mode
+    utils::to_bytes(bytes, get_accumulation_mode()); // accumulation mode
+    utils::to_bytes(bytes, get_deterministic()); // deterministic mode
+
     // Note: depthwise/binary post op, zero points, scales, rnn params are
     // not encoded so far. PD cache is supposed to use in convolution only
     // as a temporary workaround for gemm-based conv pd overhead

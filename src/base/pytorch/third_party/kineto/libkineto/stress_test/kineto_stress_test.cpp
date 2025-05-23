@@ -15,8 +15,8 @@
 #include <thread>
 #include <vector>
 
-#include <folly/dynamic.h>
-#include <folly/json.h>
+#include <folly/json/dynamic.h>
+#include <folly/json/json.h>
 
 #include <libkineto.h>
 #include <cuda.h>
@@ -28,6 +28,9 @@
 #include "kineto/libkineto/stress_test/random_ops_stress_test.cuh"
 #include "kineto/libkineto/stress_test/tensor_cache.cuh"
 #include "kineto/libkineto/stress_test/utils.h"
+#include "kineto/libkineto/fb/nccl_profiler/NcclProfiler.h"
+#include <c10/util/ApproximateClock.h>
+#include <ApproximateClock.h>
 
 using namespace kineto_stress_test;
 
@@ -88,6 +91,8 @@ void read_inputs_from_json(std::string sJsonFile, stress_test_args *test_args,
 
 void trace_collection_thread(uint32_t trace_length_us,
   uint32_t cupti_buffer_mb) {
+  c10::ApproximateClockToUnixTimeConverter clockConverter;
+
 
   if (cupti_buffer_mb > 0) {
     // Configure CUPTI buffer sizes
@@ -104,11 +109,14 @@ void trace_collection_thread(uint32_t trace_length_us,
     libkineto::ActivityType::GPU_MEMSET,
     libkineto::ActivityType::CUDA_RUNTIME,
     libkineto::ActivityType::EXTERNAL_CORRELATION,
-    libkineto::ActivityType::OVERHEAD
+    libkineto::ActivityType::OVERHEAD,
+    libkineto::ActivityType::COLLECTIVE_COMM
   };
   auto& profiler = libkineto::api().activityProfiler();
   libkineto::api().initProfilerIfRegistered();
   profiler.prepareTrace(types);
+  auto converter = clockConverter.makeConverter();
+  libkineto::get_time_converter() = converter;
 
   // Collect the trace
   profiler.startTrace();

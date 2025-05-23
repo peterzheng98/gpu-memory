@@ -28,9 +28,9 @@ using TraceKey = strong::type<
 
 struct CompressedEvent {
   TraceKey key_;
-  uint64_t system_tid_;
-  kineto::DeviceAndResource kineto_info_;
-  c10::time_t enter_t_;
+  uint64_t system_tid_{};
+  kineto::DeviceAndResource kineto_info_{};
+  c10::time_t enter_t_{};
 };
 
 /*
@@ -49,6 +49,7 @@ struct TORCH_API PythonTracerBase {
   virtual ~PythonTracerBase() = default;
 
   virtual void stop() = 0;
+  virtual void restart() = 0;
   virtual std::vector<std::shared_ptr<Result>> getEvents(
       std::function<c10::time_t(c10::approx_time_t)> time_converter,
       std::vector<CompressedEvent>& enters,

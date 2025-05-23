@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -257,6 +257,14 @@ public:
         u8 = dnnl_u8,
         /// Boolean data type. Size is C++ implementation defined.
         boolean = dnnl_boolean,
+        /// [OFP8 standard 8-bit
+        /// floating-point](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-06-20-pdf)
+        /// with a 5-bit exponent and a 2-bit mantissa.
+        f8_e5m2 = dnnl_f8_e5m2,
+        /// [OFP8 standard 8-bit
+        /// floating-point](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-06-20-pdf)
+        /// with a 4-bit exponent and a 3-bit mantissa.
+        f8_e4m3 = dnnl_f8_e4m3,
     };
 
     /// Layout type
@@ -563,6 +571,12 @@ public:
     /// @param lt The given logical tensor
     /// @param aengine Engine to store the data on.
     /// @param handle Handle of memory buffer to use as an underlying storage.
+    ///     - A pointer to the user-allocated buffer. In this case the library
+    ///       doesn't own the buffer.
+    ///     - The DNNL_MEMORY_ALLOCATE special value. Instructs the library to
+    ///       allocate the buffer for the tensor. In this case the library
+    ///       owns the buffer.
+    ///     - DNNL_MEMORY_NONE to create tensor without an underlying buffer.
     tensor(const logical_tensor &lt, const engine &aengine, void *handle) {
         dnnl_graph_tensor_t t = nullptr;
         error::wrap_c_api(
@@ -571,6 +585,14 @@ public:
                 "engine, and handle");
         reset(t);
     }
+
+    /// Constructs a tensor object.
+    /// The underlying buffer for the memory will be allocated by the library.
+    ///
+    /// @param lt The given logical tensor
+    /// @param aengine Engine to store the data on.
+    tensor(const logical_tensor &lt, const engine &aengine)
+        : tensor(lt, aengine, DNNL_MEMORY_ALLOCATE) {}
 
     /// Returns the underlying memory buffer.
     ///
@@ -922,6 +944,9 @@ public:
         /// Specifies a weights_format of an op. The value can be "OIX", "XIO",
         /// "IOX", or "XOI". Different operations may support different values.
         weights_format = dnnl_graph_op_attr_weights_format,
+
+        /// Specifies the end of all above exteral attributes for check.
+        end = dnnl_graph_op_attr_end,
     };
 
     /// Constructs an op object with an unique ID, an operation kind, and a name
@@ -1468,6 +1493,9 @@ inline void set_compiled_partition_cache_capacity(int capacity) {
 /// Control the enabling or disabling of constant tensor cache. This API must be
 /// called once before compilation stage. By default, constant tensor cache is
 /// disabled in the library.
+/// @note This API is deprecated and will be removed in future release, please
+/// use the set_constant_tensor_cache_capacity API to disable
+/// constant tensor cache by setting it's capacity to zero.
 ///
 /// @param flag Set to positive value to enable the cache and set to 0 to
 /// disable the cache. Negative values are invalid.
@@ -1477,11 +1505,42 @@ inline void set_constant_tensor_cache(int flag) {
 }
 
 /// Return the enabling status of constant tensor cache.
+/// @note This API is deprecated and will be removed in future release, please
+/// use the get_constant_tensor_cache_capacity API to check the
+/// enabling status by checking it's capacity.
 inline int get_constant_tensor_cache() {
     int result = 0;
     error::wrap_c_api(dnnl_graph_get_constant_tensor_cache(&result),
             "fail to get constant tensor cache");
     return result;
+}
+
+/// Control the capacity for the constant tensor cache that used for specific
+/// engine kind. This API is thread safe and can be called multiple times at
+/// runtime. The capacity is set to zero by default which means the cache is
+/// disabled. When calling this API, the corresponding cache will be flushed.
+/// Setting capacity to 0 means to clear all cached tensors and disable cache.
+/// Once the capacity limit is reached, no new tensors will be cached. If there
+/// are multiple devices for an engine kind, the capacity set here is for each
+/// device.
+///
+/// @param kind The engine kind that the constant tensor cache used for.
+/// @param size The constant tensor cache capacity size to set.
+inline void set_constant_tensor_cache_capacity(engine::kind kind, size_t size) {
+    error::wrap_c_api(dnnl_graph_set_constant_tensor_cache_capacity(
+                              static_cast<dnnl_engine_kind_t>(kind), size),
+            "fail to set constant tensor cache capacity");
+}
+
+/// Return the current capacity of constant tensor cache.
+///
+/// @param kind The engine kind that the constant tensor cache used for.
+inline size_t get_constant_tensor_cache_capacity(engine::kind kind) {
+    size_t size = 0;
+    error::wrap_c_api(dnnl_graph_get_constant_tensor_cache_capacity(
+                              static_cast<dnnl_engine_kind_t>(kind), &size),
+            "fail to get constant tensor cache capacity");
+    return size;
 }
 
 /// @} dnnl_graph_constant_tensor_cache

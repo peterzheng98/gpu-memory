@@ -25,6 +25,7 @@ from onnx.reference.ops.aionnxml.op_one_hot_encoder import OneHotEncoder
 from onnx.reference.ops.aionnxml.op_scaler import Scaler
 from onnx.reference.ops.aionnxml.op_svm_classifier import SVMClassifier
 from onnx.reference.ops.aionnxml.op_svm_regressor import SVMRegressor
+from onnx.reference.ops.aionnxml.op_tree_ensemble import TreeEnsemble
 from onnx.reference.ops.aionnxml.op_tree_ensemble_classifier import (
     TreeEnsembleClassifier,
 )
@@ -36,16 +37,23 @@ def _build_registered_operators() -> Dict[str, Dict[Union[int, None], OpRunAiOnn
 
 
 def load_op(
-    domain: str, op_type: str, version: Union[None, int], custom: Any = None
+    domain: str,
+    op_type: str,
+    version: Union[None, int],
+    custom: Any = None,
+    evaluator_cls: TOptional[type] = None,
 ) -> Any:
-    """
-    Loads the implemented for a specified operator.
+    """Loads the implemented for a specified operator.
 
-    :param domain: domain
-    :param op_type: oprator type
-    :param version: requested version
-    :param custom: custom implementation (like a function)
-    :return: class
+    Args:
+        domain: domain
+        op_type: oprator type
+        version: requested version
+        custom: custom implementation (like a function)
+        evaluator_cls: unused
+
+    Returns:
+        class
     """
     global _registered_operators  # noqa: PLW0603
     if _registered_operators is None:

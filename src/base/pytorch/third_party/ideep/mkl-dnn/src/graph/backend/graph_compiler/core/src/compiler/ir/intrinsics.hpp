@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2020-2023 Intel Corporation
+ * Copyright 2020-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,10 +28,12 @@ namespace impl {
 namespace graph {
 namespace gc {
 class ir_visitor_t;
+class ir_printer_t;
 struct intrinsic_handler_t {
     std::string name_;
     virtual void on_initialize(intrin_call_node &node) = 0;
     intrinsic_handler_t(const std::string &name);
+    virtual void to_string(const intrin_call_c &v, ir_printer_t *printer) const;
     virtual ~intrinsic_handler_t() = default;
 };
 
@@ -70,12 +72,12 @@ constexpr int STRIDE_B = 11;
 constexpr int NUM_BASIC_ARGS_STRIDE = STRIDE_B + 1;
 constexpr int LEN = 12;
 constexpr int NUM_BASIC_ARGS_LIST = LEN + 1;
-// extra +2 for c_buf and bdmask_idx
+// extra +4 for c_buf, bdmask_idx, top_pad, bottom_pad
 constexpr int NUM_FULL_ARGS_STRIDE
-        = NUM_BASIC_ARGS_STRIDE + brgemm::postops_data_init_func_nargs + 2;
-// extra +2 for c_buf and bdmask_idx
+        = NUM_BASIC_ARGS_STRIDE + brgemm::postops_data_init_func_nargs + 4;
+// extra +4 for c_buf, bdmask_idx, top_pad, bottom_pad
 constexpr int NUM_FULL_ARGS_LIST
-        = NUM_BASIC_ARGS_LIST + brgemm::postops_data_init_func_nargs + 2;
+        = NUM_BASIC_ARGS_LIST + brgemm::postops_data_init_func_nargs + 4;
 
 struct cpu_t {
     // use init_update or update
@@ -91,8 +93,10 @@ constexpr int brg_attrs = 2;
 constexpr int bd_mask = 3;
 constexpr int postops_setting = 4;
 constexpr int cache_nargs = postops_setting + 1;
-constexpr int postops_data = 5;
-constexpr int c_buf = 6;
+constexpr int top_pad = 5;
+constexpr int bottom_pad = 6;
+constexpr int postops_data = 7;
+constexpr int c_buf = 8;
 constexpr int nargs = c_buf + 1;
 } // namespace extra_args_offset
 

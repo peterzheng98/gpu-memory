@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2020-2023 Intel Corporation
+ * Copyright 2020-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -88,6 +88,21 @@ struct kernel_base_t {
             = 0;
 #endif
 
+#if DNNL_GPU_RUNTIME == DNNL_RUNTIME_OCL
+    status_t execute_ocl(const stream_t *astream,
+            const std::vector<tensor_t> &inputs,
+            const std::vector<tensor_t> &outputs,
+            const std::vector<cl_event> &ocl_deps, cl_event *ocl_event) {
+        return ocl_execute_impl(astream, inputs, outputs, ocl_deps, ocl_event);
+    }
+
+    virtual status_t ocl_execute_impl(const stream_t *astream,
+            const std::vector<tensor_t> &inputs,
+            const std::vector<tensor_t> &outputs,
+            const std::vector<cl_event> &ocl_deps, cl_event *ocl_event)
+            = 0;
+#endif
+
     virtual status_t compile_impl(const dnnl_partition_impl_t *part,
             const engine_t *aengine,
             const std::vector<logical_tensor_t> &inputs,
@@ -101,10 +116,7 @@ struct kernel_base_t {
 
     virtual status_t prepare_inplace_pairs_impl() { return status::success; };
 
-    bool enabled_constant_cache() const {
-        bool enabled = is_constant_cache_enabled();
-        return enabled;
-    }
+    bool enabled_constant_cache() const;
 
     std::vector<inplace_pair_t> inplace_pairs_;
     dnnl::engine p_engine_;
@@ -149,7 +161,8 @@ public:
                     engine_kind::cpu,
 #endif
 
-#if DNNL_GPU_RUNTIME == DNNL_RUNTIME_SYCL
+#if DNNL_GPU_RUNTIME == DNNL_RUNTIME_SYCL \
+        || DNNL_GPU_RUNTIME == DNNL_RUNTIME_OCL
                     engine_kind::gpu,
 #endif
                 };
@@ -177,7 +190,8 @@ public:
         // FIXME(xx): Here we only changes the passes in registry. If json file
         // existed, pm will run passes according to the json file, the env var
         // will not take effect.
-        // - priority > 20.f: large fusion pattern
+        // - priority == 50.f: data type check pass (fixed highest priority)
+        // - 50.f > priority > 20.f: large fusion pattern
         // - 20.f >= priority > 8.f: normal fusion pattern
         // - priority <= 8.f: debug fusion pattern (single op fusion)
         const float priority_ths = (policy == graph::partition_policy::fusion
@@ -185,13 +199,17 @@ public:
                 ? std::numeric_limits<float>::max()
                 : policy == graph::partition_policy::fusion ? 20.0f
                                                             : 8.0f;
-        graph::pass::pass_registry_t filtered_registry;
-        for (auto &pass : get_pass_registry().get_passes()) {
-            if (pass->get_priority() > priority_ths) continue;
-            filtered_registry.register_pass(pass);
-        }
 
-        graph::pass::pass_manager_t pm(filtered_registry);
+        const auto &dnnl_pass_filter
+                = [priority_ths](const graph::pass::pass_base_ptr &pass,
+                          partition_policy_t policy) -> bool {
+            UNUSED(policy);
+            return pass->get_priority() <= priority_ths;
+        };
+
+        auto &pass_registry = get_pass_registry();
+        graph::pass::pass_manager_t pm(pass_registry);
+
 #ifdef DNNL_ENABLE_GRAPH_DUMP
         std::string pass_config_json = "dnnl_graph_passes.json";
         std::ifstream fs(pass_config_json.c_str());
@@ -209,9 +227,9 @@ public:
                 pm.print_passes(pass_config_json);
             }
         }
-        pm.run_passes(agraph, &fs, policy);
+        pm.run_passes(agraph, &fs, policy, dnnl_pass_filter);
 #else
-        pm.run_passes(agraph, "", policy);
+        pm.run_passes(agraph, "", policy, dnnl_pass_filter);
 #endif
         return status::success;
     }
@@ -219,11 +237,11 @@ public:
 private:
     dnnl_backend(const std::string &name, float priority);
 
-    bool register_passes();
+    static graph::pass::pass_registry_t register_passes();
     bool register_op_schemas();
 
     dnnl_layout_id_manager_t layout_id_manager_;
-    graph::pass::pass_registry_t pass_registry_;
+    static graph::pass::pass_registry_t pass_registry_;
 };
 
 } // namespace dnnl_impl

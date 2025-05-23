@@ -85,6 +85,8 @@ void conv();
 void bnorm();
 void memory();
 void graph();
+void norm();
+void compare();
 
 int bench(int argc, char **argv);
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2023 Intel Corporation
+* Copyright 2023-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
 #define GPU_SYCL_SYCL_GPU_KERNEL_HPP
 
 #include "common/utils.hpp"
-#include "gpu/compute/compute.hpp"
 #include "sycl/sycl_utils.hpp"
 
 namespace dnnl {
@@ -26,7 +25,7 @@ namespace impl {
 namespace gpu {
 namespace sycl {
 
-struct sycl_gpu_kernel_t : public compute::kernel_impl_t {
+struct sycl_gpu_kernel_t : public intel::compute::kernel_impl_t {
     using kernel_bundle_e_t
             = ::sycl::kernel_bundle<::sycl::bundle_state::executable>;
 

@@ -112,8 +112,8 @@ try:
 
         NP_TO_TNP_MODULE = {}
     from torch._subclasses.fake_tensor import FakeTensor, is_fake, maybe_get_fake_mode
-except ImportError:
-    pass
+except ImportError as e:
+    print(e)
 
 
 T = TypeVar("T")

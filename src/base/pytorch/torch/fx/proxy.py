@@ -1,3 +1,5 @@
+# mypy: ignore-errors
+
 import enum
 import dis
 import copy
@@ -5,13 +7,14 @@ import sys
 import torch
 import inspect
 import operator
-import traceback
 import collections
+import logging
 
 from dataclasses import is_dataclass, fields
 
 
 from .graph import magic_methods, reflectable_magic_methods, Graph
+from torch.utils._traceback import CapturedTraceback
 from typing import Tuple, Dict, OrderedDict, Optional, Any, Iterator, Callable
 from .node import Target, Node, Argument, base_types, map_aggregate
 from ._compatibility import compatibility
@@ -21,6 +24,9 @@ import torch.fx.traceback as fx_traceback
 __all__ = ['TracerBase', 'GraphAppendingTracer', 'TraceError',
            'Proxy', 'Attribute', 'ParameterProxy', 'Scope',
            'ScopeContextManager']
+
+
+log = logging.getLogger(__name__)
 
 
 @compatibility(is_backward_compatible=False)
@@ -36,7 +42,7 @@ class Scope:
                 return x.transpose(1, 2)
 
         class M(torch.nn.Module):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.sub = Sub()
 
             def forward(self, x):
@@ -84,7 +90,19 @@ class ScopeContextManager:
         return
 
 
-_COPY_META_FIELDS = ["nn_module_stack", "source_fn_stack", "original_aten", "recompute", "from_node", "quantization_tag"]
+_COPY_META_FIELDS = [
+    "nn_module_stack",
+    "torch_fn",
+    "source_fn_stack",
+    "original_aten",
+    "recompute",
+    "ac_graph_id",
+    "from_node",
+    "quantization_tag",  # TODO deprecated
+    "_numeric_debug_handle",  # TODO deprecated
+    "custom",
+    "partitioner_tag"
+]
 
 
 @compatibility(is_backward_compatible=True)
@@ -123,6 +141,7 @@ class TracerBase:
         modification of values used in node creation. For example, one might
         want to disallow in-place operations from being recorded.
         """
+
         if kind == 'call_function' and self.check_mutable_operations:
             check_for_mutable_operation(target, args, kwargs)
 
@@ -156,12 +175,14 @@ class TracerBase:
             # nodes as is the case with in-place foreach ops. During the
             # BWD pass we retrieve the sequence_nr stored on the current
             # executing autograd Node. See NOTE [ Sequence Number ].
-            if current_meta.get("in_grad_fn", False):
-                new_seq_nr = current_meta["grad_fn_seq_nr"]
+            if current_meta.get("in_grad_fn", 0) > 0:
+                new_seq_nr = current_meta["grad_fn_seq_nr"][-1]
             node.meta["seq_nr"] = new_seq_nr
 
         elif self.module_stack:
             node.meta['nn_module_stack'] = copy.copy(self.module_stack)
+
+        log.debug("create_node %s", node)
         return node
 
     @compatibility(is_backward_compatible=True)
@@ -195,12 +216,8 @@ class TracerBase:
             proxy = proxy_factory_fn(node)
 
         if self.record_stack_traces and not proxy.node.stack_trace:
-            user_frame = self._find_user_frame()
-            if user_frame:
-                summary = traceback.extract_stack(user_frame)
-                tb_lines = summary.format()
-                # stack_trace would have innermost frame at the bottom
-                proxy.node.stack_trace = ''.join(tb_lines)
+            proxy.node.stack_trace = ''.join(CapturedTraceback.extract().format())
+
 
         return proxy
 
@@ -276,7 +293,7 @@ class TracerBase:
         elif isinstance(a, range):
             return range(self.create_arg(a.start), self.create_arg(a.stop), self.create_arg(a.step))
 
-        elif isinstance(a, torch._ops.OpOverload):
+        elif isinstance(a, (torch._ops.OpOverload, torch._ops.HigherOrderOperator)):
             return a
 
         if isinstance(a, Proxy):
@@ -370,7 +387,7 @@ class Proxy:
             indexed_item = proxied_value[i]
 
     For a more detailed description into the Proxy internals, check out
-    the "Proxy" section in `torch/fx/OVERVIEW.md`
+    the "Proxy" section in `torch/fx/README.md`
     """
 
     @compatibility(is_backward_compatible=True)
@@ -388,6 +405,35 @@ class Proxy:
         # note: not added to the graph yet, if this is a method call
         # we peephole optimize to the method invocation
         return Attribute(self, k)
+
+    def __getstate__(self) -> Dict:
+        return self.__dict__
+
+    def __deepcopy__(self, memo) -> Dict:
+        # We have to explicitly override this method, because otherwise deepcopy
+        # will go to __getattr__(self, "__deepcopy__") and return a
+        # Attribute(__deepcopy__), and may go into an infinite loop in some cases.
+        import copy
+        new_dict = {}
+        for k, v in self.__dict__.items():
+            try:
+                new_obj = copy.deepcopy(v, memo)
+            except Exception:
+                log.warning(
+                    "Shallow copy %s of Proxy because it cannot be deepcopied. "
+                    "Proxy is created for node %s", k, self.node.name)
+                new_obj = copy.copy(v)
+            new_dict[k] = new_obj
+        assert "node" in new_dict
+        assert "tracer" in new_dict
+        new_proxy = Proxy(new_dict["node"], new_dict["tracer"])
+        for k, v in new_dict.items():
+            new_proxy.__dict__[k] = v
+        return new_proxy
+
+    def __setstate__(self, d):
+        # This is called when being unpickled/loaded.
+        self.__dict__ = d
 
     def __call__(self, *args, **kwargs) -> 'Proxy':
         return self.tracer.create_proxy('call_method', '__call__', (self,) + args, kwargs)
@@ -510,7 +556,7 @@ class ParameterProxy(Proxy):
     """
     def __init__(self, tracer: TracerBase, node: Node, name, param):
         super().__init__(node, tracer)
-        assert(isinstance(param, torch.nn.Parameter))
+        assert isinstance(param, torch.nn.Parameter)
         self.param = param
         self.name = name
 

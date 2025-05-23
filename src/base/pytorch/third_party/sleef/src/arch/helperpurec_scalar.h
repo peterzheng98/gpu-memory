@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2023.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -54,15 +54,19 @@
 #define ENABLE_FMA_SP
 //@#define ENABLE_FMA_SP
 
-#if defined(__AVX2__) || defined(__aarch64__) || defined(__arm__) || defined(__powerpc64__) || defined(__zarch__) || CONFIG == 3
+#if defined(__AVX2__) || defined(__aarch64__) || defined(__arm__) || defined(__powerpc64__) || defined(__zarch__) || defined(__riscv) || CONFIG == 3
 #ifndef FP_FAST_FMA
+//@#ifndef FP_FAST_FMA
 #define FP_FAST_FMA
 //@#define FP_FAST_FMA
 #endif
+//@#endif
 #ifndef FP_FAST_FMAF
+//@#ifndef FP_FAST_FMAF
 #define FP_FAST_FMAF
 //@#define FP_FAST_FMAF
 #endif
+//@#endif
 #endif
 
 #if (!defined(FP_FAST_FMA) || !defined(FP_FAST_FMAF)) && !defined(SLEEF_GENHEADER)
@@ -94,33 +98,22 @@
 
 #define DFTPRIORITY LOG2VECTLENDP
 
-typedef union {
-  uint32_t u[2];
-  int32_t i[2];
-  uint64_t x;
-  double d;
-  float f;
-  int64_t i2;
-} versatileVector;
-
 typedef uint64_t vmask;
 typedef uint32_t vopmask;
 typedef double vdouble;
 typedef int32_t vint;
 typedef float vfloat;
-typedef int64_t vint2;
+typedef int32_t vint2;
 
 typedef int64_t vint64;
 typedef uint64_t vuint64;
 
-typedef struct {
-  vmask x, y;
-} vmask2;
+typedef Sleef_uint64_2t vquad;
 
-#if defined(ENABLEFLOAT128) && CONFIG != 3
-typedef __float128 vargquad;
+#if CONFIG != 3
+typedef Sleef_quad vargquad;
 #else
-typedef vmask2 vargquad;
+typedef Sleef_uint64_2t vargquad;
 #endif
 
 //
@@ -142,12 +135,14 @@ static void vstoreu_v_p_vi(int32_t *p, vint v) { *p = v; }
 
 static INLINE vopmask vcast_vo32_vo64(vopmask m) { return m; }
 static INLINE vopmask vcast_vo64_vo32(vopmask m) { return m; }
+static INLINE vopmask vcast_vo_i(int i) { return i ? -1 : 0; }
 static INLINE vmask vcast_vm_i_i(int h, int l) { return (((uint64_t)h) << 32) | (uint32_t)l; }
 
-static INLINE vint2 vcastu_vi2_vi(vint vi) { return ((int64_t)vi) << 32; }
-static INLINE vint vcastu_vi_vi2(vint2 vi2) { return vi2 >> 32; }
+static INLINE vmask vcast_vm_i64(int64_t i) { return (int64_t)i; }
+static INLINE vmask vcast_vm_u64(uint64_t i) { return i; }
 
-static INLINE vint2 vrev21_vi2_vi2(vint2 vi2) { return (((uint64_t)vi2) << 32) | (((uint64_t)vi2) >> 32); }
+static INLINE vmask vcastu_vm_vi(vint vi) { return ((uint64_t)vi) << 32; }
+static INLINE vint vcastu_vi_vm(vmask vm) { return (int32_t)(vm >> 32); }
 
 static INLINE vdouble vcast_vd_d(double d) { return d; }
 
@@ -201,8 +196,11 @@ static INLINE vint vtruncate_vi_vd(vdouble vd) { return (int32_t)TRUNC(vd); }
 #else
 static INLINE vint vrint_vi_vd(vdouble a) {
   a += a > 0 ? 0.5 : -0.5;
-  versatileVector v; v.d = a; v.x -= 1 & (int)a;
-  return (int32_t)v.d;
+  uint64_t vx;
+  memcpy(&vx, &a, sizeof(vx));
+  vx -= 1 & (int)a;
+  memcpy(&a, &vx, sizeof(a));
+  return a;
 }
 static INLINE vdouble vrint_vd_vd(vdouble vd) { return vcast_vd_vi(vrint_vi_vd(vd)); }
 static INLINE vint vtruncate_vi_vd(vdouble vd) { return vd; }
@@ -214,10 +212,8 @@ static INLINE vmask vadd64_vm_vm_vm(vmask x, vmask y) { return x + y; }
 
 //
 
-static INLINE vmask vreinterpret_vm_vd(vdouble vd) { union { vdouble vd; vmask vm; } cnv; cnv.vd = vd; return cnv.vm; }
-static INLINE vint2 vreinterpret_vi2_vd(vdouble vd) { union { vdouble vd; vint2 vi2; } cnv; cnv.vd = vd; return cnv.vi2; }
-static INLINE vdouble vreinterpret_vd_vi2(vint2 vi) { union { vint2 vi2; vdouble vd; } cnv; cnv.vi2 = vi; return cnv.vd; }
-static INLINE vdouble vreinterpret_vd_vm(vmask vm) { union { vmask vm; vdouble vd; } cnv; cnv.vm = vm; return cnv.vd; }
+static INLINE vmask vreinterpret_vm_vd(vdouble vd) { vmask vm; memcpy(&vm, &vd, sizeof(vm)); return vm; }
+static INLINE vdouble vreinterpret_vd_vm(vmask vm) { vdouble vd; memcpy(&vd, &vm, sizeof(vd)); return vd; }
 
 static INLINE vdouble vadd_vd_vd_vd(vdouble x, vdouble y) { return x + y; }
 static INLINE vdouble vsub_vd_vd_vd(vdouble x, vdouble y) { return x - y; }
@@ -225,7 +221,13 @@ static INLINE vdouble vmul_vd_vd_vd(vdouble x, vdouble y) { return x * y; }
 static INLINE vdouble vdiv_vd_vd_vd(vdouble x, vdouble y) { return x / y; }
 static INLINE vdouble vrec_vd_vd(vdouble x)               { return 1 / x; }
 
-static INLINE vdouble vabs_vd_vd(vdouble d) { versatileVector v; v.d = d; v.x &= 0x7fffffffffffffffULL; return v.d; }
+static INLINE vdouble vabs_vd_vd(vdouble d) {
+  uint64_t vx;
+  memcpy(&vx, &d, sizeof(vx));
+  vx &= UINT64_C(0x7fffffffffffffff);
+  memcpy(&d, &vx, sizeof(d));
+  return d;
+}
 static INLINE vdouble vneg_vd_vd(vdouble d) { return -d; }
 
 static INLINE vdouble vmax_vd_vd_vd(vdouble x, vdouble y) { return x > y ? x : y; }
@@ -294,8 +296,8 @@ static INLINE void vstream_v_p_vd(double *ptr, vdouble v) { *ptr = v; }
 
 //
 
-static INLINE vint2 vcast_vi2_vm(vmask vm) { union { vint2 vi2; vmask vm; } cnv; cnv.vm = vm; return cnv.vi2; }
-static INLINE vmask vcast_vm_vi2(vint2 vi) { union { vint2 vi2; vmask vm; } cnv; cnv.vi2 = vi; return cnv.vm; }
+static INLINE vint2 vcast_vi2_vm(vmask vm) { return (int32_t)vm; }
+static INLINE vmask vcast_vm_vi2(vint2 vi) { return (uint32_t)vi; }
 
 static INLINE vfloat vcast_vf_vi2(vint2 vi) { return (int32_t)vi; }
 static INLINE vint2 vcast_vi2_i(int j) { return j; }
@@ -308,8 +310,11 @@ static INLINE vint2 vtruncate_vi2_vf(vfloat vf) { return (int32_t)TRUNCF(vf); }
 #else
 static INLINE vint2 vrint_vi2_vf(vfloat a) {
   a += a > 0 ? 0.5f : -0.5f;
-  versatileVector v; v.f = a; v.u[0] -= 1 & (int)a;
-  return (int32_t)v.f;
+  uint32_t vu[1];
+  memcpy(vu, &a, sizeof(vu));
+  vu[0] -= 1 & (int)a;
+  memcpy(&a, vu, sizeof(a));
+  return (int32_t)a;
 }
 static INLINE vfloat vrint_vf_vf(vfloat vd) { return vcast_vf_vi2(vrint_vi2_vf(vd)); }
 static INLINE vint2 vtruncate_vi2_vf(vfloat vf) { return vf; }
@@ -317,15 +322,10 @@ static INLINE vfloat vtruncate_vf_vf(vfloat vd) { return vcast_vf_vi2(vtruncate_
 #endif
 
 static INLINE vfloat vcast_vf_f(float f) { return f; }
-static INLINE vmask vreinterpret_vm_vf(vfloat vf) { union { vfloat vf; vmask vm; } cnv; cnv.vf = vf; return cnv.vm; }
-static INLINE vfloat vreinterpret_vf_vm(vmask vm) { union { vfloat vf; vmask vm; } cnv; cnv.vm = vm; return cnv.vf; }
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
-static INLINE vfloat vreinterpret_vf_vi2(vint2 vi) { union { vfloat vf[2]; vint2 vi2; } cnv; cnv.vi2 = vi; return cnv.vf[1]; }
-static INLINE vint2 vreinterpret_vi2_vf(vfloat vf) { union { vfloat vf[2]; vint2 vi2; } cnv; cnv.vi2 = 0; cnv.vf[1] = vf; return cnv.vi2; }
-#else
-static INLINE vfloat vreinterpret_vf_vi2(vint2 vi) { union { vfloat vf; vint2 vi2; } cnv; cnv.vi2 = vi; return cnv.vf; }
-static INLINE vint2 vreinterpret_vi2_vf(vfloat vf) { union { vfloat vf; vint2 vi2; } cnv; cnv.vi2 = 0; cnv.vf = vf; return cnv.vi2; }
-#endif
+static INLINE vmask vreinterpret_vm_vf(vfloat f) { vfloat vf[2] = { f, 0 }; vmask vm; memcpy(&vm, &vf, sizeof(vm)); return vm; }
+static INLINE vfloat vreinterpret_vf_vm(vmask vm) { vfloat vf[2]; memcpy(&vf, &vm, sizeof(vf)); return vf[0]; }
+static INLINE vfloat vreinterpret_vf_vi2(vint2 vi) { vfloat vf; memcpy(&vf, &vi, sizeof(vf)); return vf; }
+static INLINE vint2 vreinterpret_vi2_vf(vfloat f) { vint2 vi2; memcpy(&vi2, &f, sizeof(vi2)); return vi2; }
 
 static INLINE vfloat vadd_vf_vf_vf(vfloat x, vfloat y) { return x + y; }
 static INLINE vfloat vsub_vf_vf_vf(vfloat x, vfloat y) { return x - y; }
@@ -333,7 +333,13 @@ static INLINE vfloat vmul_vf_vf_vf(vfloat x, vfloat y) { return x * y; }
 static INLINE vfloat vdiv_vf_vf_vf(vfloat x, vfloat y) { return x / y; }
 static INLINE vfloat vrec_vf_vf   (vfloat x)           { return 1 / x; }
 
-static INLINE vfloat vabs_vf_vf(vfloat x) { versatileVector v; v.f = x; v.i[0] &= 0x7fffffff; return v.f; }
+static INLINE vfloat vabs_vf_vf(vfloat x) {
+  int32_t vi[1];
+  memcpy(vi, &x, sizeof(vi));
+  vi[0] &= 0x7fffffff;
+  memcpy(&x, vi, sizeof(x));
+  return x;
+}
 static INLINE vfloat vneg_vf_vf(vfloat x) { return -x; }
 
 static INLINE vfloat vmax_vf_vf_vf(vfloat x, vfloat y) { return x > y ? x : y; }
@@ -361,9 +367,9 @@ static INLINE vopmask vle_vo_vf_vf(vfloat x, vfloat y)  { return x <= y ? ~(uint
 static INLINE vopmask vgt_vo_vf_vf(vfloat x, vfloat y)  { return x >  y ? ~(uint32_t)0 : 0; }
 static INLINE vopmask vge_vo_vf_vf(vfloat x, vfloat y)  { return x >= y ? ~(uint32_t)0 : 0; }
 
-static INLINE vint2 vadd_vi2_vi2_vi2(vint2 x, vint2 y) { versatileVector v, w; v.i2 = x; w.i2 = y; v.i[0] += w.i[0]; v.i[1] += w.i[1]; return v.i2; }
-static INLINE vint2 vsub_vi2_vi2_vi2(vint2 x, vint2 y) { versatileVector v, w; v.i2 = x; w.i2 = y; v.i[0] -= w.i[0]; v.i[1] -= w.i[1]; return v.i2; }
-static INLINE vint2 vneg_vi2_vi2(vint2 x)              { versatileVector v; v.i2 = x; v.i[0] = -v.i[0]; v.i[1] = -v.i[1]; return v.i2; }
+static INLINE vint2 vadd_vi2_vi2_vi2(vint2 x, vint2 y) { return x + y; }
+static INLINE vint2 vsub_vi2_vi2_vi2(vint2 x, vint2 y) { return x - y; }
+static INLINE vint2 vneg_vi2_vi2(vint2 x) { return -x; }
 
 static INLINE vint2 vand_vi2_vi2_vi2(vint2 x, vint2 y)    { return x & y; }
 static INLINE vint2 vandnot_vi2_vi2_vi2(vint2 x, vint2 y) { return y & ~x; }
@@ -384,9 +390,15 @@ static INLINE vfloat vsel_vf_vo_vo_vo_f_f_f_f(vopmask o0, vopmask o1, vopmask o2
 static INLINE vint2 vand_vi2_vo_vi2(vopmask x, vint2 y) { return vcast_vm_vo(x) & y; }
 static INLINE vint2 vandnot_vi2_vo_vi2(vopmask x, vint2 y) { return y & ~vcast_vm_vo(x); }
 
-static INLINE vint2 vsll_vi2_vi2_i(vint2 x, int c) { versatileVector v; v.i2 = x; v.u[0] <<= c; v.u[1] <<= c; return v.i2; }
-static INLINE vint2 vsrl_vi2_vi2_i(vint2 x, int c) { versatileVector v; v.i2 = x; v.u[0] >>= c; v.u[1] >>= c; return v.i2; }
-static INLINE vint2 vsra_vi2_vi2_i(vint2 x, int c) { versatileVector v; v.i2 = x; v.i[0] >>= c; v.i[1] >>= c; return v.i2; }
+static INLINE vint2 vsll_vi2_vi2_i(vint2 x, int c) {
+  return x << c;
+}
+static INLINE vint2 vsrl_vi2_vi2_i(vint2 x, int c) {
+  return ((uint32_t)x) >> c;
+}
+static INLINE vint2 vsra_vi2_vi2_i(vint2 x, int c) {
+  return x >> c;
+}
 
 static INLINE vopmask visinf_vo_vf (vfloat d) { return (d == SLEEF_INFINITYf || d == -SLEEF_INFINITYf) ? ~(uint32_t)0 : 0; }
 static INLINE vopmask vispinf_vo_vf(vfloat d) { return d == SLEEF_INFINITYf ? ~(uint32_t)0 : 0; }
@@ -411,42 +423,42 @@ static INLINE void vstream_v_p_vf(float *ptr, vfloat v) { *ptr = v; }
 //
 
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
-static vmask2 vloadu_vm2_p(void *p) {
-  vmask2 vm2;
-  memcpy(8 + (char *)&vm2, p, 8);
-  memcpy((char *)&vm2, 8 + p, 8);
-  return vm2;
+static vquad loadu_vq_p(void *p) {
+  vquad vq;
+  memcpy(8 + (char *)&vq, p, 8);
+  memcpy((char *)&vq, 8 + p, 8);
+  return vq;
 }
 
-static INLINE vmask2 vcast_vm2_aq(vargquad aq) {
-  vmask2 vm2;
-  memcpy(8 + (char *)&vm2, (char *)&aq, 8);
-  memcpy((char *)&vm2, 8 + (char *)&aq, 8);
-  return vm2;
+static INLINE vquad cast_vq_aq(vargquad aq) {
+  vquad vq;
+  memcpy(8 + (char *)&vq, (char *)&aq, 8);
+  memcpy((char *)&vq, 8 + (char *)&aq, 8);
+  return vq;
 }
 
-static INLINE vargquad vcast_aq_vm2(vmask2 vm2) {
+static INLINE vargquad cast_aq_vq(vquad vq) {
   vargquad aq;
-  memcpy(8 + (char *)&aq, (char *)&vm2, 8);
-  memcpy((char *)&aq, 8 + (char *)&vm2, 8);
+  memcpy(8 + (char *)&aq, (char *)&vq, 8);
+  memcpy((char *)&aq, 8 + (char *)&vq, 8);
   return aq;
 }
 #else
-static vmask2 vloadu_vm2_p(void *p) {
-  vmask2 vm2;
-  memcpy(&vm2, p, 16);
-  return vm2;
+static vquad loadu_vq_p(void *p) {
+  vquad vq;
+  memcpy(&vq, p, sizeof(vq));
+  return vq;
 }
 
-static INLINE vmask2 vcast_vm2_aq(vargquad aq) {
-  vmask2 vm2;
-  memcpy(&vm2, &aq, 16);
-  return vm2;
+static INLINE vquad cast_vq_aq(vargquad aq) {
+  vquad vq;
+  memcpy(&vq, &aq, sizeof(vq));
+  return vq;
 }
 
-static INLINE vargquad vcast_aq_vm2(vmask2 vm2) {
+static INLINE vargquad cast_aq_vq(vquad vq) {
   vargquad aq;
-  memcpy(&aq, &vm2, 16);
+  memcpy(&aq, &vq, sizeof(aq));
   return aq;
 }
 #endif

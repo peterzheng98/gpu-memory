@@ -30,6 +30,7 @@ set(KINETO_LIBRARY_TYPE "default" CACHE STRING
 set_property(CACHE KINETO_LIBRARY_TYPE PROPERTY STRINGS default shared)
 option(KINETO_BUILD_TESTS "Build kineto unit tests" ON)
 
+set(LIBKINETO_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(LIBKINETO_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(LIBKINETO_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(LIBKINETO_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
@@ -51,6 +52,77 @@ if (NOT ROCM_SOURCE_DIR)
     message(INFO " ROCM_SOURCE_DIR = ${ROCM_SOURCE_DIR}")
 endif()
 
+if (KINETO_BUILD_TESTS)
+  enable_testing()
+  if (NOT CUDA_SOURCE_DIR)
+    set(CUDA_SOURCE_DIR "$ENV{CUDA_HOME}")
+    message(INFO " CUDA_SOURCE_DIR = ${CUDA_SOURCE_DIR}")
+  endif()
+
+  if (NOT CUPTI_INCLUDE_DIR)
+    find_path(CUPTI_INCLUDE_DIR cupti.h PATHS
+        ${CUDA_SOURCE_DIR}/extras/CUPTI/include
+        ${CUDA_INCLUDE_DIRS}
+        ${CUDA_SOURCE_DIR}
+        ${CUDA_SOURCE_DIR}/include
+        NO_DEFAULT_PATH)
+  endif()
+
+  if (NOT CUDA_cupti_LIBRARY)
+    if(NOT MSVC)
+      set(CUPTI_LIB_NAME "libcupti.so")
+    else()
+      set(CUPTI_LIB_NAME "cupti.lib")
+    endif()
+    find_library(CUPTI_LIBRARY_PATH ${CUPTI_LIB_NAME} PATHS
+        ${CUDA_SOURCE_DIR}
+        ${CUDA_SOURCE_DIR}/extras/CUPTI/lib64
+        ${CUDA_SOURCE_DIR}/lib
+        ${CUDA_SOURCE_DIR}/lib64
+        NO_DEFAULT_PATH)
+  endif()
+
+  if (NOT CUDA_nvperf_host_LIBRARY)
+    set(CUDA_NVPERF_HOST_LIB_NAME "libnvperf_host.so")
+    find_library(CUDA_NVPERF_HOST_LIB_PATH ${CUDA_NVPERF_HOST_LIB_NAME} PATHS
+        ${CUDA_SOURCE_DIR}
+        ${CUDA_SOURCE_DIR}/extras/CUPTI/lib64
+        ${CUDA_SOURCE_DIR}/lib
+        ${CUDA_SOURCE_DIR}/lib64
+        NO_DEFAULT_PATH)
+  endif()
+
+  if (NOT CUDA_cudart_LIBRARY)
+    set(CUDA_CUDART_LIB_NAME "libcudart.so")
+    find_library(CUDA_CUDART_LIB_PATH ${CUDA_CUDART_LIB_NAME} PATHS
+        ${CUDA_SOURCE_DIR}
+        ${CUDA_SOURCE_DIR}/lib
+        ${CUDA_SOURCE_DIR}/lib64
+        NO_DEFAULT_PATH)
+  endif()
+
+  if(CUDA_NVPERF_HOST_LIB_PATH)
+    set(CUDA_nvperf_host_LIBRARY ${CUDA_NVPERF_HOST_LIB_PATH})
+    message(INFO "  CUDA_nvperf_host_LIBRARY = ${CUDA_nvperf_host_LIBRARY}")
+  endif()
+
+  if(CUDA_CUDART_LIB_PATH)
+    set(CUDA_cudart_LIBRARY ${CUDA_CUDART_LIB_PATH})
+    message(INFO "  CUDA_cudart_LIBRARY = ${CUDA_cudart_LIBRARY}")
+  endif()
+
+  if(CUPTI_LIBRARY_PATH AND CUPTI_INCLUDE_DIR)
+    message(INFO "  CUPTI_INCLUDE_DIR = ${CUPTI_INCLUDE_DIR}")
+    set(CUDA_cupti_LIBRARY ${CUPTI_LIBRARY_PATH})
+    message(INFO "  CUDA_cupti_LIBRARY = ${CUDA_cupti_LIBRARY}")
+    message(INFO "Found CUPTI")
+    set(LIBKINETO_NOCUPTI OFF CACHE STRING "" FORCE)
+  else()
+    message(STATUS "Could not find CUPTI library")
+    set(LIBKINETO_NOCUPTI ON CACHE STRING "" FORCE)
+  endif()
+endif()
+
 # Set LIBKINETO_NOCUPTI to explicitly disable CUPTI
 # Otherwise, CUPTI is disabled if not found
 IF (NOT CUDA_SOURCE_DIR OR NOT CUPTI_INCLUDE_DIR OR NOT CUDA_cupti_LIBRARY)
@@ -61,13 +133,20 @@ IF (NOT ROCM_SOURCE_DIR AND NOT ROCTRACER_INCLUDE_DIR)
     set(LIBKINETO_NOROCTRACER ON CACHE BOOL "" FORCE)
 endif()
 
+IF (DEFINED LIBKINETO_NOXPUPTI AND NOT LIBKINETO_NOXPUPTI)
+    add_subdirectory(src/plugin/xpupti)
+endif()
+
 # Define file lists
-if (LIBKINETO_NOCUPTI AND LIBKINETO_NOROCTRACER)
+if (LIBKINETO_NOCUPTI AND LIBKINETO_NOROCTRACER AND LIBKINETO_NOXPUPTI)
     get_filelist("get_libkineto_cpu_only_srcs(with_api=False)" LIBKINETO_SRCS)
     message(INFO " CUPTI unavailable or disabled - not building GPU profilers")
 elseif(NOT LIBKINETO_NOROCTRACER)
     get_filelist("get_libkineto_roctracer_srcs(with_api=False)" LIBKINETO_SRCS)
     message(INFO " Building with roctracer")
+elseif(DEFINED LIBKINETO_NOXPUPTI AND NOT LIBKINETO_NOXPUPTI)
+    get_filelist("get_libkineto_xpupti_srcs(with_api=False)" LIBKINETO_SRCS)
+    message(INFO " Building with xpupti")
 else()
     get_filelist("get_libkineto_cupti_srcs(with_api=False)" LIBKINETO_SRCS)
 endif()
@@ -98,6 +177,9 @@ else()
 endif()
 if (NOT LIBKINETO_NOCUPTI)
   list(APPEND KINETO_COMPILE_OPTIONS "-DHAS_CUPTI")
+endif()
+if (DEFINED LIBKINETO_NOXPUPTI AND NOT LIBKINETO_NOXPUPTI)
+  list(APPEND KINETO_COMPILE_OPTIONS ${XPUPTI_BUILD_FLAG})
 endif()
 if (CUDA_nvperf_host_LIBRARY)
   list(APPEND KINETO_COMPILE_OPTIONS "-DUSE_CUPTI_RANGE_PROFILER")
@@ -167,6 +249,10 @@ target_include_directories(kineto_base PUBLIC
       $<BUILD_INTERFACE:${ROCTRACER_INCLUDE_DIR}>
       $<BUILD_INTERFACE:${ROCM_INCLUDE_DIRS}>)
 
+if(DEFINED LIBKINETO_NOXPUPTI AND NOT LIBKINETO_NOXPUPTI)
+  target_include_directories(kineto_base PUBLIC ${XPUPTI_INCLUDE_DIR})
+endif()
+
 target_include_directories(kineto_api PUBLIC
       $<BUILD_INTERFACE:${FMT_INCLUDE_DIR}>
       $<BUILD_INTERFACE:${LIBKINETO_INCLUDE_DIR}>)
@@ -181,8 +267,10 @@ elseif(KINETO_LIBRARY_TYPE STREQUAL "static")
     $<TARGET_OBJECTS:kineto_api>)
 elseif(KINETO_LIBRARY_TYPE STREQUAL "shared")
   add_library(kineto SHARED
-    $<TARGET_OBJECTS:kineto_base>)
+    $<TARGET_OBJECTS:kineto_base>
+    $<TARGET_OBJECTS:kineto_api>)
   set_property(TARGET kineto_base PROPERTY POSITION_INDEPENDENT_CODE ON)
+  set_property(TARGET kineto_api PROPERTY POSITION_INDEPENDENT_CODE ON)
   set_target_properties(kineto PROPERTIES
     CXX_VISIBILITY_PRESET hidden)
 else()
@@ -190,9 +278,11 @@ else()
 endif()
 
 if(NOT LIBKINETO_NOROCTRACER)
-  find_library(ROCTRACER_LIBRARY NAMES libroctracer64.so HINTS /opt/rocm/lib)
+  find_library(ROCTRACER_LIBRARY NAMES libroctracer64.so HINTS
+    ${ROCM_SOURCE_DIR}/lib)
   target_link_libraries(kineto "${ROCTRACER_LIBRARY}")
-  find_library(KINETO_HIP_LIBRARY NAMES libamdhip64.so HINTS /opt/rocm/lib)
+  find_library(KINETO_HIP_LIBRARY NAMES libamdhip64.so HINTS
+    ${ROCM_SOURCE_DIR}/lib)
   target_link_libraries(kineto "${KINETO_HIP_LIBRARY}")
 endif()
 
@@ -201,6 +291,9 @@ if(NOT LIBKINETO_NOCUPTI)
 endif()
 if(CUDA_nvperf_host_LIBRARY)
   target_link_libraries(kineto "${CUDA_nvperf_host_LIBRARY}")
+endif()
+if(DEFINED LIBKINETO_NOXPUPTI AND NOT LIBKINETO_NOXPUPTI)
+  target_link_libraries(kineto "${XPU_xpupti_LIBRARY}")
 endif()
 target_link_libraries(kineto $<BUILD_INTERFACE:fmt::fmt-header-only>)
 add_dependencies(kineto fmt::fmt-header-only)
@@ -217,4 +310,5 @@ install(EXPORT kinetoLibraryConfig DESTINATION share/cmake/kineto
 
 if(KINETO_BUILD_TESTS)
   add_subdirectory(test)
+  add_subdirectory("${LIBKINETO_THIRDPARTY_DIR}/googletest")
 endif()

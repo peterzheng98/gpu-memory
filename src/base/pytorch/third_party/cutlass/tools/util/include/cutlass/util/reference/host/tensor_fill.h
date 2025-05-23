@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -566,7 +566,6 @@ struct RandomUniformFunc {
     // Random values are cast to integer after scaling by a power of two to facilitate error
     // testing
     Element result;
-    
     if (int_scale >= 0) {
       rnd = double(int64_t(rnd * double(1 << int_scale))) / double(1 << int_scale);
       result = static_cast<Element>(Real(rnd));
@@ -948,6 +947,20 @@ void TensorFillPadDiagonalRandomUniform(
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Fills a tensor with a uniform value
+template <
+  typename Element                        ///< Element type
+>
+void BlockFill(
+  Element *ptr,
+  size_t capacity,
+  Element val
+  ) {                                       
+  for (size_t i = 0; i < capacity; ++i) {
+    ReferenceFactory<Element>::get(ptr, i) = val;
+  }
+}
+
 /// Fills a tensor with random values with a uniform random distribution.
 template <
   typename Element                        ///< Element type
@@ -1253,15 +1266,15 @@ void TensorFillRandom(
     TensorFillRandomGaussian(
       view,
       seed,
-      static_cast<Real>(dist.gaussian.mean),
-      static_cast<Real>(dist.gaussian.stddev),
+      dist.gaussian.mean,
+      dist.gaussian.stddev,
       dist.int_scale);
   } else if (dist.kind == Distribution::Uniform) {
     TensorFillRandomUniform(
       view,
       seed,
-      static_cast<Real>(dist.uniform.max),
-      static_cast<Real>(dist.uniform.min),
+      dist.uniform.max,
+      dist.uniform.min,
       dist.int_scale);
   }
 }

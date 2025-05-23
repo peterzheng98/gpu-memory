@@ -1,10 +1,10 @@
 # Owner(s): ["oncall: quantization"]
 import copy
 import unittest
+from typing import Any, Dict
 
 import torch
-import torch._export as export
-
+from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.observer import (
     HistogramObserver,
     MinMaxObserver,
@@ -24,14 +24,13 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
     OP_TO_ANNOTATOR,
     QuantizationConfig,
 )
-
 from torch.testing._internal.common_quantization import QuantizationTestCase
 from torch.testing._internal.common_utils import IS_WINDOWS
 
 
 class TestHelperModules:
     class Conv2dWithObsSharingOps(torch.nn.Module):
-        def __init__(self):
+        def __init__(self) -> None:
             super().__init__()
             self.conv = torch.nn.Conv2d(3, 3, 3)
             self.hardtanh = torch.nn.Hardtanh()
@@ -47,7 +46,7 @@ class TestHelperModules:
             return x
 
     class Conv2dWithSharedDQ(torch.nn.Module):
-        def __init__(self):
+        def __init__(self) -> None:
             super().__init__()
             self.conv1 = torch.nn.Conv2d(3, 3, 3)
             self.conv2 = torch.nn.Conv2d(3, 3, 1)
@@ -65,7 +64,7 @@ class TestHelperModules:
             return w, add_output, extra_output
 
     class ModuleForDifferentQconfig(torch.nn.Module):
-        def __init__(self):
+        def __init__(self) -> None:
             super().__init__()
             self.conv1 = torch.nn.Conv2d(3, 3, 3)
             self.conv2 = torch.nn.Conv2d(3, 3, 1)
@@ -101,7 +100,7 @@ class TestDuplicateDQPass(QuantizationTestCase):
 
         # program capture
         m = copy.deepcopy(m_eager)
-        m = export.capture_pre_autograd_graph(
+        m = capture_pre_autograd_graph(
             m,
             example_inputs,
         )
@@ -249,7 +248,7 @@ class TestDuplicateDQPass(QuantizationTestCase):
                     eps=2**-12
                 ),
             )
-            weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+            weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (  # noqa: F821
                 MinMaxObserver
             )
 
@@ -266,7 +265,7 @@ class TestDuplicateDQPass(QuantizationTestCase):
                 ),
             )
 
-            bias_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+            bias_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (  # noqa: F821
                 PlaceholderObserver
             )
             bias_quantization_spec = QuantizationSpec(

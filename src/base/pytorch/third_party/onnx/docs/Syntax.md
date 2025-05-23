@@ -56,8 +56,16 @@ The grammar below describes the syntax:
             | 'optional' '(' type ')' | 'sparse_tensor' '(' tensor-type ')'
    value-info ::= type id
    value-infos ::= value-info (',' value-info)*
-   value-info-list ::= '(' value-infos? ')'
-   value-info-or-initializer ::= type id [ = '{' prim-constants '}']
+   value-info-list ::= '(' value-infos? ')
+   id-or-value-info ::= type? id
+   id-or-value-infos ::= id-or-value-info (',' id-or-value-info)*
+   quoted-str :== '"' ([^"])* '"'
+   str-str :== quoted-str ':' quoted-str
+   str-str-list :== '[' str-str (',' str-str)* ']'
+   internal-data ::= '{' prim-constants '}'
+   external-data ::= str-str-list
+   constant-data ::= internal-data | external-data
+   value-info-or-initializer ::= type id [ '=' constant-data ]
    value-info-or-initializers ::= value-info-or-initializer (',' value-info-or-initializer)*
    input-list ::= '(' value-info-or-initializers? ')'
    output-list ::= '(' value-infos? ')'
@@ -78,8 +86,9 @@ The grammar below describes the syntax:
    other-data ::= id ':' value
    other-data-list ::= '<' other-data (',' other-data)* '>'
    fun-attr-list ::= '<' id | attr (',' id | attr)* '>'
-   fun-input-list ::= '(' id-list ')'
-   fun-output-list ::= '(' id-list ')'
-   function ::= other-data-list? id fun-attr-list?  fun-input-list '=>' fun-output-list  node-list
+   fun-input-list ::= '(' id-or-value-infos ')'
+   fun-output-list ::= '(' id-or-value-infos ')'
+   fun-value-infos ::= ( '<' value-infos '>' )?
+   function ::= other-data-list? id fun-attr-list?  fun-input-list '=>' fun-output-list fun-value-infos node-list
    model ::= other-data-list? graph function*
 ```

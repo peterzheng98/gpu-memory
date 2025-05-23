@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021-2023 Intel Corporation
+* Copyright 2021-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -47,15 +47,17 @@ public:
 
     // the criteria of pass execution
     impl::status_t run(graph_t &agraph) override {
-        graph::pass::FCreatePattern pfunc
-                = get_attr<graph::pass::FCreatePattern>("FCreatePattern")[0];
         pattern_utils_t pu;
-        std::shared_ptr<utils::pm::pb_graph_t> pgraph
-                = std::make_shared<utils::pm::pb_graph_t>();
-        pfunc(pgraph);
+        graph::pass::Pattern pgraph
+                = get_attr<graph::pass::Pattern>("Pattern")[0];
 
         // for each pattern. match it
         std::vector<op_t *> matched_op_list;
+        if (get_verbose(verbose_t::create_dispatch, component_t::graph)) {
+            printf("onednn_verbose,graph,create:dispatch,pattern_"
+                   "matcher,%s,fake_backend\n",
+                    get_pass_name().c_str());
+        }
         pu.match(agraph, pgraph, matched_op_list);
         if (!matched_op_list.empty()) {
             // temporary solution here for showing which pattern matched

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -22,6 +22,19 @@
 #include "c_types_map.hpp"
 #include "primitive_desc.hpp"
 #include "utils.hpp"
+
+#define VDISPATCH_CONV(cond, msg, ...) \
+    VCONDCHECK(primitive, create, dispatch, convolution, (cond), \
+            status::unimplemented, "%s," msg, this->info(engine), \
+            ##__VA_ARGS__)
+
+#define VDISPATCH_CONV_SC(f, msg, ...) \
+    VCHECK(primitive, create, dispatch, convolution, (f), "%s," msg, \
+            this->info(engine), ##__VA_ARGS__)
+
+#define VDISPATCH_CONV_IC(cond, msg, ...) \
+    VCONDCHECK(primitive, create, dispatch, convolution, (cond), \
+            status::unimplemented, msg, ##__VA_ARGS__);
 
 namespace dnnl {
 namespace impl {
@@ -119,7 +132,7 @@ struct convolution_pd_t : public primitive_desc_t {
     dim_t KSW() const { return desc_.strides[ndims() - 3]; }
 
     dim_t KDD() const { return ndims() >= 5 ? desc_.dilates[ndims() - 5] : 0; }
-    dim_t KDH() const { return ndims() >= 4 ? desc_.dilates[ndims() - 4] : 1; }
+    dim_t KDH() const { return ndims() >= 4 ? desc_.dilates[ndims() - 4] : 0; }
     dim_t KDW() const { return desc_.dilates[ndims() - 3]; }
 
     dim_t padFront() const {

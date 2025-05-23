@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2022-2023 Intel Corporation
+* Copyright 2022-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -26,8 +26,11 @@ namespace impl {
 namespace cpu {
 
 void book_precomputed_scales(memory_tracking::registrar_t &scratchpad,
-        const arg_scales_t &attr_scales, size_t oc,
+        const arg_scales_t &attr_scales, size_t wei_scales_count,
         bool force_scales_book = false);
+
+bool req_copy_scales(
+        const primitive_attr_t *attr, const float scale_adjust_factor = 1.0f);
 
 // By default returns the original wei_scales buffer as a dequantization scale.
 // If both src_scales and wei_scales are set, returns a scratchpad memory that
@@ -38,6 +41,11 @@ void book_precomputed_scales(memory_tracking::registrar_t &scratchpad,
 const float *precompute_scales(const memory_tracking::grantor_t &scratchpad,
         const float *src_scales, const float *wei_scales, dim_t oc,
         const primitive_attr_t *attr, float scale_adjust_factor = 1.0f);
+const float *precompute_scales(const memory_tracking::grantor_t &scratchpad,
+        const float *src_scales, const float *wei_scales, dim_t ic, dim_t oc,
+        const bool wei_scale_per_ic, const bool wei_scale_per_oc,
+        const primitive_attr_t *attr, float scale_adjust_factor = 1.0f,
+        bool req_transpose = false);
 
 } // namespace cpu
 } // namespace impl

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2023 Intel Corporation
+* Copyright 2023-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -37,37 +37,38 @@ public:
     brgemm_desc_container_t() {}
     brgemm_desc_container_t(size_t ns) { resize(ns); }
     void resize(size_t ns) { refs_.resize(ns); }
-    inline const brgemm_t *operator[](int idx) const { return refs_[idx]; }
+    inline const brgemm_desc_t *operator[](int idx) const { return refs_[idx]; }
 
-    bool insert(int idx, brgemm_t &brg) {
+    bool insert(int idx, brgemm_desc_t &brg) {
         std::vector<char> dummy_bd_mask;
         std::vector<brgemm_batch_element_t> dummy_static_offsets;
         return insert(idx, brg, dummy_bd_mask, dummy_static_offsets);
     }
 
-    bool insert(int idx, brgemm_t &brg, const std::vector<char> &bd_mask,
+    bool insert(int idx, brgemm_desc_t &brg, const std::vector<char> &bd_mask,
             const std::vector<brgemm_batch_element_t> &static_offsets);
 
-    int insert(brgemm_t &brg) {
+    int insert(brgemm_desc_t &brg) {
         std::vector<char> dummy_bd_mask;
         std::vector<brgemm_batch_element_t> dummy_static_offsets;
         return insert(brg, dummy_bd_mask, dummy_static_offsets);
     }
 
-    int insert(brgemm_t &brg, const std::vector<char> &bd_mask,
+    int insert(brgemm_desc_t &brg, const std::vector<char> &bd_mask,
             const std::vector<brgemm_batch_element_t> &static_offsets);
 
     size_t refs_size() { return refs_.size(); }
 
 private:
-    std::vector<const brgemm_t *> refs_;
+    std::vector<const brgemm_desc_t *> refs_;
 
-    std::map<brgemm_t, int> map_;
+    std::map<brgemm_desc_t, int> map_;
     std::vector<std::vector<char>> bd_mask_list_;
     std::vector<std::vector<brgemm_batch_element_t>> static_offsets_list_;
 };
 
-#define BRGEMM_KERNEL_GLOBAL_STORAGE
+// global storage disabled for now
+// #define BRGEMM_KERNEL_GLOBAL_STORAGE
 
 struct brgemm_kernel_container_t {
     brgemm_kernel_container_t() {}
@@ -77,17 +78,13 @@ struct brgemm_kernel_container_t {
         return refs_[idx];
     }
 
-    status_t insert(int idx, const brgemm_t *brg);
+    status_t insert(int idx, const brgemm_desc_t *brg);
     static bool brgemm_kernel_cmp(const std::shared_ptr<brgemm_kernel_t> &lhs,
             const std::shared_ptr<brgemm_kernel_t> &rhs);
 
 private:
     std::vector<const brgemm_kernel_t *> refs_;
 #ifdef BRGEMM_KERNEL_GLOBAL_STORAGE
-    static std::set<std::shared_ptr<brgemm_kernel_t>,
-            decltype(brgemm_kernel_container_t::brgemm_kernel_cmp) *>
-            set_;
-
     static utils::rw_mutex_t &rw_mutex() {
         static utils::rw_mutex_t mutex;
         return mutex;
@@ -99,11 +96,18 @@ private:
 #else
     std::set<std::shared_ptr<brgemm_kernel_t>,
             decltype(brgemm_kernel_container_t::brgemm_kernel_cmp) *>
-            set_;
+            set_ {std::set<std::shared_ptr<brgemm_kernel_t>,
+                    decltype(brgemm_kernel_container_t::brgemm_kernel_cmp) *>(
+                    brgemm_kernel_container_t::brgemm_kernel_cmp)};
+
     void lock_write() {}
     void unlock_write() {}
 #endif
-    std::map<const brgemm_t *, const brgemm_kernel_t *> brgemm_map_;
+    std::set<std::shared_ptr<brgemm_kernel_t>,
+            decltype(brgemm_kernel_container_t::brgemm_kernel_cmp) *> &
+    get_set();
+
+    std::map<const brgemm_desc_t *, const brgemm_kernel_t *> brgemm_map_;
 };
 
 struct brgemm_palette_container_t {
@@ -115,8 +119,8 @@ struct brgemm_palette_container_t {
 
     inline const char *operator[](int idx) const { return refs_[idx]->data(); }
 
-    bool insert(int idx, const brgemm_t *brg);
-    bool insert(int idx, const brgemm_t &brg) { return insert(idx, &brg); }
+    bool insert(int idx, const brgemm_desc_t *brg);
+    bool insert(int idx, const brgemm_desc_t &brg) { return insert(idx, &brg); }
 
     inline void maybe_tile_configure(bool is_amx, int &idx, int new_idx) const {
         if (idx == new_idx) return;

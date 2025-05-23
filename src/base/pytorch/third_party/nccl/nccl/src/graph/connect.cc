@@ -17,8 +17,10 @@
 ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs, struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->topo->nodes[GPU].count;
+  int nvlsRanks = comm->MNNVL ? comm->clique.size : localRanks;
   int nChannels = comm->nChannels;
 
+  topoRanks->nvlsHeadNum = 0;
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->ring.prev = channel->ring.next = -1;
@@ -30,20 +32,20 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
     channel->collnetDirect.headRank = -1;
     channel->collnetDirect.nHeads = 0;
     channel->collnetDirect.shift = 0;
+    for (int i=0; i<NCCL_MAX_DIRECT_ARITY+1; i++) channel->collnetDirect.heads[i] = -1;
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->collnetDirect.up[i] = -1;
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->collnetDirect.down[i] = -1;
 
     int* ringIntra = graphs[NCCL_ALGO_RING]->intra+c*localRanks;
     int* treeIntra = graphs[NCCL_ALGO_TREE]->intra+c*localRanks;
     int* collNetIntra = graphs[NCCL_ALGO_COLLNET_CHAIN]->intra+c*localRanks;
-    int* nvlsIntra = graphs[NCCL_ALGO_NVLS]->intra+c*localRanks;
 
     for (int i=0; i<localRanks; i++) {
       if (ringIntra[i] == rank) {
         topoRanks->ringRecv[c] = ringIntra[0];
         topoRanks->ringSend[c] = ringIntra[localRanks-1];
-        channel->ring.prev = (i == 0) ? -1 : ringIntra[i-1];
-        channel->ring.next = (i == localRanks-1) ? -1 : ringIntra[i+1];
+        topoRanks->ringPrev[c] = (i == 0) ? -1 : ringIntra[i-1];
+        topoRanks->ringNext[c] = (i == localRanks-1) ? -1 : ringIntra[i+1];
       }
       if (treeIntra[i] == rank) {
         int parentIndex = 0;
@@ -61,14 +63,28 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
         channel->collnetChain.down[0] = i == localRanks-1 ? -1 : collNetIntra[i+1];
       }
     }
-    topoRanks->ringPrev[c] = channel->ring.prev;
-    topoRanks->ringNext[c] = channel->ring.next;
-    topoRanks->nvlsHeads[c] = nvlsIntra[0];
   }
-  // Duplicate channels rings/trees
+  // Duplicate channels trees
   struct ncclChannel* channel0 = comm->channels;
   struct ncclChannel* channel1 = channel0+nChannels;
   memcpy(channel1, channel0, nChannels*sizeof(struct ncclChannel));
+
+  // Get nvls heads and the number of heads. Duplicate head is not allowed.
+  for (int c = 0; c < graphs[NCCL_ALGO_NVLS]->nChannels; ++c) {
+    bool addHead = true;
+    int* nvlsIntra = graphs[NCCL_ALGO_NVLS]->intra + c * nvlsRanks;
+
+    for (int dup = 0; dup < topoRanks->nvlsHeadNum; dup++) {
+      if (topoRanks->nvlsHeads[dup] == nvlsIntra[0]) {
+        addHead = false;
+        break;
+      }
+    }
+    if (addHead) {
+      topoRanks->nvlsHeads[topoRanks->nvlsHeadNum++] = nvlsIntra[0];
+    }
+  }
+
   return ncclSuccess;
 }
 
@@ -80,26 +96,14 @@ static ncclResult_t connectRings(struct ncclComm* comm, int* ringRecv, int* ring
     int* send = ringSend+c*comm->nNodes;
     int* prev = ringPrev+c*comm->nRanks;
     int* next = ringNext+c*comm->nRanks;
-    struct ncclChannel* channel0 = comm->channels+c;
-    struct ncclChannel* channel1 = channel0+nChannels;
     for (int n=0; n<nNodes; n++) {
       int recvRank = recv[n];
       int prevSendRank = send[(n-1+nNodes)%nNodes];
       prev[recvRank] = prevSendRank;
-      if (comm->rank == recvRank) {
-        channel0->ring.prev = prevSendRank;
-        channel1->ring.prev = prevSendRank;
-      }
       int sendRank = send[n];
       int nextRecvRank = recv[(n+1)%nNodes];
       next[sendRank] = nextRecvRank;
-      if (comm->rank == sendRank) {
-        channel0->ring.next = nextRecvRank;
-        channel1->ring.next = nextRecvRank;
-      }
     }
-    TRACE(NCCL_GRAPH, "Ring %d : %d -> %d -> %d", c, channel0->ring.prev, comm->rank, channel0->ring.next);
-    TRACE(NCCL_GRAPH, "Ring %d : %d -> %d -> %d", c+nChannels, channel1->ring.prev, comm->rank, channel1->ring.next);
   }
   return ncclSuccess;
 }
@@ -209,6 +213,15 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
       channel->collnetDirect.up[nUp++] = heads[h];
       sprintf(line+strlen(line), " %d ", heads[h]);
     }
+    sprintf(line+strlen(line), "heads ");
+    { // heads[] is the list of heads ordered in head order startubg with self
+      int h0 = (channel->collnetDirect.headRank == -1) ? 0 : channel->collnetDirect.headRank;
+      for (int h1=0; h1 < nHeads; h1++) {
+        int h = (h0+h1)%nHeads;
+        channel->collnetDirect.heads[h1] = heads[h];
+        sprintf(line+strlen(line), " %d ", heads[h]);
+      }
+    }
     channel->collnetDirect.nHeads = nHeads;
     channel->collnetDirect.shift = (rank%localRanks)%nHeads; // Shift by intraRank so that leaves don't send to same head simultaneously
     channel->collnetDirect.depth = (nUp == 0 && nDown == 0) ? 1 : 2;
@@ -217,27 +230,22 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
     INFO(NCCL_GRAPH, "%s", line);
     channel->collnetChain.depth = comm->nRanks/comm->nNodes;
   }
-  for (int c=0; c<comm->nvlsChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    if (channel->nvls.headRank != -1) channel->nvls.out = comm->nRanks;
-  }
   free(heads);
   return ncclSuccess;
 }
 
-static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct ncclTopoGraph* nvlsGraph) {
-  int nHeads = nvlsGraph->nChannels;
+static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, int nHeads) {
   int headRank = -1;
-  for (int h=0; h<nHeads; h++) {
-    if (nvlsGraph->intra[h*comm->localRanks] == comm->rank) headRank = h;
-  }
-
   if (nHeads == 0) {
     comm->nvlsChannels = 0;
     return ncclSuccess;
   }
 
-  for (int c=0; c<comm->nvlsChannels; c++) {
+  for (int h = 0; h < nHeads; h++) {
+    if (nvlsHeads[h * comm->nNodes + comm->node] == comm->rank) headRank = h;
+  }
+
+  for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->nvls.nHeads = nHeads;
     for (int h=0; h<nHeads; h++) channel->nvls.up[h] = comm->nRanks+1+h;
@@ -248,6 +256,7 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct nc
     channel->nvls.treeUp = channel->nvls.treeDown[0] = channel->nvls.treeDown[1] = channel->nvls.treeDown[2] = -1;
     channel->nvls.node = comm->node;
     channel->nvls.nNodes = comm->nNodes;
+    if (comm->collNetSupport && channel->nvls.headRank != -1) channel->nvls.out = comm->nRanks;
   }
   if (comm->nNodes == 1) return ncclSuccess;
 
@@ -290,7 +299,7 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct nc
   }
   // Set prev/next in all channels (NVLS compute channels work
   // orthogonally to NVLS search channels).
-  for (int c=0; c<comm->nvlsChannels; c++) {
+  for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->nvls.treeUp = treeUp[c%2];
     channel->nvls.treeDown[0] = channel->nvls.down;
@@ -301,9 +310,9 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct nc
 
   struct ncclNvls* nvls0 = &comm->channels[0].nvls;
   struct ncclNvls* nvls1 = &comm->channels[1].nvls;
-  INFO(NCCL_GRAPH, "NVLS Trees : %d/%d->%d->%d %d/%d->%d->%d",
-      nvls0->treeDown[0], nvls0->treeDown[1], comm->rank, nvls0->treeUp,
-      nvls1->treeDown[0], nvls1->treeDown[1], comm->rank, nvls1->treeUp);
+  INFO(NCCL_GRAPH, "NVLS Trees : %d/%d/%d->%d->%d %d/%d/%d->%d->%d",
+      nvls0->treeDown[0], nvls0->treeDown[1], nvls0->treeDown[2], comm->rank, nvls0->treeUp,
+      nvls1->treeDown[0], nvls1->treeDown[1], nvls1->treeDown[2], comm->rank, nvls1->treeUp);
   return ncclSuccess;
 }
 
@@ -348,12 +357,20 @@ static int copyChannels(struct ncclComm* comm, int start, int end, int* ringPrev
   return c;
 }
 
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs) {
+void exchangeValues(int* v0, int* v1) {
+  int tmp = *v1;
+  *v1 = *v0;
+  *v0 = tmp;
+}
+
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs, struct ncclComm* parent) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeToParent, *treeToChild0, *treeToChild1, *nvlsHeads;
   int nranks = comm->nRanks;
   int nNodes = comm->nNodes;
   int nChannels = comm->nChannels;
+  int minHeadNum = INT_MAX;
+  int shared = parent && parent->nvlsSupport  && parent->config.splitShare;
   NCCLCHECK(ncclCalloc(&ringRecv, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&ringSend, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&ringPrev, nranks*MAXCHANNELS));
@@ -362,6 +379,22 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   NCCLCHECK(ncclCalloc(&treeToChild0, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&treeToChild1, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&nvlsHeads, nNodes*MAXCHANNELS));
+
+  // Alternate rings to avoid crossing rails
+  if (graphs[NCCL_ALGO_RING]->crossNic && (nChannels % 2) == 0) {
+    for (int r=0; r<comm->nRanks; r++) {
+      if (comm->rankToNode[r] % 2 == 1) {
+        // Exchange rings
+        for (int c=0; c<nChannels; c+=2) {
+          exchangeValues(allTopoRanks[r]->ringRecv+c, allTopoRanks[r]->ringRecv+(c^1));
+          exchangeValues(allTopoRanks[r]->ringSend+c, allTopoRanks[r]->ringSend+(c^1));
+          exchangeValues(allTopoRanks[r]->ringPrev+c, allTopoRanks[r]->ringPrev+(c^1));
+          exchangeValues(allTopoRanks[r]->ringNext+c, allTopoRanks[r]->ringNext+(c^1));
+        }
+      }
+    }
+  }
+
   for (int c=0; c<nChannels;c++) {
     for (int n=0; n<nNodes; n++) {
       int r = firstRanks[n];
@@ -376,21 +409,35 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
       ringNext[c*nranks+r] = allTopoRanks[r]->ringNext[c];
     }
   }
-  for (int c=0; c<graphs[NCCL_ALGO_NVLS]->nChannels; c++) {
-    for (int n=0; n<nNodes; n++) {
+
+  for (int n = 0; n < nNodes; n++) {
+    int r = firstRanks[n];
+    if (minHeadNum > allTopoRanks[r]->nvlsHeadNum)
+      minHeadNum = allTopoRanks[r]->nvlsHeadNum;
+  }
+
+  for (int c = 0; c < minHeadNum; c++) {
+    for (int n = 0; n < nNodes; n++) {
       int r = firstRanks[n];
-      nvlsHeads[c*nNodes+n] = allTopoRanks[r]->nvlsHeads[c];
+      nvlsHeads[c * nNodes + n] = allTopoRanks[r]->nvlsHeads[c];
     }
   }
 
   // Connect rings and trees. This should also duplicate the channels.
   NCCLCHECK(connectRings(comm, ringRecv, ringSend, ringPrev, ringNext));
   NCCLCHECK(connectTrees(comm, treeToParent, treeToChild0, treeToChild1, treePatterns));
-  NCCLCHECK(connectNvls(comm, nvlsHeads, graphs[NCCL_ALGO_NVLS]));
 
   // Duplicate ringPrev/ringNext for ncclBuildRing
   memcpy(ringPrev+nChannels*nranks, ringPrev, nChannels*nranks*sizeof(int));
   memcpy(ringNext+nChannels*nranks, ringNext, nChannels*nranks*sizeof(int));
+
+  // Set ring prev/next for my rank
+  for (int c=0; c<nChannels; c++) {
+    struct ncclChannel* channel0 = comm->channels+c;
+    struct ncclChannel* channel1 = channel0+nChannels;
+    channel0->ring.prev = channel1->ring.prev = ringPrev[c*nranks+comm->rank];
+    channel0->ring.next = channel1->ring.next = ringNext[c*nranks+comm->rank];
+  }
 
   // Duplication should be complete now
   nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
@@ -407,7 +454,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   }
 
   // Use 4 compute channels per search channel to reach peak BW on <8 PPN
-  if (comm->minCompCap == 90 && comm->nNodes > 1 && graphs[NCCL_ALGO_RING]->bwIntra > 45.0 && 2*nChannels <= MAXCHANNELS) {
+  if (comm->minCompCap == 90 && comm->nNodes > 1 && graphs[NCCL_ALGO_RING]->bwIntra > 45.0 && nChannels < 16) {
      nChannels = comm->nChannels = copyChannels(comm, nChannels, 2*nChannels, ringPrev, ringNext);
   }
 
@@ -420,6 +467,22 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   } else {
     nChannels = comm->nChannels = std::min(std::min(ncclMaxNchannels(), nChannels), comm->config.maxCTAs);
     nChannels = comm->nChannels = copyChannels(comm, nChannels, std::max(ncclMinNchannels(), comm->config.minCTAs), ringPrev, ringNext);
+  }
+
+  comm->collChannels = comm->nChannels;
+#if CUDART_VERSION >= 12010
+  // Support maximal channel usage for aggregation
+  if (shared && comm->nvlsChannels > parent->nvlsResources->nChannels) {
+    comm->nvlsChannels = parent->nvlsResources->nChannels;
+  }
+  if (comm->nChannels < comm->nvlsChannels) {
+    nChannels = comm->nChannels = copyChannels(comm, comm->nChannels, comm->nvlsChannels, ringPrev, ringNext);
+  }
+  NCCLCHECK(connectNvls(comm, nvlsHeads, minHeadNum));
+#endif
+  if (shared && comm->nChannels > parent->sharedRes->tpNChannels) {
+    nChannels = comm->nChannels = parent->sharedRes->tpNChannels;
+    comm->collChannels = std::min(comm->collChannels, comm->nChannels);
   }
 
   // Create rings array and check all is fine

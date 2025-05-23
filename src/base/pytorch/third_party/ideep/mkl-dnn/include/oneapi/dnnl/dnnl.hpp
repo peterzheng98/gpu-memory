@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -835,6 +835,12 @@ struct memory : public handle<dnnl_memory_t> {
     enum class data_type {
         /// Undefined data type (used for empty memory descriptors).
         undef = dnnl_data_type_undef,
+        /// [OFP8 standard 8-bit floating-point](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-06-20-pdf)
+        /// with a 5-bit exponent and a 2-bit mantissa.
+        f8_e5m2 = dnnl_f8_e5m2,
+        /// [OFP8 standard 8-bit floating-point](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-06-20-pdf)
+        /// with a 4-bit exponent and a 3-bit mantissa.
+        f8_e4m3 = dnnl_f8_e4m3,
         /// [16-bit/half-precision floating point](https://en.wikipedia.org/wiki/Half-precision_floating-point_format).
         f16 = dnnl_f16,
         /// non-standard
@@ -850,6 +856,10 @@ struct memory : public handle<dnnl_memory_t> {
         s8 = dnnl_s8,
         /// 8-bit unsigned integer.
         u8 = dnnl_u8,
+        /// 4-bit signed integer.
+        s4 = dnnl_s4,
+        /// 4-bit unsigned integer.
+        u4 = dnnl_u4,
     };
 
     /// Returns size of data type in bytes.
@@ -883,6 +893,12 @@ struct memory : public handle<dnnl_memory_t> {
             undef = dnnl_sparse_encoding_undef,
             /// Compressed Sparse Row (CSR) encoding.
             csr = dnnl_csr,
+            /// An encoding that is used for an opaque storage schema for
+            /// tensors with unstructured sparsity. A memory descriptor with the
+            /// packed encoding cannot be used to create a memory object. It can
+            /// only be used to create a primitive descriptor to query the
+            /// actual memory descriptor (similar to the format tag `any`).
+            packed = dnnl_packed,
     };
 #endif
 
@@ -1176,20 +1192,29 @@ struct memory : public handle<dnnl_memory_t> {
         AB16b32a2b = dnnl_AB16b32a2b,
         AB16b48a2b = dnnl_AB16b48a2b,
         AB16b64a2b = dnnl_AB16b64a2b,
+        Ab4a = dnnl_Ab4a,
+        Ab8a = dnnl_Ab8a,
         Abc16a = dnnl_Abc16a,
         ABc16a16b = dnnl_ABc16a16b,
         ABc4a4b = dnnl_ABc4a4b,
         aBc16b = dnnl_aBc16b,
         aBc32b = dnnl_aBc32b,
         ABc16b16a = dnnl_ABc16b16a,
+        AcB16b16a = dnnl_AcB16b16a,
         ABc16b32a = dnnl_ABc16b32a,
+        AcB16b32a = dnnl_AcB16b32a,
         ABc16b48a = dnnl_ABc16b48a,
+        AcB16b48a = dnnl_AcB16b48a,
         ABc16b64a = dnnl_ABc16b64a,
+        AcB16b64a = dnnl_AcB16b64a,
         Abc4a = dnnl_Abc4a,
         aBc4b = dnnl_aBc4b,
         ABc4b16a4b = dnnl_ABc4b16a4b,
+        AcB4b16a4b = dnnl_AcB4b16a4b,
         ABc4b32a4b = dnnl_ABc4b32a4b,
+        AcB4b32a4b = dnnl_AcB4b32a4b,
         ABc4b64a4b = dnnl_ABc4b64a4b,
+        AcB4b64a4b = dnnl_AcB4b64a4b,
         ABc2b8a4b = dnnl_ABc2b8a4b,
         ABc16a16b2a = dnnl_ABc16a16b2a,
         ABc16b16a4b = dnnl_ABc16b16a4b,
@@ -1206,9 +1231,13 @@ struct memory : public handle<dnnl_memory_t> {
         ABc8a4b = dnnl_ABc8a4b,
         aBc8b = dnnl_aBc8b,
         ABc8b16a2b = dnnl_ABc8b16a2b,
+        AcB8b16a2b = dnnl_AcB8b16a2b,
         ABc8b32a2b = dnnl_ABc8b32a2b,
+        AcB8b32a2b = dnnl_AcB8b32a2b,
         ABc8b64a2b = dnnl_ABc8b64a2b,
+        AcB8b64a2b = dnnl_AcB8b64a2b,
         ABc8b8a = dnnl_ABc8b8a,
+        AcB8b8a = dnnl_AcB8b8a,
         Abcd8a = dnnl_Abcd8a,
         Abcd16a = dnnl_Abcd16a,
         Abcd32a = dnnl_Abcd32a,
@@ -1216,16 +1245,23 @@ struct memory : public handle<dnnl_memory_t> {
         aBcd16b = dnnl_aBcd16b,
         aBcd32b = dnnl_aBcd32b,
         ABcd16b16a = dnnl_ABcd16b16a,
+        AcdB16b16a = dnnl_AcdB16b16a,
         ABcd16b32a = dnnl_ABcd16b32a,
+        AcdB16b32a = dnnl_AcdB16b32a,
         ABcd16b48a = dnnl_ABcd16b48a,
+        AcdB16b48a = dnnl_AcdB16b48a,
         ABcd16b64a = dnnl_ABcd16b64a,
+        AcdB16b64a = dnnl_AcdB16b64a,
         aBCd16b16c = dnnl_aBCd16b16c,
         aBCd16c16b = dnnl_aBCd16c16b,
         Abcd4a = dnnl_Abcd4a,
         aBcd4b = dnnl_aBcd4b,
         ABcd4b16a4b = dnnl_ABcd4b16a4b,
+        AcdB4b16a4b = dnnl_AcdB4b16a4b,
         ABcd4b32a4b = dnnl_ABcd4b32a4b,
+        AcdB4b32a4b = dnnl_AcdB4b32a4b,
         ABcd4b64a4b = dnnl_ABcd4b64a4b,
+        AcdB4b64a4b = dnnl_AcdB4b64a4b,
         ABcd2b8a4b = dnnl_ABcd2b8a4b,
         ABcd4b4a = dnnl_ABcd4b4a,
         ABcd4a4b = dnnl_ABcd4a4b,
@@ -1252,11 +1288,15 @@ struct memory : public handle<dnnl_memory_t> {
         /// 4D tensor blocked by 2nd dimension with block size 8
         aBcd8b = dnnl_aBcd8b,
         ABcd8b16a2b = dnnl_ABcd8b16a2b,
+        AcdB8b16a2b = dnnl_AcdB8b16a2b,
         ABcd8b32a2b = dnnl_ABcd8b32a2b,
+        AcdB8b32a2b = dnnl_AcdB8b32a2b,
         ABcd8b64a2b = dnnl_ABcd8b64a2b,
+        AcdB8b64a2b = dnnl_AcdB8b64a2b,
         aBCd8b16c2b = dnnl_aBCd8b16c2b,
         /// 4D tensor blocked by 1st and 2nd dimension with block size 8
         ABcd8b8a = dnnl_ABcd8b8a,
+        AcdB8b8a = dnnl_AcdB8b8a,
         aBCd8b8c = dnnl_aBCd8b8c,
         aBCd8b4c = dnnl_aBCd8b4c,
         aBCd8c16b2c = dnnl_aBCd8c16b2c,
@@ -1267,9 +1307,13 @@ struct memory : public handle<dnnl_memory_t> {
         aBcde16b = dnnl_aBcde16b,
         aBcde32b = dnnl_aBcde32b,
         ABcde16b16a = dnnl_ABcde16b16a,
+        AcdeB16b16a = dnnl_AcdeB16b16a,
         ABcde16b32a = dnnl_ABcde16b32a,
+        AcdeB16b32a = dnnl_AcdeB16b32a,
         ABcde16b48a = dnnl_ABcde16b48a,
+        AcdeB16b48a = dnnl_AcdeB16b48a,
         ABcde16b64a = dnnl_ABcde16b64a,
+        AcdeB16b64a = dnnl_AcdeB16b64a,
         aBCde16b16c = dnnl_aBCde16b16c,
         aBCde16c16b = dnnl_aBCde16c16b,
         aBCde2c8b4c = dnnl_aBCde2c8b4c,
@@ -1289,11 +1333,17 @@ struct memory : public handle<dnnl_memory_t> {
         ABcde8a4b = dnnl_ABcde8a4b,
         aBcde8b = dnnl_aBcde8b,
         ABcde8b16a2b = dnnl_ABcde8b16a2b,
+        AcdeB8b16a2b = dnnl_AcdeB8b16a2b,
         ABcde8b32a2b = dnnl_ABcde8b32a2b,
+        AcdeB8b32a2b = dnnl_AcdeB8b32a2b,
         ABcde8b64a2b = dnnl_ABcde8b64a2b,
+        AcdeB8b64a2b = dnnl_AcdeB8b64a2b,
         ABcde4b16a4b = dnnl_ABcde4b16a4b,
+        AcdeB4b16a4b = dnnl_AcdeB4b16a4b,
         ABcde4b32a4b = dnnl_ABcde4b32a4b,
+        AcdeB4b32a4b = dnnl_AcdeB4b32a4b,
         ABcde4b64a4b = dnnl_ABcde4b64a4b,
+        AcdeB4b64a4b = dnnl_AcdeB4b64a4b,
         ABcde16b16a4b = dnnl_ABcde16b16a4b,
         ABcde16b32a4b = dnnl_ABcde16b32a4b,
         ABcde16b48a4b = dnnl_ABcde16b48a4b,
@@ -1305,6 +1355,7 @@ struct memory : public handle<dnnl_memory_t> {
         ABcde2b8a4b = dnnl_ABcde2b8a4b,
         aBCde8b16c2b = dnnl_aBCde8b16c2b,
         ABcde8b8a = dnnl_ABcde8b8a,
+        AcdeB8b8a = dnnl_AcdeB8b8a,
         aBCde8b8c = dnnl_aBCde8b8c,
         aBCde8b4c = dnnl_aBCde8b4c,
         ABcd4a8b8a4b = dnnl_ABcd4a8b8a4b,
@@ -1562,16 +1613,25 @@ struct memory : public handle<dnnl_memory_t> {
         aBdefC24b4c = dnnl_aBdefC24b4c,
         AB8b32a = dnnl_AB8b32a,
         ABc8b32a = dnnl_ABc8b32a,
+        AcB8b32a = dnnl_AcB8b32a,
         ABcd8b32a = dnnl_ABcd8b32a,
+        AcdB8b32a = dnnl_AcdB8b32a,
         ABcde8b32a = dnnl_ABcde8b32a,
+        AcdeB8b32a = dnnl_AcdeB8b32a,
         AB8b24a = dnnl_AB8b24a,
         ABc8b24a = dnnl_ABc8b24a,
+        AcB8b24a = dnnl_AcB8b24a,
         ABcd8b24a = dnnl_ABcd8b24a,
+        AcdB8b24a = dnnl_AcdB8b24a,
         ABcde8b24a = dnnl_ABcde8b24a,
+        AcdeB8b24a = dnnl_AcdeB8b24a,
         AB8b16a = dnnl_AB8b16a,
         ABc8b16a = dnnl_ABc8b16a,
+        AcB8b16a = dnnl_AcB8b16a,
         ABcd8b16a = dnnl_ABcd8b16a,
+        AcdB8b16a = dnnl_AcdB8b16a,
         ABcde8b16a = dnnl_ABcde8b16a,
+        AcdeB8b16a = dnnl_AcdeB8b16a,
         AB8b8a = dnnl_AB8b8a,
 
         format_tag_last = dnnl_format_tag_last,
@@ -1610,26 +1670,39 @@ struct memory : public handle<dnnl_memory_t> {
         Goidhw16g = dnnl_Goidhw16g,
         IOw16o16i = dnnl_IOw16o16i,
         OIw16i16o = dnnl_OIw16i16o,
+        OwI16i16o = dnnl_OwI16i16o,
         OIw16i32o = dnnl_OIw16i32o,
+        OwI16i32o = dnnl_OwI16i32o,
         OIw16i48o = dnnl_OIw16i48o,
+        OwI16i48o = dnnl_OwI16i48o,
         OIw16i64o = dnnl_OIw16i64o,
+        OwI16i64o = dnnl_OwI16i64o,
         IOw16i16o = dnnl_IOw16i16o,
         gIOw16i16o = dnnl_gIOw16i16o,
         OIw16o16i = dnnl_OIw16o16i,
         Oiw16o = dnnl_Oiw16o,
         OIw4i8o4i = dnnl_OIw4i8o4i,
+        OwI4i8o4i = dnnl_OwI4i8o4i,
         OIw4i16o4i = dnnl_OIw4i16o4i,
+        OwI4i16o4i = dnnl_OwI4i16o4i,
         OIw4i24o4i = dnnl_OIw4i24o4i,
+        OwI4i24o4i = dnnl_OwI4i24o4i,
         OIw4i32o4i = dnnl_OIw4i32o4i,
+        OwI4i32o4i = dnnl_OwI4i32o4i,
         OIw4i64o4i = dnnl_OIw4i64o4i,
+        OwI4i64o4i = dnnl_OwI4i64o4i,
         OIw2i8o4i = dnnl_OIw2i8o4i,
         OIw4i4o = dnnl_OIw4i4o,
         OIw4o4i = dnnl_OIw4o4i,
         Oiw4o = dnnl_Oiw4o,
         OIw8i16o2i = dnnl_OIw8i16o2i,
+        OwI8i16o2i = dnnl_OwI8i16o2i,
         OIw8i32o2i = dnnl_OIw8i32o2i,
+        OwI8i32o2i = dnnl_OwI8i32o2i,
         OIw8i64o2i = dnnl_OIw8i64o2i,
+        OwI8i64o2i = dnnl_OwI8i64o2i,
         OIw8i8o = dnnl_OIw8i8o,
+        OwI8i8o = dnnl_OwI8i8o,
         OIw8o16i2o = dnnl_OIw8o16i2o,
         OIw8o8i = dnnl_OIw8o8i,
         OIw8o4i = dnnl_OIw8o4i,
@@ -1662,23 +1735,36 @@ struct memory : public handle<dnnl_memory_t> {
         OhwI8o2i = dnnl_OhwI8o2i,
         OhwI8o4i = dnnl_OhwI8o4i,
         OIhw16i16o = dnnl_OIhw16i16o,
+        OhwI16i16o = dnnl_OhwI16i16o,
         OIhw16i32o = dnnl_OIhw16i32o,
+        OhwI16i32o = dnnl_OhwI16i32o,
         OIhw16i48o = dnnl_OIhw16i48o,
+        OhwI16i48o = dnnl_OhwI16i48o,
         OIhw16i64o = dnnl_OIhw16i64o,
+        OhwI16i64o = dnnl_OhwI16i64o,
         OIhw16o16i = dnnl_OIhw16o16i,
         Oihw16o = dnnl_Oihw16o,
         OIhw4i8o4i = dnnl_OIhw4i8o4i,
+        OhwI4i8o4i = dnnl_OhwI4i8o4i,
         OIhw4i16o4i = dnnl_OIhw4i16o4i,
+        OhwI4i16o4i = dnnl_OhwI4i16o4i,
         OIhw4i24o4i = dnnl_OIhw4i24o4i,
+        OhwI4i24o4i = dnnl_OhwI4i24o4i,
         OIhw4i32o4i = dnnl_OIhw4i32o4i,
+        OhwI4i32o4i = dnnl_OhwI4i32o4i,
         OIhw4i64o4i = dnnl_OIhw4i64o4i,
+        OhwI4i64o4i = dnnl_OhwI4i64o4i,
         OIhw4i4o = dnnl_OIhw4i4o,
         OIhw4o4i = dnnl_OIhw4o4i,
         Oihw4o = dnnl_Oihw4o,
         OIhw8i16o2i = dnnl_OIhw8i16o2i,
+        OhwI8i16o2i = dnnl_OhwI8i16o2i,
         OIhw8i32o2i = dnnl_OIhw8i32o2i,
+        OhwI8i32o2i = dnnl_OhwI8i32o2i,
         OIhw8i64o2i = dnnl_OIhw8i64o2i,
+        OhwI8i64o2i = dnnl_OhwI8i64o2i,
         OIhw8i8o = dnnl_OIhw8i8o,
+        OhwI8i8o = dnnl_OhwI8i8o,
         OIhw8o16i2o = dnnl_OIhw8o16i2o,
         OIhw8o8i = dnnl_OIhw8o8i,
         OIhw8o4i = dnnl_OIhw8o4i,
@@ -1694,9 +1780,13 @@ struct memory : public handle<dnnl_memory_t> {
         OdhwI8o2i = dnnl_OdhwI8o2i,
         OdhwI8o4i = dnnl_OdhwI8o4i,
         OIdhw16i16o = dnnl_OIdhw16i16o,
+        OdhwI16i16o = dnnl_OdhwI16i16o,
         OIdhw16i32o = dnnl_OIdhw16i32o,
+        OdhwI16i32o = dnnl_OdhwI16i32o,
         OIdhw16i48o = dnnl_OIdhw16i48o,
+        OdhwI16i48o = dnnl_OdhwI16i48o,
         OIdhw16i64o = dnnl_OIdhw16i64o,
+        OdhwI16i64o = dnnl_OdhwI16i64o,
         OIdhw16o16i = dnnl_OIdhw16o16i,
         OIdhw16o16i2o = dnnl_OIdhw16o16i2o,
         Oidhw16o = dnnl_Oidhw16o,
@@ -1704,10 +1794,15 @@ struct memory : public handle<dnnl_memory_t> {
         OIdhw4o4i = dnnl_OIdhw4o4i,
         Oidhw4o = dnnl_Oidhw4o,
         OIdhw8i16o2i = dnnl_OIdhw8i16o2i,
+        OdhwI8i16o2i = dnnl_OdhwI8i16o2i,
         OIdhw8i32o2i = dnnl_OIdhw8i32o2i,
+        OdhwI8i32o2i = dnnl_OdhwI8i32o2i,
         OIdhw8i64o2i = dnnl_OIdhw8i64o2i,
+        OdhwI8i64o2i = dnnl_OdhwI8i64o2i,
         OIdhw4i8o4i = dnnl_OIdhw4i8o4i,
+        OdhwI4i8o4i = dnnl_OdhwI4i8o4i,
         OIdhw4i16o4i = dnnl_OIdhw4i16o4i,
+        OdhwI4i16o4i = dnnl_OdhwI4i16o4i,
         OIdhw16i16o4i = dnnl_OIdhw16i16o4i,
         OIdhw16i32o4i = dnnl_OIdhw16i32o4i,
         OIdhw16i48o4i = dnnl_OIdhw16i48o4i,
@@ -1717,10 +1812,14 @@ struct memory : public handle<dnnl_memory_t> {
         OIdhw16i48o2i = dnnl_OIdhw16i48o2i,
         OIdhw16i64o2i = dnnl_OIdhw16i64o2i,
         OIdhw4i24o4i = dnnl_OIdhw4i24o4i,
+        OdhwI4i24o4i = dnnl_OdhwI4i24o4i,
         OIdhw4i32o4i = dnnl_OIdhw4i32o4i,
+        OdhwI4i32o4i = dnnl_OdhwI4i32o4i,
         OIdhw4i64o4i = dnnl_OIdhw4i64o4i,
+        OdhwI4i64o4i = dnnl_OdhwI4i64o4i,
         OIdhw2i8o4i = dnnl_OIdhw2i8o4i,
         OIdhw8i8o = dnnl_OIdhw8i8o,
+        OdhwI8i8o = dnnl_OdhwI8i8o,
         OIdhw8o8i = dnnl_OIdhw8o8i,
         OIdhw8o4i = dnnl_OIdhw8o4i,
         gIOw16o16i = dnnl_gIOw16o16i,
@@ -2272,6 +2371,8 @@ struct memory : public handle<dnnl_memory_t> {
         aCB16c4b = dnnl_aCB16c4b,
         BA16b2a = dnnl_BA16b2a,
         BA16b4a = dnnl_BA16b4a,
+        BA4b4a = dnnl_BA4b4a,
+        BA8b4a = dnnl_BA8b4a,
         aBC16b16c = dnnl_aBC16b16c,
         aBC16b32c = dnnl_aBC16b32c,
         AB16a16b = dnnl_AB16a16b,
@@ -2444,25 +2545,40 @@ struct memory : public handle<dnnl_memory_t> {
         gOdhwI24o4i = dnnl_gOdhwI24o4i,
         OI8i32o = dnnl_OI8i32o,
         OIw8i32o = dnnl_OIw8i32o,
+        OwI8i32o = dnnl_OwI8i32o,
         OIhw8i32o = dnnl_OIhw8i32o,
+        OhwI8i32o = dnnl_OhwI8i32o,
         OIdhw8i32o = dnnl_OIdhw8i32o,
+        OdhwI8i32o = dnnl_OdhwI8i32o,
         OI8i24o = dnnl_OI8i24o,
         OIw8i24o = dnnl_OIw8i24o,
+        OwI8i24o = dnnl_OwI8i24o,
         OIhw8i24o = dnnl_OIhw8i24o,
+        OhwI8i24o = dnnl_OhwI8i24o,
         OIdhw8i24o = dnnl_OIdhw8i24o,
+        OdhwI8i24o = dnnl_OdhwI8i24o,
         OI8i16o = dnnl_OI8i16o,
         OIw8i16o = dnnl_OIw8i16o,
+        OwI8i16o = dnnl_OwI8i16o,
         OIhw8i16o = dnnl_OIhw8i16o,
+        OhwI8i16o = dnnl_OhwI8i16o,
         OIdhw8i16o = dnnl_OIdhw8i16o,
+        OdhwI8i16o = dnnl_OdhwI8i16o,
         OI8i8o = dnnl_OI8i8o,
         AB4b8a4b = dnnl_AB4b8a4b,
         AB4b24a4b = dnnl_AB4b24a4b,
         ABc4b8a4b = dnnl_ABc4b8a4b,
+        AcB4b8a4b = dnnl_AcB4b8a4b,
         ABc4b24a4b = dnnl_ABc4b24a4b,
+        AcB4b24a4b = dnnl_AcB4b24a4b,
         ABcd4b8a4b = dnnl_ABcd4b8a4b,
+        AcdB4b8a4b = dnnl_AcdB4b8a4b,
         ABcd4b24a4b = dnnl_ABcd4b24a4b,
+        AcdB4b24a4b = dnnl_AcdB4b24a4b,
         ABcde4b8a4b = dnnl_ABcde4b8a4b,
+        AcdeB4b8a4b = dnnl_AcdeB4b8a4b,
         ABcde4b24a4b = dnnl_ABcde4b24a4b,
+        AcdeB4b24a4b = dnnl_AcdeB4b24a4b,
         Bca8b = dnnl_Bca8b,
         BcA8b2a = dnnl_BcA8b2a,
         Bcda8b = dnnl_Bcda8b,
@@ -2515,20 +2631,32 @@ struct memory : public handle<dnnl_memory_t> {
         gOhwI24o = dnnl_gOhwI24o,
         AB8b24a2b = dnnl_AB8b24a2b,
         ABc8b24a2b = dnnl_ABc8b24a2b,
+        AcB8b24a2b = dnnl_AcB8b24a2b,
         ABcd8b24a2b = dnnl_ABcd8b24a2b,
+        AcdB8b24a2b = dnnl_AcdB8b24a2b,
         ABcde8b24a2b = dnnl_ABcde8b24a2b,
+        AcdeB8b24a2b = dnnl_AcdeB8b24a2b,
         AB8b8a2b = dnnl_AB8b8a2b,
         ABc8b8a2b = dnnl_ABc8b8a2b,
+        AcB8b8a2b = dnnl_AcB8b8a2b,
         ABcd8b8a2b = dnnl_ABcd8b8a2b,
+        AcdB8b8a2b = dnnl_AcdB8b8a2b,
         ABcde8b8a2b = dnnl_ABcde8b8a2b,
+        AcdeB8b8a2b = dnnl_AcdeB8b8a2b,
         OI8i8o2i = dnnl_OI8i8o2i,
         OI8i24o2i = dnnl_OI8i24o2i,
         OIw8i8o2i = dnnl_OIw8i8o2i,
+        OwI8i8o2i = dnnl_OwI8i8o2i,
         OIw8i24o2i = dnnl_OIw8i24o2i,
+        OwI8i24o2i = dnnl_OwI8i24o2i,
         OIhw8i8o2i = dnnl_OIhw8i8o2i,
+        OhwI8i8o2i = dnnl_OhwI8i8o2i,
         OIhw8i24o2i = dnnl_OIhw8i24o2i,
+        OhwI8i24o2i = dnnl_OhwI8i24o2i,
         OIdhw8i8o2i = dnnl_OIdhw8i8o2i,
+        OdhwI8i8o2i = dnnl_OdhwI8i8o2i,
         OIdhw8i24o2i = dnnl_OIdhw8i24o2i,
+        OdhwI8i24o2i = dnnl_OdhwI8i24o2i,
         BcA8b4a = dnnl_BcA8b4a,
         BcdA8b4a = dnnl_BcdA8b4a,
         BcdeA8b4a = dnnl_BcdeA8b4a,
@@ -2556,6 +2684,19 @@ struct memory : public handle<dnnl_memory_t> {
         gIhwO24i4o = dnnl_gIhwO24i4o,
         gIdhwO8i4o = dnnl_gIdhwO8i4o,
         gIdhwO24i4o = dnnl_gIdhwO24i4o,
+        BA2a24b = dnnl_BA2a24b,
+        aCB2b24c = dnnl_aCB2b24c,
+        BA2a8b = dnnl_BA2a8b,
+        aCB2b8c = dnnl_aCB2b8c,
+        BA8a24b = dnnl_BA8a24b,
+        aCB8b24c = dnnl_aCB8b24c,
+        BA8a16b = dnnl_BA8a16b,
+        aCB8b16c = dnnl_aCB8b16c,
+        BA8a8b = dnnl_BA8a8b,
+        aCB8b8c = dnnl_aCB8b8c,
+        bcad = dnnl_bcad,
+        cabd = dnnl_cabd,
+        dabc = dnnl_dabc,
     };
 
     /// A memory descriptor.
@@ -2667,6 +2808,40 @@ struct memory : public handle<dnnl_memory_t> {
                         "encoding");
             return desc {md};
         }
+
+        /// Function for creating a memory descriptor for packed sparse
+        /// encoding.
+        ///
+        /// The created memory descriptor cannot be used to create a memory
+        /// object. It can only be used to create a primitive descriptor to
+        /// query the actual memory descriptor (similar to the format tag
+        /// `any`).
+        ///
+        /// @warning
+        ///     The meaning and content of the handles of the memory object that
+        ///     is created using the queried memory descriptor are unspecified
+        ///     therefore using the content is an undefined behavior.
+        ///
+        /// @param adims Tensor dimensions.
+        /// @param adata_type Data precision/type.
+        /// @param nnz Number of non-zero entries.
+        /// @param allow_empty A flag signifying whether construction is
+        ///     allowed to fail without throwing an exception. In this case a
+        ///     zero memory descriptor will be constructed. This flag is
+        ///     optional and defaults to false.
+        static desc packed(const dims &adims, data_type adata_type, dim nnz,
+                bool allow_empty = false) {
+            validate_dims(adims);
+            dnnl_memory_desc_t md = nullptr;
+            dnnl_status_t status = dnnl_memory_desc_create_with_packed_encoding(
+                    &md, (int)adims.size(), adims.data(),
+                    convert_to_c(adata_type), nnz);
+            if (!allow_empty)
+                error::wrap_c_api(status,
+                        "could not create a memory descriptor for packed "
+                        "sparse encoding");
+            return desc {md};
+        }
 #endif
         /// Construct a memory descriptor from a C API ::dnnl_memory_desc_t
         /// handle. The resulting handle is not weak and the C handle will be
@@ -2674,6 +2849,17 @@ struct memory : public handle<dnnl_memory_t> {
         ///
         /// @param md The C API memory descriptor.
         desc(dnnl_memory_desc_t md) : handle<dnnl_memory_desc_t>(md) {}
+
+        /// Construct a memory descriptor from a binary blob.
+        ///
+        /// @param blob A binary blob previously queried from a memory descriptor.
+        desc(const std::vector<uint8_t> &blob) {
+            dnnl_memory_desc_t md = nullptr;
+            error::wrap_c_api(
+                    dnnl_memory_desc_create_with_blob(&md, blob.data()),
+                    "could not create a memory descriptor from blob");
+            reset(md);
+        }
 
         /// Constructs a memory descriptor for a region inside an area
         /// described by this memory descriptor.
@@ -2962,6 +3148,21 @@ struct memory : public handle<dnnl_memory_t> {
         ///     including the padding area.
         size_t get_size() const { return dnnl_memory_desc_get_size(get()); }
 #endif
+
+        /// Returns a binary blob associated with the given memory descriptor
+        /// @returns The memory descriptor blob associated with the memory descriptor
+        std::vector<uint8_t> get_blob() {
+            size_t size;
+            dnnl_status_t status
+                    = dnnl_memory_desc_get_blob(nullptr, &size, get());
+            error::wrap_c_api(
+                    status, "could not get memory descriptor blob size");
+
+            std::vector<uint8_t> out_blob(size);
+            status = dnnl_memory_desc_get_blob(out_blob.data(), &size, get());
+            error::wrap_c_api(status, "could not get memory descriptor blob");
+            return out_blob;
+        }
 
         /// Checks whether the memory descriptor is zero (empty).
         /// @returns @c true if the memory descriptor describes an empty
@@ -3710,13 +3911,63 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
         return fpmath_mode(result);
     }
 
+    /// Returns the fpmath mode
+    ///
+    /// @param mode Specified fpmath mode.
+    /// @param apply_to_int Use floating-point arithmetic for integer primitives.
+    void get_fpmath_mode(fpmath_mode &mode, bool &apply_to_int) const {
+        dnnl_fpmath_mode_t c_mode;
+        int c_apply_to_int;
+        error::wrap_c_api(dnnl_primitive_attr_get_fpmath_mode_v2(
+                                  get(), &c_mode, &c_apply_to_int),
+                "could not get fpmath mode primitive attribute");
+        mode = fpmath_mode(c_mode);
+        apply_to_int = static_cast<bool>(c_apply_to_int);
+    }
+
     /// Sets fpmath mode.
     ///
     /// @param mode Specified fpmath mode.
-    void set_fpmath_mode(fpmath_mode mode) {
-        error::wrap_c_api(dnnl_primitive_attr_set_fpmath_mode(
-                                  get(), dnnl::convert_to_c(mode)),
+    /// @param apply_to_int Boolean. Use of floating-point arithmetic for integer primitives.
+    void set_fpmath_mode(fpmath_mode mode, bool apply_to_int = false) {
+        error::wrap_c_api(dnnl_primitive_attr_set_fpmath_mode_v2(get(),
+                                  dnnl::convert_to_c(mode), apply_to_int),
                 "could not set fpmath mode primitive attribute");
+    }
+
+    /// Returns the accumulation mode
+    accumulation_mode get_accumulation_mode() const {
+        dnnl_accumulation_mode_t result;
+        error::wrap_c_api(
+                dnnl_primitive_attr_get_accumulation_mode(get(), &result),
+                "could not get accumulation mode primitive attribute");
+        return accumulation_mode(result);
+    }
+
+    /// Sets accumulation mode.
+    ///
+    /// @param mode Specified accumulation mode.
+    void set_accumulation_mode(accumulation_mode mode) {
+        error::wrap_c_api(dnnl_primitive_attr_set_accumulation_mode(
+                                  get(), dnnl::convert_to_c(mode)),
+                "could not set accumulation mode primitive attribute");
+    }
+
+    /// Returns the deterministic attribute value
+    bool get_deterministic() const {
+        int result;
+        error::wrap_c_api(dnnl_primitive_attr_get_deterministic(get(), &result),
+                "could not get deterministic primitive attribute");
+        return static_cast<bool>(result);
+    }
+
+    /// Sets deterministic attribute value
+    ///
+    /// @param value Specified deterministic mode.
+    void set_deterministic(bool value) {
+        error::wrap_c_api(dnnl_primitive_attr_set_deterministic(
+                                  get(), static_cast<int>(value)),
+                "could not set deterministic primitive attribute");
     }
 
     /// Returns the scratchpad mode.
@@ -3755,6 +4006,32 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
                 "could not set scales primitive attribute");
     }
 
+    /// Sets scaling factors for primitive operations for a given memory
+    /// argument. The scaling factors must be passed at execution time
+    /// as an argument with index #DNNL_ARG_ATTR_SCALES | arg.
+    ///
+    /// @sa dnnl_primitive_attr_set_scales
+    ///
+    /// @param arg Parameter argument index as passed to the
+    ///     primitive::execute() call.
+    /// @param mask Scales correspondence mask that defines the
+    ///     correspondence between the tensor dimensions and the @p
+    ///     scales vector. The set i-th bit indicates that a dedicated
+    ///     scale is used for each index along that dimension. Set the
+    ///     mask to 0 to use a common scale for the whole output tensor.
+    /// @param groups Scaling factors correspondence groups that define the
+    ///     correspondence between the tensor dimensions and the scales array.
+    ///     The set i-th dimension indicates a number of groups of scaling
+    ///     factors used for that logical dimension in a memory indicated by @p arg.
+    /// @param data_type Scaling factors data_type.
+    void set_scales(int arg, int mask, const memory::dims &groups,
+            memory::data_type data_type = memory::data_type::f32) {
+        error::wrap_c_api(dnnl_primitive_attr_set_scales(get(), arg, mask,
+                                  (int)groups.size(), groups.data(),
+                                  memory::convert_to_c(data_type)),
+                "could not set scales primitive attribute");
+    }
+
     /// Sets zero points for primitive operations for a given memory argument.
     /// The zero points must be passed at execution time as an argument with
     /// index #DNNL_ARG_ATTR_ZERO_POINTS | arg.
@@ -3771,6 +4048,32 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
     void set_zero_points_mask(int arg, int mask) {
         error::wrap_c_api(
                 dnnl_primitive_attr_set_zero_points_mask(get(), arg, mask),
+                "could not set zero points primitive attribute");
+    }
+
+    /// Sets zero points for primitive operations for a given memory argument.
+    /// The zero points must be passed at execution time as an argument with
+    /// index #DNNL_ARG_ATTR_ZERO_POINTS | arg.
+    ///
+    /// @sa dnnl_primitive_attr_set_zero_points
+    ///
+    /// @param arg Parameter argument index as passed to the
+    ///     primitive::execute() call.
+    /// @param mask Zero point correspondence mask that defines the
+    ///     correspondence between the tensor dimensions and the @p
+    ///     zero_points vector. The set i-th bit indicates that a dedicated
+    ///     zero point is used for each index along that dimension. Set the
+    ///     mask to 0 to use a common zero point for the whole output tensor.
+    /// @param groups Zero point factors correspondence groups that define the
+    ///     correspondence between the tensor dimensions and the zero_points array.
+    ///     The set i-th dimension indicates a number of groups of zero point
+    ///     factors used for that logical dimension in a memory indicated by @p arg.
+    /// @param data_type Zero point factors data_type.
+    void set_zero_points(int arg, int mask, const memory::dims &groups,
+            memory::data_type data_type = memory::data_type::s32) {
+        error::wrap_c_api(dnnl_primitive_attr_set_zero_points(get(), arg, mask,
+                                  (int)groups.size(), groups.data(),
+                                  memory::convert_to_c(data_type)),
                 "could not set zero points primitive attribute");
     }
 
@@ -7966,7 +8269,8 @@ struct layer_normalization_forward : public primitive {
                 const primitive_attr &attr = default_attr(),
                 bool allow_empty = false)
             : primitive_desc(aengine, aprop_kind, src_desc, dst_desc,
-                    &stat_desc, epsilon, flags, attr, allow_empty) {}
+                    &stat_desc, memory::data_type::f32, epsilon, flags, attr,
+                    allow_empty) {}
 
         /// Constructs a primitive descriptor for a layer normalization forward
         /// propagation primitive.
@@ -7992,7 +8296,73 @@ struct layer_normalization_forward : public primitive {
                 const primitive_attr &attr = default_attr(),
                 bool allow_empty = false)
             : primitive_desc(aengine, aprop_kind, src_desc, dst_desc, nullptr,
-                    epsilon, flags, attr, allow_empty) {}
+                    memory::data_type::f32, epsilon, flags, attr, allow_empty) {
+        }
+
+        /// Constructs a primitive descriptor for a layer normalization forward
+        /// propagation primitive with a user-provided data type for the scale
+        /// and shift memory objects.
+        ///
+        /// @param aengine Engine to use.
+        /// @param aprop_kind Propagation kind. Possible values are
+        ///     #dnnl::prop_kind::forward_training, and
+        ///     #dnnl::prop_kind::forward_inference.
+        /// @param src_desc Source memory descriptor.
+        /// @param dst_desc Destination memory descriptor.
+        /// @param stat_desc Statistics memory descriptors.
+        /// @param scale_shift_data_type Data type of scale and shift memory.
+        ///     If neither scale nor shift flag are specified the parameter
+        ///     is ignored.
+        /// @param epsilon Layer normalization epsilon parameter.
+        /// @param flags Layer normalization flags (@ref
+        ///     dnnl::normalization_flags).
+        /// @param attr Primitive attributes to use. Attributes are optional
+        ///     and default to empty attributes.
+        /// @param allow_empty A flag signifying whether construction is
+        ///     allowed to fail without throwing an exception. In this case an
+        ///     empty object will be produced. This flag is optional and
+        ///     defaults to false.
+        primitive_desc(const engine &aengine, prop_kind aprop_kind,
+                const memory::desc &src_desc, const memory::desc &dst_desc,
+                const memory::desc &stat_desc,
+                memory::data_type scale_shift_data_type, float epsilon,
+                normalization_flags flags,
+                const primitive_attr &attr = default_attr(),
+                bool allow_empty = false)
+            : primitive_desc(aengine, aprop_kind, src_desc, dst_desc,
+                    &stat_desc, scale_shift_data_type, epsilon, flags, attr,
+                    allow_empty) {}
+
+        /// Constructs a primitive descriptor for a layer normalization forward
+        /// propagation primitive with a user-provided data type for the scale
+        /// and shift memory objects.
+        ///
+        /// @param aengine Engine to use.
+        /// @param aprop_kind Propagation kind. Possible values are
+        ///     #dnnl::prop_kind::forward_training, and
+        ///     #dnnl::prop_kind::forward_inference.
+        /// @param src_desc Source memory descriptor.
+        /// @param dst_desc Destination memory descriptor.
+        /// @param scale_shift_data_type Data type of scale and shift memory.
+        ///     If neither scale nor shift flag are specified the parameter
+        ///     is ignored.
+        /// @param epsilon Layer normalization epsilon parameter.
+        /// @param flags Layer normalization flags (@ref
+        ///     dnnl::normalization_flags).
+        /// @param attr Primitive attributes to use. Attributes are optional
+        ///     and default to empty attributes.
+        /// @param allow_empty A flag signifying whether construction is
+        ///     allowed to fail without throwing an exception. In this case an
+        ///     empty object will be produced. This flag is optional and
+        ///     defaults to false.
+        primitive_desc(const engine &aengine, prop_kind aprop_kind,
+                const memory::desc &src_desc, const memory::desc &dst_desc,
+                memory::data_type scale_shift_data_type, float epsilon,
+                normalization_flags flags,
+                const primitive_attr &attr = default_attr(),
+                bool allow_empty = false)
+            : primitive_desc(aengine, aprop_kind, src_desc, dst_desc, nullptr,
+                    scale_shift_data_type, epsilon, flags, attr, allow_empty) {}
 
         /// Constructs a primitive descriptor for a layer normalization
         /// forward propagation primitive from a C API primitive descriptor
@@ -8051,17 +8421,19 @@ struct layer_normalization_forward : public primitive {
 
         primitive_desc(const engine &aengine, prop_kind aprop_kind,
                 const memory::desc &src_desc, const memory::desc &dst_desc,
-                const memory::desc *stat_desc, float epsilon,
+                const memory::desc *stat_desc,
+                memory::data_type scale_shift_data_type, float epsilon,
                 normalization_flags flags, const primitive_attr &attr,
                 bool allow_empty) {
 
             dnnl_primitive_desc_t pd = nullptr;
             dnnl_status_t status
-                    = dnnl_layer_normalization_forward_primitive_desc_create(
+                    = dnnl_layer_normalization_forward_primitive_desc_create_v2(
                             &pd, aengine.get(), dnnl::convert_to_c(aprop_kind),
                             src_desc.get(), dst_desc.get(),
-                            optional_arg(stat_desc), epsilon,
-                            convert_to_c(flags), attr.get());
+                            optional_arg(stat_desc),
+                            memory::convert_to_c(scale_shift_data_type),
+                            epsilon, convert_to_c(flags), attr.get());
 
             if (!allow_empty)
                 error::wrap_c_api(status,
@@ -8129,7 +8501,8 @@ struct layer_normalization_backward : public primitive {
                 const primitive_attr &attr = default_attr(),
                 bool allow_empty = false)
             : primitive_desc(aengine, aprop_kind, diff_src_desc, diff_dst_desc,
-                    src_desc, &stat_desc, epsilon, flags, hint_fwd_pd, attr,
+                    src_desc, &stat_desc, memory::data_type::f32,
+                    memory::data_type::f32, epsilon, flags, hint_fwd_pd, attr,
                     allow_empty) {}
 
         /// Constructs a primitive descriptor for a layer normalization backward
@@ -8162,7 +8535,96 @@ struct layer_normalization_backward : public primitive {
                 const primitive_attr &attr = default_attr(),
                 bool allow_empty = false)
             : primitive_desc(aengine, aprop_kind, diff_src_desc, diff_dst_desc,
-                    src_desc, nullptr, epsilon, flags, hint_fwd_pd, attr,
+                    src_desc, nullptr, memory::data_type::f32,
+                    memory::data_type::f32, epsilon, flags, hint_fwd_pd, attr,
+                    allow_empty) {}
+
+        /// Constructs a primitive descriptor for a layer normalization backward
+        /// propagation primitive with a user-provided data type for the scale
+        /// and shift memory objects.
+        ///
+        /// @param aengine Engine to use.
+        /// @param aprop_kind Propagation kind. Possible values are
+        ///     #dnnl::prop_kind::backward_data and #dnnl::prop_kind::backward
+        ///     (diffs for all parameters are computed in this case).
+        /// @param diff_src_desc Diff source memory descriptor.
+        /// @param diff_dst_desc Diff destination memory descriptor.
+        /// @param src_desc Source memory descriptor.
+        /// @param stat_desc Statistics memory descriptors.
+        /// @param diff_scale_shift_data_type Data type of diff scale and shift
+        ///     memory. If neither scale nor shift flag are specified the
+        ///     parameter is ignored.
+        /// @param scale_shift_data_type Data type of scale and shift memory.
+        ///     If neither scale nor shift flag are specified the parameter
+        ///     is ignored.
+        /// @param epsilon Layer normalization epsilon parameter.
+        /// @param flags Layer normalization flags (@ref
+        ///     dnnl::normalization_flags).
+        /// @param attr Primitive attributes to use. Attributes are optional
+        ///     and default to empty attributes.
+        /// @param hint_fwd_pd Primitive descriptor for a layer normalization
+        ///     forward propagation primitive. It is used as a hint for
+        ///     deciding which memory format to use.
+        /// @param allow_empty A flag signifying whether construction is
+        ///     allowed to fail without throwing an exception. In this case an
+        ///     empty object will be produced. This flag is optional and
+        ///     defaults to false.
+        primitive_desc(const engine &aengine, prop_kind aprop_kind,
+                const memory::desc &diff_src_desc,
+                const memory::desc &diff_dst_desc, const memory::desc &src_desc,
+                const memory::desc &stat_desc,
+                memory::data_type diff_scale_shift_data_type,
+                memory::data_type scale_shift_data_type, float epsilon,
+                normalization_flags flags,
+                const layer_normalization_forward::primitive_desc &hint_fwd_pd,
+                const primitive_attr &attr = default_attr(),
+                bool allow_empty = false)
+            : primitive_desc(aengine, aprop_kind, diff_src_desc, diff_dst_desc,
+                    src_desc, &stat_desc, diff_scale_shift_data_type,
+                    scale_shift_data_type, epsilon, flags, hint_fwd_pd, attr,
+                    allow_empty) {}
+
+        /// Constructs a primitive descriptor for a layer normalization backward
+        /// propagation primitive with a user-provided data type for the scale
+        /// and shift memory objects.
+        ///
+        /// @param aengine Engine to use.
+        /// @param aprop_kind Propagation kind. Possible values are
+        ///     #dnnl::prop_kind::backward_data and #dnnl::prop_kind::backward
+        ///     (diffs for all parameters are computed in this case).
+        /// @param diff_src_desc Diff source memory descriptor.
+        /// @param diff_dst_desc Diff destination memory descriptor.
+        /// @param src_desc Source memory descriptor.
+        /// @param diff_scale_shift_data_type Data type of diff scale and shift
+        ///     memory. If neither scale nor shift flag are specified the
+        ///     parameter is ignored.
+        /// @param scale_shift_data_type Data type of scale and shift memory.
+        ///     If neither scale nor shift flag are specified the parameter
+        ///     is ignored.
+        /// @param epsilon Layer normalization epsilon parameter.
+        /// @param flags Layer normalization flags (@ref
+        ///     dnnl::normalization_flags).
+        /// @param attr Primitive attributes to use. Attributes are optional
+        ///     and default to empty attributes.
+        /// @param hint_fwd_pd Primitive descriptor for a layer normalization
+        ///     forward propagation primitive. It is used as a hint for
+        ///     deciding which memory format to use.
+        /// @param allow_empty A flag signifying whether construction is
+        ///     allowed to fail without throwing an exception. In this case an
+        ///     empty object will be produced. This flag is optional and
+        ///     defaults to false.
+        primitive_desc(const engine &aengine, prop_kind aprop_kind,
+                const memory::desc &diff_src_desc,
+                const memory::desc &diff_dst_desc, const memory::desc &src_desc,
+                memory::data_type diff_scale_shift_data_type,
+                memory::data_type scale_shift_data_type, float epsilon,
+                normalization_flags flags,
+                const layer_normalization_forward::primitive_desc &hint_fwd_pd,
+                const primitive_attr &attr = default_attr(),
+                bool allow_empty = false)
+            : primitive_desc(aengine, aprop_kind, diff_src_desc, diff_dst_desc,
+                    src_desc, nullptr, diff_scale_shift_data_type,
+                    scale_shift_data_type, epsilon, flags, hint_fwd_pd, attr,
                     allow_empty) {}
 
         /// Constructs a primitive descriptor for a layer normalization
@@ -8224,18 +8686,23 @@ struct layer_normalization_backward : public primitive {
         primitive_desc(const engine &aengine, prop_kind aprop_kind,
                 const memory::desc &diff_src_desc,
                 const memory::desc &diff_dst_desc, const memory::desc &src_desc,
-                const memory::desc *stat_desc, float epsilon,
+                const memory::desc *stat_desc,
+                memory::data_type diff_scale_shift_data_type,
+                memory::data_type scale_shift_data_type, float epsilon,
                 normalization_flags flags,
                 const layer_normalization_forward::primitive_desc &hint_fwd_pd,
                 const primitive_attr &attr, bool allow_empty) {
 
             dnnl_primitive_desc_t pd = nullptr;
             dnnl_status_t status
-                    = dnnl_layer_normalization_backward_primitive_desc_create(
+                    = dnnl_layer_normalization_backward_primitive_desc_create_v2(
                             &pd, aengine.get(), dnnl::convert_to_c(aprop_kind),
                             diff_src_desc.get(), diff_dst_desc.get(),
-                            src_desc.get(), optional_arg(stat_desc), epsilon,
-                            convert_to_c(flags), hint_fwd_pd.get(), attr.get());
+                            src_desc.get(), optional_arg(stat_desc),
+                            memory::convert_to_c(diff_scale_shift_data_type),
+                            memory::convert_to_c(scale_shift_data_type),
+                            epsilon, convert_to_c(flags), hint_fwd_pd.get(),
+                            attr.get());
 
             if (!allow_empty)
                 error::wrap_c_api(status,
@@ -13115,10 +13582,16 @@ enum class cpu_isa {
     avx512_core_vnni = dnnl_cpu_isa_avx512_core_vnni,
     /// @copydoc dnnl_cpu_isa_avx512_core_bf16
     avx512_core_bf16 = dnnl_cpu_isa_avx512_core_bf16,
+    /// @copydoc dnnl_cpu_isa_avx10_1_512
+    avx10_1_512 = dnnl_cpu_isa_avx10_1_512,
     /// @copydoc dnnl_cpu_isa_avx512_core_fp16
     avx512_core_fp16 = dnnl_cpu_isa_avx512_core_fp16,
+    /// @copydoc dnnl_cpu_isa_avx10_1_512_amx
+    avx10_1_512_amx = dnnl_cpu_isa_avx10_1_512_amx,
     /// @copydoc dnnl_cpu_isa_avx512_core_amx
     avx512_core_amx = dnnl_cpu_isa_avx512_core_amx,
+    /// @copydoc dnnl_cpu_isa_avx10_1_512_amx_fp16
+    avx10_1_512_amx_fp16 = dnnl_cpu_isa_avx10_1_512_amx_fp16,
     /// @copydoc dnnl_cpu_isa_avx512_core_amx_fp16
     avx512_core_amx_fp16 = dnnl_cpu_isa_avx512_core_amx_fp16,
 };

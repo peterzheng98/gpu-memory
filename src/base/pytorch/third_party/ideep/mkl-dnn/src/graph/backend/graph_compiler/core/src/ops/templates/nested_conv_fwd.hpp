@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2022-2023 Intel Corporation
+ * Copyright 2022-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 #define GRAPH_BACKEND_GRAPH_COMPILER_CORE_SRC_OPS_TEMPLATES_NESTED_CONV_FWD_HPP
 
 #include <memory>
+#include <string>
 #include <tuple>
 #include <vector>
 #include <ops/body_generator.hpp>
@@ -116,7 +117,7 @@ public:
     const expr &LDC) const;
 
   bool generate(context_ptr ctx, const nested_conv_fwd_config_t &config,
-    fusion_manager *fusion, const std::vector<expr> &inputs,
+    fusion_anchor_mgr_t *fusion, const std::vector<expr> &inputs,
     const std::vector<expr> &outputs,
     std::vector<for_loop> &loops) const override;
   config_ptr_vec get_dynamic_config_candidates(
@@ -127,6 +128,13 @@ public:
 
   void schedule_loops(context_ptr ctx, const nested_conv_fwd_config_t &config,
     stmt body, std::vector<for_loop> &fors) const override;
+  void bind_output_loop_axis(const for_loop &loop,
+    const std::vector<std::string> &axis, bool is_block = false) const;
+  void bind_output_loop_axis(
+    const for_loop &loop, const std::string axis, bool is_block = false) const {
+    this->bind_output_loop_axis(
+      loop, std::vector<std::string> {axis}, is_block);
+  }
 
   bool inverse_filter_ = false;
 
@@ -136,7 +144,7 @@ public:
 
 #define CONV_ARG_LIST \
   const context_ptr &ctx, const nested_conv_fwd_config_t &config, \
-    fusion_manager *fusion, expr &output, const expr &input, \
+    fusion_anchor_mgr_t *fusion, expr &output, const expr &input, \
     const expr &weight, std::vector<for_loop> &loops, const int os, \
     const int kpack = 1, const bool use_os_blocking = false, \
               const bool pack_rows = false, const expr &os_acc_size = expr(), \
@@ -161,7 +169,7 @@ public:
     for_loop &low, for_loop &looc, for_loop &loic, for_loop &lioc,
     for_loop &lih, for_loop &liw, const int oc_split,
     const int src_row_tile_size, const uint32_t lanes,
-    const nested_conv_fwd_config_t &config, fusion_manager *fusion,
+    const nested_conv_fwd_config_t &config, fusion_anchor_mgr_t *fusion,
     const int ic_used_threads, const int oh_used_threads,
     const int ow_used_threads, const int y_unpad_top, const int y_unpad_bottom,
     const int y_unpad_left, const int y_unpad_right, const int iw_padded,
@@ -177,7 +185,7 @@ public:
     for_loop &loh, for_loop &low, for_loop &looc, for_loop &loic,
     for_loop &lioc, for_loop &lih, for_loop &liw, const int oc_split,
     const expr &src_row_tile_size, const uint32_t lanes,
-    const nested_conv_fwd_config_t &config, fusion_manager *fusion,
+    const nested_conv_fwd_config_t &config, fusion_anchor_mgr_t *fusion,
     const int ic_used_threads, const int oc_used_threads,
     const expr &oh_used_threads, const expr &ow_used_threads,
     const expr &y_unpad_top, const expr &y_unpad_bottom,

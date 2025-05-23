@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2023 Intel Corporation
+* Copyright 2016-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -294,6 +294,74 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_get_fpmath_mode(
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_fpmath_mode(
         dnnl_primitive_attr_t attr, dnnl_fpmath_mode_t mode);
 
+/// Returns the floating-point math mode primitive attribute.
+///
+/// @param attr Primitive attributes.
+/// @param mode Output FP math mode.
+/// @param apply_to_int Output use floating-point arithmetic for integer primitives.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_primitive_attr_get_fpmath_mode_v2(
+        const_dnnl_primitive_attr_t attr, dnnl_fpmath_mode_t *mode,
+        int *apply_to_int);
+
+/// Sets the floating-point math mode primitive attributes.
+///
+/// @param attr Primitive attributes.
+/// @param mode FP math mode. The possible values are:
+///     #dnnl_fpmath_mode_strict (default),
+///     #dnnl_fpmath_mode_bf16,
+///     #dnnl_fpmath_mode_f16,
+///     #dnnl_fpmath_mode_tf32,
+///     #dnnl_fpmath_mode_any.
+/// @param apply_to_int Boolean. Use of floating-point arithmetic for integer primitives.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_fpmath_mode_v2(
+        dnnl_primitive_attr_t attr, dnnl_fpmath_mode_t mode, int apply_to_int);
+
+/// Returns the deterministic primitive attribute value.
+///
+/// @param attr Primitive attributes.
+/// @param value Output deterministic attribute value
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_primitive_attr_get_deterministic(
+        const_dnnl_primitive_attr_t attr, int *value);
+
+/// Sets the deterministic primitive attribute value.
+///
+/// @param attr Primitive attributes.
+/// @param value Boolean value to set deterministic attribute.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_deterministic(
+        dnnl_primitive_attr_t attr, int value);
+
+/// Returns the accumulation mode primitive attribute.
+///
+/// @param attr Primitive attributes.
+/// @param mode Output accumulation mode.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_primitive_attr_get_accumulation_mode(
+        const_dnnl_primitive_attr_t attr, dnnl_accumulation_mode_t *mode);
+
+/// Sets the accumulation mode primitive attribute.
+///
+/// @param attr Primitive attributes.
+/// @param mode Accumulation mode. The possible values are:
+///     #dnnl_accumulation_mode_strict (default), which is s32 for quantized primitives, f32/f64 otherwise
+///     #dnnl_accumulation_mode_relaxed, which is same as strict but allows intermediate accumulators to be in src/dst datatype
+///     #dnnl_accumulation_mode_any, which allows accumulators to be src/dst datatype or any wider type.
+///     #dnnl_accumulation_mode_f32,
+///     #dnnl_accumulation_mode_s32,
+///     #dnnl_accumulation_mode_f16.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_accumulation_mode(
+        dnnl_primitive_attr_t attr, dnnl_accumulation_mode_t mode);
+
 /// Returns the primitive attributes scratchpad mode.
 ///
 /// @param attr Primitive attributes.
@@ -334,6 +402,33 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_scratchpad_mode(
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_mask(
         dnnl_primitive_attr_t attr, int arg, int mask);
 
+/// Sets primitive attributes scaling factors for primitive operations for a
+/// given memory argument. The scaling factors must be passed at execution time
+/// as an argument with index #DNNL_ARG_ATTR_SCALES | arg.
+///
+/// @sa dnnl_primitive_attr_set_scales
+///
+///
+/// @param attr Primitive attributes.
+/// @param arg Parameter argument index as passed to the
+///     dnnl_primitive_execute() call.
+/// @param mask Scaling factors correspondence mask that defines the
+///     correspondence between the tensor dimensions and the @p scales array.
+///     The set i-th bit indicates that a dedicated scaling factor is used for
+///     each index along that dimension. Set the mask to 0 to use a common
+///     scaling factor for the whole output tensor.
+/// @param ndims Number of group dimensions.
+/// @param group_dims Scaling factors correspondence groups that define the
+///     correspondence between the tensor dimensions and the scales array.
+///     The group dimensions should only be provided for each logical dimension
+///     that has correspondence mask @p mask set.
+/// @param data_type Scaling factors data_type.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales(
+        dnnl_primitive_attr_t attr, int arg, int mask, int ndims,
+        const dnnl_dims_t group_dims, dnnl_data_type_t data_type);
+
 /// Sets primitive attributes zero points for primitive operations for a given
 /// memory argument. The zero points must be passed at execution time
 /// as an argument with index #DNNL_ARG_ATTR_ZERO_POINTS | arg.
@@ -353,6 +448,33 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_mask(
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_zero_points_mask(
         dnnl_primitive_attr_t attr, int arg, int mask);
+
+/// Sets primitive attributes zero points for primitive operations for a given
+/// memory argument. The zero points must be passed at execution time
+/// as an argument with index #DNNL_ARG_ATTR_ZERO_POINTS | arg.
+///
+/// @sa dnnl_primitive_attr_set_zero_points
+///
+///
+/// @param attr Primitive attributes.
+/// @param arg Parameter argument index as passed to the
+///     dnnl_primitive_execute() call.
+/// @param mask Zero point correspondence mask that defines the
+///     correspondence between the tensor dimensions and the @p
+///     zero_points array. The set i-th bit indicates that a dedicated
+///     zero point is used for each index along that dimension. Set the
+///     mask to 0 to use a common zero point for the whole output tensor.
+/// @param ndims Number of group dimensions.
+/// @param group_dims Zero point factors correspondence groups that define the
+///     correspondence between the tensor dimensions and the zero_points array.
+///     The group dimensions should be only provided for each logical dimension
+///     that has the bit set correspondence mask @p mask set.
+/// @param data_type Zero points factors data_type.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_zero_points(
+        dnnl_primitive_attr_t attr, int arg, int mask, int ndims,
+        const dnnl_dims_t group_dims, dnnl_data_type_t data_type);
 
 /// Returns primitive attributes post-ops.
 ///
@@ -658,6 +780,27 @@ dnnl_status_t DNNL_API dnnl_memory_desc_destroy(dnnl_memory_desc_t memory_desc);
 dnnl_status_t DNNL_API dnnl_memory_desc_clone(dnnl_memory_desc_t *memory_desc,
         const_dnnl_memory_desc_t existing_memory_desc);
 
+/// Retrieves a binary blob associated with the given memory descriptor
+///
+/// @param blob Output pointer to binary blob.
+///     If not nullptr, size bytes of the memory descriptor blob are written.
+/// @param size Output pointer to the size of the binary blob in bytes.
+///     Size is written if blob is nullptr.
+/// @param memory_desc input memory descriptor to serialize
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_memory_desc_get_blob(
+        uint8_t *blob, size_t *size, const_dnnl_memory_desc_t memory_desc);
+
+/// Creates a memory descriptor from a memory descriptor binary blob.
+///
+/// @param memory_desc Output pointer to a newly allocated memory descriptor.
+/// @param blob Pointer to a memory descriptor binary blob.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_memory_desc_create_with_blob(
+        dnnl_memory_desc_t *memory_desc, const uint8_t *blob);
+
 /// Creates a memory descriptor using dimensions and strides.
 ///
 /// @note
@@ -715,6 +858,29 @@ dnnl_status_t DNNL_API dnnl_memory_desc_create_with_csr_encoding(
         dnnl_memory_desc_t *memory_desc, int ndims, const dnnl_dims_t dims,
         dnnl_data_type_t data_type, dnnl_dim_t nnz, dnnl_data_type_t indices_dt,
         dnnl_data_type_t pointers_dt);
+
+/// Creates a memory descriptor for packed sparse encoding.
+///
+/// The created memory descriptor cannot be used to create a memory
+/// object. It can only be used to create a primitive descriptor to
+/// query the actual memory descriptor (similar to the format tag
+/// `any`).
+///
+/// @warning
+///     The meaning and content of the handles of the memory object that
+///     is created using the queried memory descriptor are unspecified
+///     therefore using the content is an undefined behavior.
+///
+/// @param memory_desc Output memory descriptor.
+/// @param ndims Number of dimensions
+/// @param dims Array of dimensions.
+/// @param data_type Elements data type.
+/// @param nnz Number of non-zero entries.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_memory_desc_create_with_packed_encoding(
+        dnnl_memory_desc_t *memory_desc, int ndims, const dnnl_dims_t dims,
+        dnnl_data_type_t data_type, dnnl_dim_t nnz);
 #endif
 
 /// Creates a memory descriptor for a region inside an area
@@ -2107,6 +2273,83 @@ dnnl_status_t DNNL_API dnnl_layer_normalization_backward_primitive_desc_create(
         float epsilon, unsigned flags, const_dnnl_primitive_desc_t hint_fwd_pd,
         const_dnnl_primitive_attr_t attr);
 
+/// Creates a primitive descriptor for a layer normalization forward propagation
+///     primitive with a user-provided data type for the scale and shift
+///     memory objects.
+///
+/// @note
+///     In-place operation is supported: the dst can refer to the same memory
+///     as the src.
+///
+/// @param primitive_desc Output primitive_descriptor.
+/// @param engine Engine to use.
+/// @param prop_kind Propagation kind. Possible values are
+///     #dnnl_forward_training and #dnnl_forward_inference.
+/// @param src_desc Source memory descriptor.
+/// @param dst_desc Destination memory descriptor.
+/// @param stat_desc Memory descriptor for mean and variance. If this
+///     parameter is NULL, a zero memory descriptor, or a memory descriptor
+///     with format_kind set to #dnnl_format_kind_undef, then the memory
+///     descriptor for stats is derived from @p src_desc by removing the last
+///     dimension.
+/// @param scale_shift_data_type Data type of scale and shift memory. If neither scale
+///     nor shift flag are specified the parameter is ignored.
+/// @param epsilon Layer normalization epsilon parameter.
+/// @param flags Layer normalization flags (@ref dnnl_normalization_flags_t).
+/// @param attr Primitive attributes (can be NULL).
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API
+dnnl_layer_normalization_forward_primitive_desc_create_v2(
+        dnnl_primitive_desc_t *primitive_desc, dnnl_engine_t engine,
+        dnnl_prop_kind_t prop_kind, const_dnnl_memory_desc_t src_desc,
+        const_dnnl_memory_desc_t dst_desc, const_dnnl_memory_desc_t stat_desc,
+        dnnl_data_type_t scale_shift_data_type, float epsilon, unsigned flags,
+        const_dnnl_primitive_attr_t attr);
+
+/// Creates a primitive descriptor for a layer normalization backward
+///     propagation primitive with a user-provided data type for the
+///     scale and shift memory objects.
+///
+/// @note
+///     In-place operation is supported: the diff_dst can refer to the same
+///     memory as the diff_src.
+///
+/// @param primitive_desc Output primitive_descriptor.
+/// @param engine Engine to use.
+/// @param prop_kind Propagation kind. Possible values are
+///     #dnnl_backward_data and #dnnl_backward (diffs for all parameters are
+///     computed in this case).
+/// @param diff_src_desc Diff source memory descriptor.
+/// @param diff_dst_desc Diff destination memory descriptor.
+/// @param src_desc Source memory descriptor.
+/// @param stat_desc Memory descriptor for mean and variance. If this
+///     parameter is NULL, a zero memory descriptor, or a memory descriptor
+///     with format_kind set to #dnnl_format_kind_undef, then the memory
+///     descriptor for stats is derived from @p src_desc by removing the last
+///     dimension.
+/// @param diff_scale_shift_data_type Data type of diff scale and shift memory. If neither scale
+///     nor shift flag are specified the parameter is ignored.
+/// @param scale_shift_data_type Data type of scale and shift memory. If neither scale
+///     nor shift flag are specified the parameter is ignored.
+/// @param epsilon Layer normalization epsilon parameter.
+/// @param flags Layer normalization flags (@ref dnnl_normalization_flags_t).
+/// @param hint_fwd_pd Primitive descriptor for a respective forward propagation
+///     primitive.
+/// @param attr Primitive attributes (can be NULL).
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API
+dnnl_layer_normalization_backward_primitive_desc_create_v2(
+        dnnl_primitive_desc_t *primitive_desc, dnnl_engine_t engine,
+        dnnl_prop_kind_t prop_kind, const_dnnl_memory_desc_t diff_src_desc,
+        const_dnnl_memory_desc_t diff_dst_desc,
+        const_dnnl_memory_desc_t src_desc, const_dnnl_memory_desc_t stat_desc,
+        dnnl_data_type_t diff_scale_shift_data_type,
+        dnnl_data_type_t scale_shift_data_type, float epsilon, unsigned flags,
+        const_dnnl_primitive_desc_t hint_fwd_pd,
+        const_dnnl_primitive_attr_t attr);
+
 /// @} dnnl_api_layer_normalization
 
 /// @addtogroup dnnl_api_inner_product
@@ -3355,8 +3598,12 @@ dnnl_status_t DNNL_API dnnl_set_jit_profiling_jitdumpdir(const char *dir);
 ///     The ISAs are only partially ordered:
 ///         - SSE41 < AVX < AVX2 < AVX2_VNNI < AVX2_VNNI_2,
 ///         - AVX2 < AVX512_CORE < AVX512_CORE_VNNI < AVX512_CORE_BF16
-///           < AVX512_CORE_FP16 < AVX512_CORE_AMX < AVX512_CORE_AMX_FP16,
-///         - AVX2_VNNI < AVX512_CORE_FP16.
+///           < AVX10_1_512 < AVX10_1_512_AMX < AVX10_1_512_AMX_FP16,
+///         - AVX2_VNNI < AVX10_1_512.
+///     Aliases:
+///         - AVX512_CORE_FP16 = AVX10_1_512
+///         - AVX512_CORE_AMX = AVX10_1_512_AMX
+///         - AVX512_CORE_AMX_FP16 = AVX10_1_512_AMX_FP16
 ///
 /// @sa @ref dev_guide_cpu_dispatcher_control for more details
 ///

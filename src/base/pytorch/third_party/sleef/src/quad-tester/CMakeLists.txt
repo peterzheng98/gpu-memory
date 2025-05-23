@@ -13,7 +13,7 @@ if (NOT LIBRT)
   set(LIBRT "")
 endif()
 
-set(CMAKE_C_FLAGS "${ORG_CMAKE_C_FLAGS} ${SLEEF_C_FLAGS}")
+set(CMAKE_C_FLAGS "${ORG_CMAKE_C_FLAGS} ${SLEEF_C_FLAGS} ${FLAGS_NOSTRICTALIASING}")
 
 if(COMPILER_SUPPORTS_FLOAT128)
   list(APPEND COMMON_TARGET_DEFINITIONS ENABLEFLOAT128=1)
@@ -42,7 +42,7 @@ endif()
 
 #
 
-function(add_test_iut IUT)
+function(add_test_iut IUT C)
   if (LIB_MPFR)
     set(QTESTER qtester)
   elseif(QTESTER_COMMAND)
@@ -68,18 +68,18 @@ function(add_test_iut IUT)
       add_test(NAME ${IUT}
 	COMMAND ${QTESTER} ${FLAGS_SDE} ${FLAGS_ARMIE} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${IUT}
 	WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-      set_tests_properties(${IUT} PROPERTIES COST 0.5)
+      set_tests_properties(${IUT} PROPERTIES COST ${C})
     else()
       add_test(NAME ${IUT}
-	COMMAND ${QTESTER} ${EMULATOR} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${IUT}
+	COMMAND ${QTESTER} "--qemu" ${EMULATOR} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${IUT}
 	WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-      set_tests_properties(${IUT} PROPERTIES COST 0.5)
+      set_tests_properties(${IUT} PROPERTIES COST ${C})
     endif()
   endif()
 endfunction()
 
 # Add vector extension `iut`s
-set(IUT_SRC qiutsimd.c qiutsimdmain.c qtesterutil.c)
+set(IUT_SRC qiutsimd.c ${sleef_SOURCE_DIR}/src/common/main_checkfeature.c qtesterutil.c)
 
 macro(test_extension SIMD)
   if(COMPILER_SUPPORTS_${SIMD})
@@ -96,30 +96,44 @@ macro(test_extension SIMD)
     add_dependencies(${TARGET_IUT${SIMD}} sleefquad_headers ${TARGET_HEADERS})
     add_dependencies(${TARGET_IUT${SIMD}} sleefquad ${TARGET_LIBSLEEF})
     set_target_properties(${TARGET_IUT${SIMD}} PROPERTIES C_STANDARD 99)
-    add_test_iut(${TARGET_IUT${SIMD}})
+    if (DEFINED COSTOVERRIDE_${SIMD})
+      math(EXPR C "${COSTOVERRIDE_${SIMD}} + 1")
+      add_test_iut(${TARGET_IUT${SIMD}} ${C})
+    else()
+      add_test_iut(${TARGET_IUT${SIMD}} 0.5)
+    endif()
     list(APPEND IUT_LIST ${TARGET_IUT${SIMD}})
 
     # The iut programs whose names begin with "qiuti" are the iut for the
     # inline version of quad functions.
 
-    if (BUILD_INLINE_HEADERS AND SED_COMMAND)
-      string(CONCAT IUTINAME "qiuti" ${LCSIMD})
-      add_executable(${IUTINAME} ${IUT_SRC})
-      target_compile_options(${IUTINAME}
-	PRIVATE ${FLAGS_ENABLE_${SIMD}})
-      target_compile_definitions(${IUTINAME}
-	PRIVATE ENABLE_${SIMD}=1 ${COMMON_TARGET_DEFINITIONS}
-	USE_INLINE_HEADER="sleefquadinline_${LCSIMD}.h"
-	MACRO_ONLY_HEADER="qmacroonly${SIMD}.h"
-	SIMD_SUFFIX=_${LCSIMD}_sleefq
-	)
-      target_include_directories(${IUTINAME} PRIVATE ${PROJECT_BINARY_DIR}/include)
-      target_link_libraries(${IUTINAME} ${LIBM} ${LIBRT})
-      add_dependencies(${IUTINAME} ${TARGET_QINLINE_HEADERS})
-      set_target_properties(${IUTINAME} PROPERTIES C_STANDARD 99)
-      add_test_iut(${IUTINAME})
-      list(APPEND IUT_LIST ${IUTINAME})
-    endif(BUILD_INLINE_HEADERS AND SED_COMMAND)
+    if (SLEEF_BUILD_INLINE_HEADERS AND SED_COMMAND)
+      if (MSVC AND NOT SLEEF_CLANG_ON_WINDOWS)
+	message(STATUS "Quad inline headers are not tested with MSVC")
+      else()
+	string(CONCAT IUTINAME "qiuti" ${LCSIMD})
+	add_executable(${IUTINAME} ${IUT_SRC})
+	target_compile_options(${IUTINAME}
+	  PRIVATE ${FLAGS_ENABLE_${SIMD}})
+	target_compile_definitions(${IUTINAME}
+	  PRIVATE ENABLE_${SIMD}=1 ${COMMON_TARGET_DEFINITIONS}
+	  USE_INLINE_HEADER="sleefquadinline_${LCSIMD}.h"
+	  MACRO_ONLY_HEADER="qmacroonly${SIMD}.h"
+	  SIMD_SUFFIX=_${LCSIMD}_sleefq
+	  )
+	target_include_directories(${IUTINAME} PRIVATE ${PROJECT_BINARY_DIR}/include)
+	target_link_libraries(${IUTINAME} ${LIBM} ${LIBRT})
+	add_dependencies(${IUTINAME} ${TARGET_QINLINE_HEADERS})
+	set_target_properties(${IUTINAME} PROPERTIES C_STANDARD 99)
+	if (DEFINED COSTOVERRIDE_${SIMD})
+	  math(EXPR C "${COSTOVERRIDE_${SIMD}} + 1")
+	  add_test_iut(${IUTINAME} ${C})
+	else()
+	  add_test_iut(${IUTINAME} 0.5)
+	endif()
+	list(APPEND IUT_LIST ${IUTINAME})
+      endif()
+    endif(SLEEF_BUILD_INLINE_HEADERS AND SED_COMMAND)
 
     if(LIB_MPFR AND NOT MINGW)
       # Build qtester2 SIMD
@@ -142,12 +156,73 @@ foreach(SIMD ${SLEEF_SUPPORTED_QUAD_EXTENSIONS})
   test_extension(${SIMD})
 endforeach()
 
-# Compile executable 'iutcuda'
+# Compile executable 'qiutdspscalar'
 
-if (BUILD_INLINE_HEADERS AND SED_COMMAND AND CMAKE_CUDA_COMPILER)
+add_executable(qiutdspscalar ${IUT_SRC})
+target_compile_definitions(qiutdspscalar PRIVATE ENABLE_DSPSCALAR=1 ${COMMON_TARGET_DEFINITIONS})
+target_link_libraries(qiutdspscalar sleefquad ${TARGET_LIBSLEEF} ${LIBM} ${LIBRT})
+set_target_properties(qiutdspscalar PROPERTIES C_STANDARD 99)
+add_dependencies(qiutdspscalar sleefquad_headers ${TARGET_HEADERS})
+add_dependencies(qiutdspscalar sleefquad ${TARGET_LIBSLEEF})
+add_test_iut(qiutdspscalar 0.5)
+list(APPEND IUT_LIST qiutdspscalar)
+
+if (SLEEF_ARCH_X86)
+  # Compile executable 'qiutdspx2'
+  add_executable(qiutdspx2 ${IUT_SRC})
+  target_compile_definitions(qiutdspx2 PRIVATE ENABLE_DSPX2_X86=1 ${COMMON_TARGET_DEFINITIONS})
+  target_link_libraries(qiutdspx2 sleefquad ${TARGET_LIBSLEEF} ${LIBM} ${LIBRT})
+  set_target_properties(qiutdspx2 PROPERTIES C_STANDARD 99)
+  add_dependencies(qiutdspx2 sleefquad_headers ${TARGET_HEADERS})
+  add_dependencies(qiutdspx2 sleefquad ${TARGET_LIBSLEEF})
+  add_test_iut(qiutdspx2 0.5)
+  list(APPEND IUT_LIST qiutdspx2)
+endif()
+
+if (SLEEF_ARCH_AARCH64)
+  # Compile executable 'qiutdspx2'
+  add_executable(qiutdspx2 ${IUT_SRC})
+  target_compile_definitions(qiutdspx2 PRIVATE ENABLE_DSPX2_AARCH64=1 ${COMMON_TARGET_DEFINITIONS})
+  set_target_properties(qiutdspx2 PROPERTIES C_STANDARD 99)
+  target_link_libraries(qiutdspx2 sleefquad ${TARGET_LIBSLEEF} ${LIBM} ${LIBRT})
+  add_dependencies(qiutdspx2 sleefquad_headers ${TARGET_HEADERS})
+  add_dependencies(qiutdspx2 sleefquad ${TARGET_LIBSLEEF})
+  add_test_iut(qiutdspx2 0.5)
+  list(APPEND IUT_LIST qiutdspx2)
+endif()
+
+if (SLEEF_ARCH_PPC64)
+  # Compile executable 'qiutdspx2'
+  add_executable(qiutdspx2 ${IUT_SRC})
+  target_compile_options(qiutdspx2 PRIVATE ${FLAGS_ENABLE_VSX})
+  set_target_properties(qiutdspx2 PROPERTIES C_STANDARD 99)
+  target_compile_definitions(qiutdspx2 PRIVATE ENABLE_DSPX2_PPC64=1 ${COMMON_TARGET_DEFINITIONS})
+  target_link_libraries(qiutdspx2 sleefquad ${TARGET_LIBSLEEF} ${LIBM} ${LIBRT})
+  add_dependencies(qiutdspx2 sleefquad_headers ${TARGET_HEADERS})
+  add_dependencies(qiutdspx2 sleefquad ${TARGET_LIBSLEEF})
+  add_test_iut(qiutdspx2 0.5)
+  list(APPEND IUT_LIST qiutdspx2)
+endif()
+
+if (SLEEF_ARCH_S390X)
+  # Compile executable 'qiutdspx2'
+  add_executable(qiutdspx2 ${IUT_SRC})
+  target_compile_options(qiutdspx2 PRIVATE ${FLAGS_ENABLE_VXE})
+  set_target_properties(qiutdspx2 PROPERTIES C_STANDARD 99)
+  target_compile_definitions(qiutdspx2 PRIVATE ENABLE_DSPX2_S390X=1 ${COMMON_TARGET_DEFINITIONS})
+  target_link_libraries(qiutdspx2 sleefquad ${TARGET_LIBSLEEF} ${LIBM} ${LIBRT})
+  add_dependencies(qiutdspx2 sleefquad_headers ${TARGET_HEADERS})
+  add_dependencies(qiutdspx2 sleefquad ${TARGET_LIBSLEEF})
+  add_test_iut(qiutdspx2 0.5)
+  list(APPEND IUT_LIST qiutdspx2)
+endif()
+
+# Compile executable 'qiutcuda'
+
+if (SLEEF_BUILD_INLINE_HEADERS AND SED_COMMAND AND CMAKE_CUDA_COMPILER)
   add_executable(qiutcuda qiutcuda.cu)
   set_target_properties(qiutcuda PROPERTIES LINKER_LANGUAGE CUDA)
-  target_compile_options(qiutcuda PRIVATE "--fmad=false")
+  target_compile_options(qiutcuda PRIVATE "--fmad=false;-Xcompiler;-ffp-contract=off")
   add_dependencies(qiutcuda ${TARGET_QINLINE_HEADERS})
   add_test_iut(qiutcuda 1.0)
   list(APPEND IUT_LIST qiutcuda)

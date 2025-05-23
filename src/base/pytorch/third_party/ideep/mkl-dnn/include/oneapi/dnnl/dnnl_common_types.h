@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2022-2023 Intel Corporation
+* Copyright 2022-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -92,6 +92,16 @@ typedef enum {
     dnnl_f64 = 7,
     /// Boolean data type. Size is C++ implementation defined.
     dnnl_boolean = 8,
+    /// [OFP8 standard 8-bit floating-point](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-06-20-pdf)
+    /// with a 5-bit exponent and a 2-bit mantissa.
+    dnnl_f8_e5m2 = 9,
+    /// [OFP8 standard 8-bit floating-point](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-06-20-pdf)
+    /// with a 4-bit exponent and a 3-bit mantissa.
+    dnnl_f8_e4m3 = 10,
+    /// 4-bit signed integer.
+    dnnl_s4 = 11,
+    /// 4-bit unsigned integer.
+    dnnl_u4 = 12,
 
     /// Parameter to allow internal only data_types without undefined behavior.
     /// This parameter is chosen to be valid for so long as sizeof(int) >= 2.
@@ -129,6 +139,30 @@ typedef enum {
 } dnnl_fpmath_mode_t;
 
 /// @} dnnl_api_fpmath_mode
+
+/// @addtogroup dnnl_api_accumulation_mode Accumulation Mode
+/// @{
+
+/// Accumulation mode
+typedef enum {
+    /// Default behavior, f32/f64 for floating point computation, s32
+    /// for integer
+    dnnl_accumulation_mode_strict,
+    /// Same as strict but allows some partial accumulators to be
+    /// rounded to src/dst datatype in memory.
+    dnnl_accumulation_mode_relaxed,
+    /// uses fastest implementation, could use src/dst datatype or
+    /// wider datatype for accumulators
+    dnnl_accumulation_mode_any,
+    /// use s32 accumulators during computation
+    dnnl_accumulation_mode_s32,
+    /// use f32 accumulators during computation
+    dnnl_accumulation_mode_f32,
+    /// use f16 accumulators during computation
+    dnnl_accumulation_mode_f16
+} dnnl_accumulation_mode_t;
+
+/// @} dnnl_api_accumulation_mode
 
 /// @addtogroup dnnl_api_engine Engine
 /// @{
@@ -198,6 +232,19 @@ typedef struct {
 } dnnl_version_t;
 
 /// @} dnnl_api_service
+
+/// @addtogroup dnnl_api_memory
+/// @{
+
+/// Special pointer value that indicates that a memory object should not have
+/// an underlying buffer.
+#define DNNL_MEMORY_NONE (NULL)
+
+/// Special pointer value that indicates that the library needs to allocate an
+/// underlying buffer for a memory object.
+#define DNNL_MEMORY_ALLOCATE ((void *)(size_t)-1)
+
+/// @} dnnl_api_memory
 
 /// @} dnnl_api_common
 

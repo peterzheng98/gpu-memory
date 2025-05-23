@@ -33,9 +33,13 @@ to_grayscale = rgb_to_grayscale
 def _rgb_to_grayscale_image(
     image: torch.Tensor, num_output_channels: int = 1, preserve_dtype: bool = True
 ) -> torch.Tensor:
-    if image.shape[-3] == 1:
+    # TODO: Maybe move the validation that num_output_channels is 1 or 3 to this function instead of callers.
+    if image.shape[-3] == 1 and num_output_channels == 1:
         return image.clone()
-
+    if image.shape[-3] == 1 and num_output_channels == 3:
+        s = [1] * len(image.shape)
+        s[-3] = 3
+        return image.repeat(s)
     r, g, b = image.unbind(dim=-3)
     l_img = r.mul(0.2989).add_(g, alpha=0.587).add_(b, alpha=0.114)
     l_img = l_img.unsqueeze(dim=-3)
@@ -59,6 +63,32 @@ def _rgb_to_grayscale_image_pil(image: PIL.Image.Image, num_output_channels: int
     if num_output_channels not in (1, 3):
         raise ValueError(f"num_output_channels must be 1 or 3, got {num_output_channels}.")
     return _FP.to_grayscale(image, num_output_channels=num_output_channels)
+
+
+def grayscale_to_rgb(inpt: torch.Tensor) -> torch.Tensor:
+    """See :class:`~torchvision.transforms.v2.RGB` for details."""
+    if torch.jit.is_scripting():
+        return grayscale_to_rgb_image(inpt)
+
+    _log_api_usage_once(grayscale_to_rgb)
+
+    kernel = _get_kernel(grayscale_to_rgb, type(inpt))
+    return kernel(inpt)
+
+
+@_register_kernel_internal(grayscale_to_rgb, torch.Tensor)
+@_register_kernel_internal(grayscale_to_rgb, tv_tensors.Image)
+def grayscale_to_rgb_image(image: torch.Tensor) -> torch.Tensor:
+    if image.shape[-3] >= 3:
+        # Image already has RGB channels. We don't need to do anything.
+        return image
+    # rgb_to_grayscale can be used to add channels so we reuse that function.
+    return _rgb_to_grayscale_image(image, num_output_channels=3, preserve_dtype=True)
+
+
+@_register_kernel_internal(grayscale_to_rgb, PIL.Image.Image)
+def grayscale_to_rgb_image_pil(image: PIL.Image.Image) -> PIL.Image.Image:
+    return image.convert(mode="RGB")
 
 
 def _blend(image1: torch.Tensor, image2: torch.Tensor, ratio: float) -> torch.Tensor:
@@ -657,7 +687,7 @@ def permute_channels(inpt: torch.Tensor, permutation: List[int]) -> torch.Tensor
 
     Example:
         >>> rgb_image = torch.rand(3, 256, 256)
-        >>> bgr_image = F.permutate_channels(rgb_image, permutation=[2, 1, 0])
+        >>> bgr_image = F.permute_channels(rgb_image, permutation=[2, 1, 0])
 
     Args:
         permutation (List[int]): Valid permutation of the input channel indices. The index of the element determines the
@@ -700,7 +730,7 @@ def permute_channels_image(image: torch.Tensor, permutation: List[int]) -> torch
 
 
 @_register_kernel_internal(permute_channels, PIL.Image.Image)
-def _permute_channels_image_pil(image: PIL.Image.Image, permutation: List[int]) -> PIL.Image:
+def _permute_channels_image_pil(image: PIL.Image.Image, permutation: List[int]) -> PIL.Image.Image:
     return to_pil_image(permute_channels_image(pil_to_tensor(image), permutation=permutation))
 
 

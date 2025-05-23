@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2023 Intel Corporation
+* Copyright 2019-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -58,18 +58,29 @@ struct jit_avx512_core_bf16_1x1_convolution_fwd_t : public primitive_t {
                 jit_avx512_core_bf16_1x1_convolution_fwd_t);
 
         status_t init(engine_t *engine) {
-            bool ok = true && mayiuse(avx512_core) && is_fwd()
-                    && set_default_alg_kind(alg_kind::convolution_direct)
-                    && expect_data_types(data_type::bf16, data_type::bf16,
-                            data_type::undef, dst_type, data_type::undef)
-                    && IMPLICATION(with_bias(),
-                            utils::one_of(weights_md(1)->data_type,
-                                    data_type::f32, data_type::bf16))
-                    && attr()->has_default_values(
-                            primitive_attr_t::skip_mask_t::post_ops, dst_type)
-                    && !has_zero_dim_memory() && set_default_formats()
-                    && attr_.set_default_formats(dst_md(0)) == status::success;
-            if (!ok) return status::unimplemented;
+            using namespace data_type;
+            // disabling verbose dispatch messages for unsupported isa for better readability
+            if (!mayiuse(avx512_core)) return status::unimplemented;
+
+            VDISPATCH_CONV(is_fwd(), VERBOSE_BAD_PROPKIND);
+            VDISPATCH_CONV(expect_data_types(bf16, bf16, data_type::undef,
+                                   dst_type, data_type::undef),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
+                    VERBOSE_BAD_ALGORITHM);
+            VDISPATCH_CONV(
+                    IMPLICATION(with_bias(),
+                            utils::one_of(weights_md(1)->data_type, f32, bf16)),
+                    VERBOSE_UNSUPPORTED_BIAS_CFG);
+            VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
+            VDISPATCH_CONV(
+                    attr()->has_default_values(
+                            primitive_attr_t::skip_mask_t::post_ops, dst_type),
+                    VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
+            VDISPATCH_CONV(
+                    attr_.set_default_formats(dst_md(0)) == status::success,
+                    VERBOSE_UNSUPPORTED_POSTOP);
 
             const convolution_desc_t *conv_d = desc();
             const memory_desc_t *src_d = src_md();
@@ -214,16 +225,22 @@ struct jit_avx512_core_bf16_1x1_convolution_fwd_t : public primitive_t {
             // for 1x1: Check that no better ISA is available.
             // for dw: Always fuse with same ISA.
             // Caveat: May be a better dw conv exists.
+            VDISPATCH_CONV_IC(!mayiuse(avx512_core_amx),
+                    VERBOSE_1x1CONV_HEURISTIC_FAIL, "higher ISA is supported");
 
-            bool ok = !mayiuse(avx512_core_amx)
-                    && (attr_1x1.post_ops_.find(primitive_kind::sum) == -1)
-                    // TODO: Below may be further tuned.
-                    && (l2_cache * 2 < src_d.size())
-                    // load_grp_count check can be redundant due to l2 check
-                    // above. Adding it explicitly as the current driver doesn't
-                    // work if this condition fails.
-                    && (jcp_1x1.load_grp_count < 2);
-            if (!ok) return status::unimplemented;
+            VDISPATCH_CONV_IC(
+                    attr_1x1.post_ops_.find(primitive_kind::sum) == -1,
+                    VERBOSE_UNSUPPORTED_FEATURE, "unsupported sum post-op");
+
+            // TODO: Below may be further tuned.
+            VDISPATCH_CONV_IC(l2_cache * 2 < src_d.size(),
+                    VERBOSE_1x1CONV_HEURISTIC_FAIL, "cache size check failed");
+
+            // load_grp_count check can be redundant due to l2 check
+            // above. Adding it explicitly as the current driver doesn't
+            // work if this condition fails.
+            VDISPATCH_CONV_IC(jcp_1x1.load_grp_count < 2,
+                    VERBOSE_1x1CONV_HEURISTIC_FAIL, "load group count > 1");
 
             int dw_po_index
                     = attr_1x1.post_ops_.find(primitive_kind::convolution);
@@ -254,12 +271,17 @@ struct jit_avx512_core_bf16_1x1_convolution_fwd_t : public primitive_t {
                 return status::unimplemented;
 #undef CASE
 
-            ok = true
-                    && (dnnl_memory_desc_equal(&src_md, dw_conv_pd_->src_md(0)))
-                    && (jcp_1x1.oc_without_padding % jcp_1x1.oc_block == 0)
-                    && IMPLICATION(
-                            jcp_dw->ow_block, jcp_dw->ow_block == jcp_dw->ow);
-            if (!ok) return status::unimplemented;
+            VDISPATCH_CONV_IC(
+                    dnnl_memory_desc_equal(&src_md, dw_conv_pd_->src_md(0)),
+                    VERBOSE_INCONSISTENT_MDS, "src_md", "dw_conv_pd_->src_md");
+            VDISPATCH_CONV_IC(
+                    jcp_1x1.oc_without_padding % jcp_1x1.oc_block == 0,
+                    VERBOSE_1x1CONV_HEURISTIC_FAIL,
+                    "output-channel is not an exact multiple of oc_block");
+            VDISPATCH_CONV_IC(IMPLICATION(jcp_dw->ow_block,
+                                      jcp_dw->ow_block == jcp_dw->ow),
+                    VERBOSE_1x1CONV_HEURISTIC_FAIL,
+                    "ow_block does not equal output-width");
 
             assert(dw_conv_pd_->dst_md(0)->format_kind != format_kind::any);
             assert(dw_conv_pd_->weights_md(0)->format_kind != format_kind::any);
@@ -360,13 +382,20 @@ struct jit_avx512_core_bf16_1x1_convolution_bwd_data_t : public primitive_t {
                 jit_avx512_core_bf16_1x1_convolution_bwd_data_t);
 
         status_t init(engine_t *engine) {
-            bool ok = true && mayiuse(avx512_core) && is_bwd_d()
-                    && set_default_alg_kind(alg_kind::convolution_direct)
-                    && expect_data_types(diff_src_type, data_type::bf16,
-                            data_type::undef, data_type::bf16, data_type::undef)
-                    && attr()->has_default_values() && !has_zero_dim_memory()
-                    && set_default_formats();
-            if (!ok) return status::unimplemented;
+            using namespace data_type;
+            // disabling verbose dispatch messages for unsupported isa for better readability
+            if (!mayiuse(avx512_core)) return status::unimplemented;
+
+            VDISPATCH_CONV(is_bwd_d(), VERBOSE_BAD_PROPKIND);
+            VDISPATCH_CONV(expect_data_types(diff_src_type, bf16,
+                                   data_type::undef, bf16, data_type::undef),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
+                    VERBOSE_BAD_ALGORITHM);
+            VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
+            VDISPATCH_CONV(
+                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
 
             const convolution_desc_t *conv_d = desc();
             const memory_desc_t *diff_src_d = diff_src_md();
@@ -469,17 +498,25 @@ struct jit_avx512_core_bf16_1x1_convolution_bwd_weights_t : public primitive_t {
 
         status_t init(engine_t *engine) {
             using namespace prop_kind;
+            using namespace data_type;
             assert(engine->kind() == engine_kind::cpu);
-            bool ok = true && mayiuse(avx512_core) && is_bwd_w()
-                    && set_default_alg_kind(alg_kind::convolution_direct)
-                    && expect_data_types(data_type::bf16, diff_weights_type,
-                            data_type::undef, data_type::bf16, data_type::undef)
-                    && IMPLICATION(with_bias(),
-                            utils::one_of(diff_weights_md(1)->data_type,
-                                    data_type::f32, data_type::bf16))
-                    && attr()->has_default_values() && !has_zero_dim_memory()
-                    && set_default_formats();
-            if (!ok) return status::unimplemented;
+            // disabling verbose dispatch messages for unsupported isa for better readability
+            if (!mayiuse(avx512_core)) return status::unimplemented;
+
+            VDISPATCH_CONV(is_bwd_w(), VERBOSE_BAD_PROPKIND);
+            VDISPATCH_CONV(expect_data_types(bf16, diff_weights_type,
+                                   data_type::undef, bf16, data_type::undef),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
+                    VERBOSE_BAD_ALGORITHM);
+            VDISPATCH_CONV(IMPLICATION(with_bias(),
+                                   utils::one_of(diff_weights_md(1)->data_type,
+                                           f32, bf16)),
+                    VERBOSE_UNSUPPORTED_BIAS_CFG);
+            VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
+            VDISPATCH_CONV(
+                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
 
             const convolution_desc_t *conv_d = desc();
             const memory_desc_t *src_d = src_md();

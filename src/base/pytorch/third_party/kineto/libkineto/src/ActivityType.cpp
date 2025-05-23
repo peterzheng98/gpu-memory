@@ -30,13 +30,17 @@ static constexpr std::array<ActivityTypeName, activityTypeCount + 1> map{{
     {"cpu_instant_event", ActivityType::CPU_INSTANT_EVENT},
     {"python_function", ActivityType::PYTHON_FUNCTION},
     {"overhead", ActivityType::OVERHEAD},
+    {"mtia_runtime", ActivityType::MTIA_RUNTIME},
+    {"mtia_ccp_events", ActivityType::MTIA_CCP_EVENTS},
     {"cuda_sync", ActivityType::CUDA_SYNC},
     {"glow_runtime", ActivityType::GLOW_RUNTIME},
-    {"mtia_runtime", ActivityType::MTIA_RUNTIME},
     {"cuda_profiler_range", ActivityType::CUDA_PROFILER_RANGE},
-    {"mtia_ccp_events", ActivityType::MTIA_CCP_EVENTS},
     {"hpu_op", ActivityType::HPU_OP},
     {"xpu_runtime", ActivityType::XPU_RUNTIME},
+    {"collective_comm", ActivityType::COLLECTIVE_COMM},
+    {"mtia_workloadd", ActivityType::MTIA_WORKLOADD},
+    {"privateuse1_runtime", ActivityType::PRIVATEUSE1_RUNTIME},
+    {"privateuse1_driver", ActivityType::PRIVATEUSE1_DRIVER},
     {"ENUM_COUNT", ActivityType::ENUM_COUNT}
 }};
 

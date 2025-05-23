@@ -34,6 +34,8 @@
 #include <utility>
 #include <vector>
 
+// #include <torch/csrc/profiler/combined_traceback.h>
+
 TORCH_SDT_DEFINE_SEMAPHORE(malloc)
 TORCH_SDT_DEFINE_SEMAPHORE(free)
 
@@ -3464,20 +3466,33 @@ class NativeCachingAllocator : public CUDAAllocator {
 
     if (forceUncachedAllocator()) {
       deleteFunc = &uncached_delete;
-      int* p_42 = nullptr;
-      *p_42 = 42;
+      // std::string bt = c10::get_backtrace(0, 100, true);
+      // std::cout << "Backtrace here: " << bt << std::endl;
+      TORCH_CHECK(false, "uncached allocator allocation size too large");
+      // if (size > 6 * 1024 * 1024){
+      //   std::string bt = c10::get_backtrace(0, 4, true);
+      //   std::cout << "Backtrace here: " << bt << std::endl;
+      //   // TORCH_CHECK(false, "uncached allocator allocation size too large");
+      // }
 
       // Deliberately don't use cudaMallocMaybeCapturing here, to force an error
       // if someone tries to use forceUncachedAllocator while capturing.
       // C10_CUDA_CHECK(cudaMalloc(&devPtr, size));
-      C10_CUDA_CHECK(c10::cuda::GPUMemAllocator::cudaMalloc_custom(&devPtr, size));
 
+      // std::shared_ptr<torch::CapturedTraceback> tb0 = torch::CapturedTraceback::gather(true, true, true);
+      // torch::SymbolizedTracebacks r = torch::symbolize({tb0.get()});
+
+
+
+
+      C10_CUDA_CHECK(c10::cuda::GPUMemAllocator::cudaMalloc_custom(&devPtr, size));
+/*
       printf(
         "Warning: Allocating %f MBs on device %d using uncached allocator at %p\n",
         (double) size / (1024 * 1024),
         device,
         devPtr); 
-      
+  */    
       const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
       if (C10_UNLIKELY(interp)) {
         (*interp)->trace_gpu_memory_allocation(
@@ -3485,11 +3500,12 @@ class NativeCachingAllocator : public CUDAAllocator {
       }
     } else {
       if (size != 0) {
+	      /*
         printf(
             "Warning: Allocating %f MBs on device %d using cached allocator\n",
             (double) size / (1024 * 1024),
             device);
-
+*/
         this->malloc(&devPtr, device, size, stream);
       }
     }

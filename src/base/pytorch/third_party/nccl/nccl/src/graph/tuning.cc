@@ -66,7 +66,7 @@ static float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 { /* NVLINK */
   { /* Tree (LL/LL128/Simple)*/ { .6, 1.25, 28 }, /* Ring (LL/LL128/Simple)*/ { .6, 1.9, 3.4 },
     /* CollNetDirect (Simple)*/ { 0, 0, 3.7 }, /* CollNetChain (Simple)*/ { 0, 0, 2.8 },
-    /* NVLS */ { 0, 0, 23 }, /* NVLSTree */ { 0, 0, 23 } },
+    /* NVLS */ { 0, 0, 25 }, /* NVLSTree */ { 0, 0, 25 } },
   /* PCI */
   { /* Tree (LL/LL128/Simple)*/ { 1.0, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ { 1.0, 2.5, 5.7 },
     /* CollNetDirect (Simple)*/ { 0, 0, 3.7 }, /* CollNetChain (Simple)*/ { 0, 0, 2.8 },
@@ -86,7 +86,7 @@ static float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 static const double llMaxBws[3][3] = {
   /* Volta-N1/Intel-N2/Intel-N4) */ {39.0, 39.0, 20.4},
   /* Ampere-N1/AMD-N2/AMD-N4) */ {87.7, 22.5 /*avg of ring & tree*/, 19.0},
-  /* Hopper-N1/AMD-N2/AMD-N4) */ {87.7, 22.5 /*avg of ring & tree*/, 19.0}
+  /* Hopper-N1/AMD-N2/AMD-N4) */ {141.0, 45.0 /*avg of ring & tree*/, 35.0}
 };
 
 static const double perChMaxRingLL128Bws[3][3] = {
@@ -165,8 +165,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       if (coll == ncclFuncBroadcast && a != NCCL_ALGO_RING) continue;
       if (coll == ncclFuncReduce && a != NCCL_ALGO_RING) continue;
-      if (coll == ncclFuncReduceScatter && a != NCCL_ALGO_RING && a != NCCL_ALGO_NVLS) continue;
-      if (coll == ncclFuncAllGather && a != NCCL_ALGO_RING && a != NCCL_ALGO_NVLS) continue;
+      if (coll == ncclFuncReduceScatter && a != NCCL_ALGO_RING && a != NCCL_ALGO_NVLS && a != NCCL_ALGO_COLLNET_DIRECT) continue;
+      if (coll == ncclFuncAllGather && a != NCCL_ALGO_RING && a != NCCL_ALGO_NVLS && a != NCCL_ALGO_COLLNET_DIRECT) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && p != NCCL_PROTO_SIMPLE) continue;
@@ -177,7 +177,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         float busBw = graphs[a]->nChannels * bw;
 
         // Various model refinements
-        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL) { busBw = std::min(llMaxBw, busBw * ((nNodes > 1 || coll == ncclFuncAllReduce || coll == ncclFuncReduce) ? 1.0/4.0 : 1.0/3.0)); }
+        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL) { busBw = std::min(llMaxBw, busBw * .5); }
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), graphs[a]->nChannels*perChMaxRingLL128Bw);
         if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.92, graphs[a]->nChannels*perChMaxTreeBw);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw = std::min(busBw*1.0/3.8, llMaxBw);
@@ -186,19 +186,38 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_COLLNET_DIRECT && p != NCCL_PROTO_SIMPLE) busBw = 0;  // Not used
         if (a == NCCL_ALGO_COLLNET_CHAIN && p != NCCL_PROTO_SIMPLE) busBw = 0;  // Not used
         if (a == NCCL_ALGO_COLLNET_DIRECT && p == NCCL_PROTO_SIMPLE) {
-          // Collnet+Direct requires all GPUs to have a local NIC to work at full speed
-          float factor = ppn / (1.0*graphs[a]->nChannels); // GPU/NIC ratio
-          factor -= (factor-1)/2;
-          busBw /= factor;
+          if (coll == ncclFuncAllGather || coll == ncclFuncReduceScatter) {
+            busBw = ppn * bw;
+            // AllGather/ReduceScatter requires 1:1 GPU:NIC
+            int nicPerNode = comm->collNetHeadsNum;
+            if (coll == ncclFuncAllGather && comm->nNodes > 1) {
+              if (!comm->ncclCollNet || !comm->ncclCollNet->iallgather || ppn > nicPerNode) busBw = 0;
+            }
+            if (coll == ncclFuncReduceScatter && comm->nNodes > 1) {
+              if (!comm->ncclCollNet || !comm->ncclCollNet->ireducescatter || ppn > nicPerNode) busBw = 0;
+            }
+            // Measured corrective ratio needed at 1 ppn and 8ppn. Here we hackishly
+            // interpolate the two.
+            float w = (ppn-1)/(8-1);
+            busBw *= w*0.85 + (1-w)*0.95;
+          } else {
+            // Collnet+Direct requires all GPUs to have a local NIC to work at full speed
+            float factor = ppn / (1.0*graphs[a]->nChannels); // GPU/NIC ratio
+            factor -= (factor-1)/2;
+            busBw /= factor;
+            if (minCompCap >= 90) busBw *= .85;
+          }
         }
-        if (a == NCCL_ALGO_COLLNET_DIRECT && p == NCCL_PROTO_SIMPLE && minCompCap >= 90) busBw *= .85;
 
         // Convert bus BW to algorithm BW
-        float ratio;
-        if (a == NCCL_ALGO_RING) ratio = (1.0 * nRanks) / nsteps;
-        else if (a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) ratio = 5.0/6.0;
-        else ratio = .5;
-        comm->bandwidths[coll][a][p] = busBw * ratio;
+        if (!(a == NCCL_ALGO_COLLNET_DIRECT && (coll == ncclFuncAllGather || coll == ncclFuncReduceScatter))) {
+          float ratio = 1.0f;
+          if (a == NCCL_ALGO_RING) ratio *= (1.0 * nRanks) / nsteps;
+          else if (a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) ratio *= 5.0/6.0;
+          else ratio *= .5;
+          busBw *= ratio;
+        }
+        comm->bandwidths[coll][a][p] = busBw;
         /* Ring bandwidth backup */
         if (a == NCCL_ALGO_RING)
           comm->ringbdw[coll][p] = comm->bandwidths[coll][NCCL_ALGO_RING][p];
@@ -268,12 +287,11 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   if (comm->collNetSupport == 0) {
     algoEnable[NCCL_ALGO_COLLNET_DIRECT] = 0;
     algoEnable[NCCL_ALGO_COLLNET_CHAIN] = 0;
-    if (comm->nNodes > 1) algoEnable[NCCL_ALGO_NVLS] = 0;
+    if (nNodes > 1) algoEnable[NCCL_ALGO_NVLS] = 0;
     // If user has hard set NCCL_ALGO=COLLNET, ignore it
     if (algoEnable[NCCL_ALGO_RING] == 0 && algoEnable[NCCL_ALGO_TREE] == 0 &&
         algoEnable[NCCL_ALGO_NVLS] == 0 && algoEnable[NCCL_ALGO_NVLS_TREE] == 0) {
       algoEnable[NCCL_ALGO_RING] = algoEnable[NCCL_ALGO_TREE] = 1;
-      if (comm->rank == 0) WARN("CollNet is not supported or fails to initialize, ignoring NCCL_ALGO=COLLNET");
     }
   } else {
     // Disable CollNet+Direct if not on an NVSwitch system
@@ -398,9 +416,9 @@ static float treeCorrectionFactor[NCCL_NUM_PROTOCOLS][23] = {
 };
 
 ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, int numPipeOps, float* time, bool* backup) {
-  float bw = info->comm->bandwidths[info->coll][algorithm][protocol]; 
+  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
   float lat = info->comm->latencies[info->coll][algorithm][protocol];
-  
+
   if (backup) {
     *backup = false;
     if (algorithm == NCCL_ALGO_RING && bw == 0.0f) {

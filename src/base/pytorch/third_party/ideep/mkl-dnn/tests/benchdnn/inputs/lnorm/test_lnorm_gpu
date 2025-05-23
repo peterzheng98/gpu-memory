@@ -17,6 +17,34 @@
 --flags=GCH,CH
 --batch=option_set_all
 
+# Scales post-op tests
+--dir=FWD_I
+--inplace=false
+--flags=,CH
+
+--dt=u8:f32
+--attr-scales=,src:common:2
+--batch=option_set_all
+
+--dt=f32:s8
+--attr-scales=,dst:common:64
+--batch=option_set_all
+
+# Different scale and shift data types
+--reset
+
+--dt=f32:bf16,bf16
+--dir=FWD_D,BWD_DW
+--ss_dt=bf16
+--flags=C,H,CH
+--batch=option_set_all
+
+--dt=f32:f16,f16
+--dir=FWD_D,BWD_DW
+--ss_dt=f16
+--flags=C,H,CH
+--batch=option_set_all
+
 # blocked cases
 --reset
 

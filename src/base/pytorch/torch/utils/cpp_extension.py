@@ -1,3 +1,4 @@
+# mypy: allow-untyped-defs
 import copy
 import glob
 import importlib
@@ -95,13 +96,10 @@ def _find_cuda_home() -> Optional[str]:
     cuda_home = os.environ.get('CUDA_HOME') or os.environ.get('CUDA_PATH')
     if cuda_home is None:
         # Guess #2
-        try:
-            which = 'where' if IS_WINDOWS else 'which'
-            with open(os.devnull, 'w') as devnull:
-                nvcc = subprocess.check_output([which, 'nvcc'],
-                                               stderr=devnull).decode(*SUBPROCESS_DECODE_ARGS).rstrip('\r\n')
-                cuda_home = os.path.dirname(os.path.dirname(nvcc))
-        except Exception:
+        nvcc_path = shutil.which("nvcc")
+        if nvcc_path is not None:
+            cuda_home = os.path.dirname(os.path.dirname(nvcc_path))
+        else:
             # Guess #3
             if IS_WINDOWS:
                 cuda_homes = glob.glob(
@@ -235,6 +233,7 @@ COMMON_HIP_FLAGS = [
     '-fPIC',
     '-D__HIP_PLATFORM_AMD__=1',
     '-DUSE_ROCM=1',
+    '-DHIPBLAS_V2',
 ]
 
 COMMON_HIPCC_FLAGS = [
@@ -309,9 +308,11 @@ def check_compiler_ok_for_platform(compiler: str) -> bool:
     """
     if IS_WINDOWS:
         return True
-    which = subprocess.check_output(['which', compiler], stderr=subprocess.STDOUT)
+    compiler_path = shutil.which(compiler)
+    if compiler_path is None:
+        return False
     # Use os.path.realpath to resolve any symlinks, in particular from 'c++' to e.g. 'g++'.
-    compiler_path = os.path.realpath(which.decode(*SUBPROCESS_DECODE_ARGS).strip())
+    compiler_path = os.path.realpath(compiler_path)
     # Check the compiler name
     if any(name in compiler_path for name in _accepted_compilers_for_platform()):
         return True
@@ -445,10 +446,6 @@ def _check_cuda_version(compiler_name: str, compiler_version: TorchVersion) -> N
                 f'than the maximum required version by CUDA {cuda_str_version}. '
                 f'Please make sure to use an adequate version of {compiler_name} ({version_bound_str}).'
             )
-
-
-# See below for why we inherit BuildExtension from object.
-# https://stackoverflow.com/questions/1713038/super-fails-with-error-typeerror-argument-1-must-be-type-not-classobj-when
 
 
 class BuildExtension(build_ext):
@@ -932,7 +929,8 @@ def CppExtension(name, sources, *args, **kwargs):
     bare minimum (but often sufficient) arguments to build a C++ extension.
 
     All arguments are forwarded to the :class:`setuptools.Extension`
-    constructor.
+    constructor. Full list arguments can be found at
+    https://setuptools.pypa.io/en/latest/userguide/ext_modules.html#extension-api-reference
 
     Example:
         >>> # xdoctest: +SKIP
@@ -945,7 +943,8 @@ def CppExtension(name, sources, *args, **kwargs):
         ...         CppExtension(
         ...             name='extension',
         ...             sources=['extension.cpp'],
-        ...             extra_compile_args=['-g']),
+        ...             extra_compile_args=['-g'],
+        ...             extra_link_args=['-Wl,--no-as-needed', '-lm'])
         ...     ],
         ...     cmdclass={
         ...         'build_ext': BuildExtension
@@ -964,6 +963,9 @@ def CppExtension(name, sources, *args, **kwargs):
     libraries.append('torch')
     libraries.append('torch_cpu')
     libraries.append('torch_python')
+    if IS_WINDOWS:
+        libraries.append("sleef")
+
     kwargs['libraries'] = libraries
 
     kwargs['language'] = 'c++'
@@ -980,7 +982,8 @@ def CUDAExtension(name, sources, *args, **kwargs):
     library.
 
     All arguments are forwarded to the :class:`setuptools.Extension`
-    constructor.
+    constructor. Full list arguments can be found at
+    https://setuptools.pypa.io/en/latest/userguide/ext_modules.html#extension-api-reference
 
     Example:
         >>> # xdoctest: +SKIP
@@ -994,7 +997,8 @@ def CUDAExtension(name, sources, *args, **kwargs):
         ...                 name='cuda_extension',
         ...                 sources=['extension.cpp', 'extension_kernel.cu'],
         ...                 extra_compile_args={'cxx': ['-g'],
-        ...                                     'nvcc': ['-O2']})
+        ...                                     'nvcc': ['-O2']},
+        ...                 extra_link_args=['-Wl,--no-as-needed', '-lcuda'])
         ...     ],
         ...     cmdclass={
         ...         'build_ext': BuildExtension
@@ -1080,8 +1084,7 @@ def CUDAExtension(name, sources, *args, **kwargs):
     libraries.append('torch_cpu')
     libraries.append('torch_python')
     if IS_HIP_EXTENSION:
-        assert ROCM_VERSION is not None
-        libraries.append('amdhip64' if ROCM_VERSION >= (3, 5) else 'hip_hcc')
+        libraries.append('amdhip64')
         libraries.append('c10_hip')
         libraries.append('torch_hip')
     else:
@@ -1170,6 +1173,11 @@ def include_paths(cuda: bool = False) -> List[str]:
         # but gcc doesn't like having /usr/include passed explicitly
         if cuda_home_include != '/usr/include':
             paths.append(cuda_home_include)
+
+        # Support CUDA_INC_PATH env variable supported by CMake files
+        if (cuda_inc_path := os.environ.get("CUDA_INC_PATH", None)) and \
+                cuda_inc_path != '/usr/include':
+            paths.append(cuda_inc_path)
         if CUDNN_HOME is not None:
             paths.append(os.path.join(CUDNN_HOME, 'include'))
     return paths
@@ -1347,7 +1355,13 @@ def check_compiler_is_gcc(compiler):
 
     env = os.environ.copy()
     env['LC_ALL'] = 'C'  # Don't localize output
-    version_string = subprocess.check_output([compiler, '-v'], stderr=subprocess.STDOUT, env=env).decode(*SUBPROCESS_DECODE_ARGS)
+    try:
+        version_string = subprocess.check_output([compiler, '-v'], stderr=subprocess.STDOUT, env=env).decode(*SUBPROCESS_DECODE_ARGS)
+    except Exception as e:
+        try:
+            version_string = subprocess.check_output([compiler, '--version'], stderr=subprocess.STDOUT, env=env).decode(*SUBPROCESS_DECODE_ARGS)
+        except Exception as e:
+            return False
     # Check for 'gcc' or 'g++' for sccache wrapper
     pattern = re.compile("^COLLECT_GCC=(.*)$", re.MULTILINE)
     results = re.findall(pattern, version_string)
@@ -1421,10 +1435,7 @@ def _check_and_build_extension_h_precompiler_headers(
             # read all content of a file
             content = file.read()
             # check if string present in a file
-            if signature == content:
-                return True
-            else:
-                return False
+            return signature == content
 
     def _create_if_not_exist(path_dir):
         if not os.path.exists(path_dir):
@@ -1682,10 +1693,10 @@ def _jit_compile(name,
                   file=sys.stderr)
         name = f'{name}_v{version}'
 
-    if version != old_version:
-        baton = FileBaton(os.path.join(build_directory, 'lock'))
-        if baton.try_acquire():
-            try:
+    baton = FileBaton(os.path.join(build_directory, 'lock'))
+    if baton.try_acquire():
+        try:
+            if version != old_version:
                 with GeneratedFileCleaner(keep_intermediates=keep_intermediates) as clean_ctx:
                     if IS_HIP_EXTENSION and (with_cuda or with_cudnn):
                         hipify_result = hipify_python.hipify(
@@ -1718,14 +1729,13 @@ def _jit_compile(name,
                         verbose=verbose,
                         with_cuda=with_cuda,
                         is_standalone=is_standalone)
-            finally:
-                baton.release()
-        else:
-            baton.wait()
-    elif verbose:
-        print('No modifications detected for re-loaded extension '
-              f'module {name}, skipping build step...',
-              file=sys.stderr)
+            elif verbose:
+                print('No modifications detected for re-loaded extension '
+                      f'module {name}, skipping build step...', file=sys.stderr)
+        finally:
+            baton.release()
+    else:
+        baton.wait()
 
     if verbose:
         print(f'Loading extension module {name}...', file=sys.stderr)
@@ -1844,8 +1854,7 @@ def verify_ninja_availability():
 
 def _prepare_ldflags(extra_ldflags, with_cuda, verbose, is_standalone):
     if IS_WINDOWS:
-        python_path = os.path.dirname(sys.executable)
-        python_lib_path = os.path.join(python_path, 'libs')
+        python_lib_path = os.path.join(sys.base_exec_prefix, 'libs')
 
         extra_ldflags.append('c10.lib')
         if with_cuda:
@@ -1874,9 +1883,6 @@ def _prepare_ldflags(extra_ldflags, with_cuda, verbose, is_standalone):
         if not is_standalone:
             extra_ldflags.append('-ltorch_python')
 
-        if is_standalone and "TBB" in torch.__config__.parallel_info():
-            extra_ldflags.append('-ltbb')
-
         if is_standalone:
             extra_ldflags.append(f"-Wl,-rpath,{TORCH_LIB_PATH}")
 
@@ -1900,9 +1906,8 @@ def _prepare_ldflags(extra_ldflags, with_cuda, verbose, is_standalone):
             if CUDNN_HOME is not None:
                 extra_ldflags.append(f'-L{os.path.join(CUDNN_HOME, "lib64")}')
         elif IS_HIP_EXTENSION:
-            assert ROCM_VERSION is not None
             extra_ldflags.append(f'-L{_join_rocm_home("lib")}')
-            extra_ldflags.append('-lamdhip64' if ROCM_VERSION >= (3, 5) else '-lhip_hcc')
+            extra_ldflags.append('-lamdhip64')
     return extra_ldflags
 
 
@@ -1956,6 +1961,9 @@ def _get_cuda_arch_flags(cflags: Optional[List[str]] = None) -> List[str]:
 
     # If not given, determine what's best for the GPU / CUDA version that can be found
     if not _arch_list:
+        warnings.warn(
+            "TORCH_CUDA_ARCH_LIST is not set, all archs for visible cards are included for compilation. \n"
+            "If this is not desired, please set os.environ['TORCH_CUDA_ARCH_LIST'].")
         arch_list = []
         # the assumption is that the extension should run on any of the currently visible cards,
         # which could be of different types - therefore all archs for visible cards should be included
@@ -2135,6 +2143,7 @@ def _import_module_from_library(module_name, path, is_python_module):
         return module
     else:
         torch.ops.load_library(filepath)
+        return filepath
 
 
 def _write_ninja_file_to_build_library(path,
@@ -2164,11 +2173,6 @@ def _write_ninja_file_to_build_library(path,
     if python_include_path is not None:
         system_includes.append(python_include_path)
 
-    # Windows does not understand `-isystem`.
-    if IS_WINDOWS:
-        user_includes += system_includes
-        system_includes.clear()
-
     common_cflags = []
     if not is_standalone:
         common_cflags.append(f'-DTORCH_EXTENSION_NAME={name}')
@@ -2176,8 +2180,12 @@ def _write_ninja_file_to_build_library(path,
 
     common_cflags += [f"{x}" for x in _get_pybind11_abi_build_flags()]
 
-    common_cflags += [f'-I{include}' for include in user_includes]
-    common_cflags += [f'-isystem {include}' for include in system_includes]
+    # Windows does not understand `-isystem` and quotes flags later.
+    if IS_WINDOWS:
+        common_cflags += [f'-I{include}' for include in user_includes + system_includes]
+    else:
+        common_cflags += [f'-I{shlex.quote(include)}' for include in user_includes]
+        common_cflags += [f'-isystem {shlex.quote(include)}' for include in system_includes]
 
     common_cflags += [f"{x}" for x in _get_glibcxx_abi_build_flags()]
 
@@ -2336,7 +2344,8 @@ def _write_ninja_file(path,
         cuda_compile_rule = ['rule cuda_compile']
         nvcc_gendeps = ''
         # --generate-dependencies-with-compile is not supported by ROCm
-        if torch.version.cuda is not None:
+        # Nvcc flag `--generate-dependencies-with-compile` is not supported by sccache, which may increase build time.
+        if torch.version.cuda is not None and os.getenv('TORCH_EXTENSION_SKIP_NVCC_GEN_DEPENDENCIES', '0') != '1':
             cuda_compile_rule.append('  depfile = $out.d')
             cuda_compile_rule.append('  deps = gcc')
             # Note: non-system deps with nvcc are only supported
@@ -2389,7 +2398,7 @@ def _write_ninja_file(path,
     # 'Blocks' should be separated by newlines, for visual benefit.
     blocks = [config, flags, compile_rule]
     if with_cuda:
-        blocks.append(cuda_compile_rule)
+        blocks.append(cuda_compile_rule)  # type: ignore[possibly-undefined]
     blocks += [devlink_rule, link_rule, build, devlink, link, default]
     content = "\n\n".join("\n".join(b) for b in blocks)
     # Ninja requires a new lines at the end of the .ninja file

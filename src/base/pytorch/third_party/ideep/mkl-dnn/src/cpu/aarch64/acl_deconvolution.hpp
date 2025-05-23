@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2022-2023 Arm Ltd. and affiliates
+* Copyright 2022-2024 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -94,6 +94,8 @@ struct acl_deconvolution_fwd_t : public primitive_t {
             using namespace data_type;
             using namespace format_tag;
 
+            using smask_t = primitive_attr_t::skip_mask_t;
+
             const memory_desc_wrapper src_d(&src_md_);
             const memory_desc_wrapper wei_d(&weights_md_);
             const memory_desc_wrapper dst_d(&dst_md_);
@@ -110,7 +112,7 @@ struct acl_deconvolution_fwd_t : public primitive_t {
                     && (expect_data_types(f16, f16, f16, f16)
                             || expect_data_types(f32, f32, f32, f32))
                     && attr()->has_default_values(
-                            primitive_attr_t::skip_mask_t::post_ops,
+                            smask_t::post_ops | smask_t::fpmath_mode,
                             dst_data_t);
             if (!ok) return status::unimplemented;
 
@@ -199,10 +201,14 @@ struct acl_deconvolution_fwd_t : public primitive_t {
                             : arm_compute::TensorShape(iw, ih, ic, mb),
                     1, acl_src_data_t, acl_layout);
 
-            acl_pd_conf.wei_info = arm_compute::TensorInfo(is_nspc
-                            ? arm_compute::TensorShape(ic, kw, kh, oc)
-                            : arm_compute::TensorShape(kw, kh, ic, oc),
-                    1, acl_wei_data_t, acl_layout);
+            auto wei_info_tensor_shape = is_nspc
+                    ? arm_compute::TensorShape(ic, kw, kh, oc)
+                    : arm_compute::TensorShape(kw, kh, ic, oc);
+            // ACL removes last dimension if dim is 1.
+            // Below fix ensures the tensor shape is correct when queried.
+            wei_info_tensor_shape.set_num_dimensions(4);
+            acl_pd_conf.wei_info = arm_compute::TensorInfo(
+                    wei_info_tensor_shape, 1, acl_wei_data_t, acl_layout);
 
             acl_pd_conf.dst_info = arm_compute::TensorInfo(is_nspc
                             ? arm_compute::TensorShape(oc, ow, oh, mb)
@@ -215,7 +221,7 @@ struct acl_deconvolution_fwd_t : public primitive_t {
                     1, acl_bia_data_t, acl_layout);
 
             acl_pd_conf.fast_math = utils::one_of(
-                    attr()->fpmath_mode_, fpmath_mode::bf16, fpmath_mode::any);
+                    attr()->fpmath_.mode_, fpmath_mode::bf16, fpmath_mode::any);
 
             ACL_CHECK_VALID(arm_compute::NEDeconvolutionLayer::validate(
                     &acl_pd_conf.src_info, &acl_pd_conf.wei_info,

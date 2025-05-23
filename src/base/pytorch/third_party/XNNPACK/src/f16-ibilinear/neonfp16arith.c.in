@@ -18,10 +18,10 @@ $ABC = "456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 void xnn_f16_ibilinear_ukernel__neonfp16arith_c${CHANNEL_TILE}${"" if PIXEL_TILE == 1 else "x%d" % PIXEL_TILE}(
     size_t output_pixels,
     size_t channels,
-    const void**restrict input,
+    const void** restrict input,
     size_t input_offset,
-    const void*restrict weights,
-    void*restrict output,
+    const void* restrict weights,
+    void* restrict output,
     size_t output_increment) XNN_OOB_READS
 {
   assert(output_pixels != 0);
@@ -109,7 +109,7 @@ void xnn_f16_ibilinear_ukernel__neonfp16arith_c${CHANNEL_TILE}${"" if PIXEL_TILE
         vo_lo = vext_f16(vo_lo, vo_lo, 2);
       }
       if (c & (1 * sizeof(uint16_t))) {
-        vst1_lane_f16(o, vo_lo, 0); o += 1;
+        vst1_lane_u16(o, vreinterpret_u16_f16(vo_lo), 0); o += 1;
       }
     }
 

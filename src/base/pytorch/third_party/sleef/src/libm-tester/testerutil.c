@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2023.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -18,7 +18,6 @@
 #else
 #include <unistd.h>
 #include <sys/types.h>
-#include <signal.h>
 #endif
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
@@ -45,7 +44,7 @@ int isMinusZero(double x) { return x == 0 && copysign(1, x) == -1; }
 double sign(double d) { return d < 0 ? -1 : 1; }
 int xisnan(double x) { return x != x; }
 
-int isnumberf(float x) { return !isinff(x) && !isnanf(x); }
+int isnumberf(float x) { return !isinf(x) && !isnan(x); }
 int isPlusZerof(float x) { return x == 0 && copysignf(1, x) == 1; }
 int isMinusZerof(float x) { return x == 0 && copysignf(1, x) == -1; }
 float signf(float d) { return d < 0 ? -1 : 1; }
@@ -290,6 +289,7 @@ double countULP2sp(float d, mpfr_t c0) {
 
 //
 
+#if MPFR_VERSION < MPFR_VERSION_NUM(4, 2, 0)
 void mpfr_sinpi(mpfr_t ret, mpfr_t arg, mpfr_rnd_t rnd) {
   mpfr_t frpi, frd;
   mpfr_inits(frpi, frd, NULL);
@@ -315,6 +315,7 @@ void mpfr_cospi(mpfr_t ret, mpfr_t arg, mpfr_rnd_t rnd) {
 
   mpfr_clears(frpi, frd, NULL);
 }
+#endif
 
 void mpfr_lgamma_nosign(mpfr_t ret, mpfr_t arg, mpfr_rnd_t rnd) {
   int s;

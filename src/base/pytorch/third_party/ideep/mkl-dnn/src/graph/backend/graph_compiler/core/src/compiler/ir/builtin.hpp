@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2020-2023 Intel Corporation
+ * Copyright 2020-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -149,7 +149,8 @@ evaluate brgemm_init_update(const expr &A, const expr &B, const expr &C,
         const sc_brgemm_attrs_t &brg_attrs = sc_brgemm_attrs_t(),
         const sc_brgemm_bd_mask_t &bd_mask = sc_brgemm_bd_mask_t(),
         const expr &bd_mask_idx = get_ir_zero_index(),
-        const int &bd_mask_set_num = 1,
+        const int &bd_mask_set_num = 1, const expr &top_pad = get_ir_null(),
+        const expr &bottom_pad = get_ir_null(),
         const sc_brgemm_postops_setting_t &brg_postops_setting
         = sc_brgemm_postops_setting_t(),
         const std::vector<expr> &brg_postops_data
@@ -179,6 +180,8 @@ evaluate brgemm_init_update(const expr &A, const expr &B, const expr &C,
  * @param bd_mask bd_mask
  * @param bd_mask_idx bd_mask idx for same brgemm with different bd_mask
  * @param bd_mask_set_num num of different bd_mask for same brgemm
+ * @param top_pad pointer, indicate the first padding num on M dimension(bd)
+ * @param bottom_pad pointer, indicate the last padding num on M dimension(bd)
  * @param brg_postops_setting postops_setting
  * @param brg_postops_data postops_data
  * @param brg_c_buf c_buf
@@ -191,7 +194,8 @@ evaluate brgemm_init_update_allow_fusion(const expr &A, const expr &B,
         const sc_brgemm_attrs_t &brg_attrs = sc_brgemm_attrs_t(),
         const sc_brgemm_bd_mask_t &bd_mask = sc_brgemm_bd_mask_t(),
         const expr &bd_mask_idx = get_ir_zero_index(),
-        const int &bd_mask_set_num = 1,
+        const int &bd_mask_set_num = 1, const expr &top_pad = get_ir_null(),
+        const expr &bottom_pad = get_ir_null(),
         const sc_brgemm_postops_setting_t &brg_postops_setting
         = sc_brgemm_postops_setting_t(),
         const std::vector<expr> &brg_postops_data
@@ -232,6 +236,8 @@ void brgemm_init(
  * @param bd_mask bd_mask
  * @param bd_mask_idx bd_mask idx for same brgemm with different bd_mask
  * @param bd_mask_set_num num of different bd_mask for same brgemm
+ * @param top_pad pointer, indicate the first padding num on M dimension(bd)
+ * @param bottom_pad pointer, indicate the first padding num on M dimension(bd)
  * @param brg_postops_setting postops_setting
  * @param brg_postops_data postops_data
  * @param brg_c_buf c_buf
@@ -244,7 +250,8 @@ evaluate brgemm_update(const expr &A, const expr &B, const expr &C,
         const sc_brgemm_attrs_t &brg_attrs = sc_brgemm_attrs_t(),
         const sc_brgemm_bd_mask_t &bd_mask = sc_brgemm_bd_mask_t(),
         const expr &bd_mask_idx = get_ir_zero_index(),
-        const int &bd_mask_set_num = 1,
+        const int &bd_mask_set_num = 1, const expr &top_pad = get_ir_null(),
+        const expr &bottom_pad = get_ir_null(),
         const sc_brgemm_postops_setting_t &brg_postops_setting
         = sc_brgemm_postops_setting_t(),
         const std::vector<expr> &brg_postops_data
@@ -274,6 +281,8 @@ evaluate brgemm_update(const expr &A, const expr &B, const expr &C,
  * @param bd_mask bd_mask
  * @param bd_mask_idx bd_mask idx for same brgemm with different bd_mask
  * @param bd_mask_set_num num of different bd_mask for same brgemm
+ * @param top_pad pointer, indicate the first padding num on M dimension(bd)
+ * @param bottom_pad pointer, indicate the first padding num on M dimension(bd)
  * @param brg_postops_setting postops_setting
  * @param brg_postops_data postops_data
  * @param brg_c_buf c_buf
@@ -286,7 +295,8 @@ evaluate brgemm_list_update(const expr &A, const expr &B, const expr &C,
         const sc_brgemm_attrs_t &brg_attrs = sc_brgemm_attrs_t(),
         const sc_brgemm_bd_mask_t &bd_mask = sc_brgemm_bd_mask_t(),
         const expr &bd_mask_idx = get_ir_zero_index(),
-        const int &bd_mask_set_num = 1,
+        const int &bd_mask_set_num = 1, const expr &top_pad = get_ir_null(),
+        const expr &bottom_pad = get_ir_null(),
         const sc_brgemm_postops_setting_t &brg_postops_setting
         = sc_brgemm_postops_setting_t(),
         const std::vector<expr> &brg_postops_data
@@ -316,6 +326,8 @@ evaluate brgemm_list_update(const expr &A, const expr &B, const expr &C,
  * @param bd_mask bd_mask
  * @param bd_mask_idx bd_mask idx for same brgemm with different bd_mask
  * @param bd_mask_set_num num of different bd_mask for same brgemm
+ * @param top_pad pointer, indicate the first padding num on M dimension(bd)
+ * @param bottom_pad pointer, indicate the first padding num on M dimension(bd)
  * @param brg_postops_setting postops_setting
  * @param brg_postops_data postops_data
  * @param brg_c_buf c_buf
@@ -328,7 +340,8 @@ evaluate brgemm_init_list_update(const expr &A, const expr &B, const expr &C,
         const sc_brgemm_attrs_t &brg_attrs = sc_brgemm_attrs_t(),
         const sc_brgemm_bd_mask_t &bd_mask = sc_brgemm_bd_mask_t(),
         const expr &bd_mask_idx = get_ir_zero_index(),
-        const int &bd_mask_set_num = 1,
+        const int &bd_mask_set_num = 1, const expr &top_pad = get_ir_null(),
+        const expr &bottom_pad = get_ir_null(),
         const sc_brgemm_postops_setting_t &brg_postops_setting
         = sc_brgemm_postops_setting_t(),
         const std::vector<expr> &brg_postops_data
@@ -364,11 +377,11 @@ enum class brgemm_mode {
 
 // returns <kernerl creator, caller> pair
 std::pair<func_t, func_t> get_brgemm_creator_and_call_func(
-        brgemm_mode mode, scflags_t::brgemm_t backend, bool has_postop);
+        brgemm_mode mode, scflags_t::brgemm_backend_t backend, bool has_postop);
 
 // returns <update, init_update> pair
 std::pair<func_t, func_t> get_brgemm_update_funcs(
-        brgemm_mode mode, scflags_t::brgemm_t backend);
+        brgemm_mode mode, scflags_t::brgemm_backend_t backend);
 func_t get_brgemm_call_range_func(brgemm_mode mode);
 
 // dynamic query format function evaluation at runtime.
@@ -394,6 +407,9 @@ expr call_unary_fusible_op_query_format(const expr &tb, const expr &out0,
         const expr &in0, const expr &out_foramt0, const expr &in_format0,
         const expr &out_size, const expr &kernel);
 expr call_padding_op_query_format(const expr &tb, const expr &out0,
+        const expr &in0, const expr &out_foramt0, const expr &in_format0,
+        const expr &out_size, const expr &kernel);
+expr call_pooling_op_query_format(const expr &tb, const expr &out0,
         const expr &in0, const expr &out_foramt0, const expr &in_format0,
         const expr &out_size, const expr &kernel);
 expr call_binary_fusible_op_query_format(const expr &tb, const expr &out0,

@@ -78,6 +78,15 @@
 namespace xnnpack {
 namespace aarch32 {
 
+// Special values used to check that callee-saved registers are properly saved.
+// Low 8 bits should be 0 to encode register code.
+constexpr uint32_t kRRegisterCorruptValue = UINT32_C(0xDEADBE00);
+constexpr uint32_t kSRegisterCorruptValue = UINT32_C(0x7FF00000);
+constexpr uint8_t kRegisterCorruptMask = UINT8_C(0xFF);
+
+// Instruction used to align code, is a nop.
+constexpr uint32_t kAlignInstruction = 0xE320F000;
+
 enum class SpecialFPRegister {
   kFPSCR = 1,
 };
@@ -191,6 +200,8 @@ struct DRegister {
 
   uint8_t d() const { return (code & 0x10) >> 4; }
   uint8_t vd() const { return code & 0xf; }
+  SRegister low() const { return SRegister{uint8_t(code * 2)}; }
+  SRegister high() const { return SRegister{uint8_t(code * 2 + 1)}; }
 
   DRegisterLane operator[](std::size_t pos) const {
     return DRegisterLane{code, static_cast<uint8_t>(pos)};
@@ -275,6 +286,7 @@ struct ConsecutiveRegisterList {
   explicit ConsecutiveRegisterList(RegType s, int len)
       : start(s),
         length(len) {}
+  // NOLINTNEXTLINE(google-explicit-constructor)
   ConsecutiveRegisterList(RegType start)
       : ConsecutiveRegisterList(start, start) {}
 
@@ -319,6 +331,7 @@ static inline DRegisterList operator-(const DRegister lhs, const DRegister rhs) 
 }
 
 struct QRegisterList {
+  // NOLINTNEXTLINE(google-explicit-constructor)
   QRegisterList(QRegister s) : start(s), length(1) {}
   QRegisterList(QRegister s, QRegister end) : start(s), length(end.code - s.code + 1) {}
   // Explicit conversion to DRegisterList.
@@ -362,8 +375,8 @@ class MemOperand {
   AddressingMode mode() const { return mode_; }
 
   // These are bits used for encoding, named based on the encoding description.
-  int32_t u() { return offset_ >= 0; }
-  int32_t p() { return mode_ != AddressingMode::kPostIndexed; }
+  int32_t u() { return static_cast<int32_t>(offset_ >= 0); }
+  int32_t p() { return static_cast<int32_t>(mode_ != AddressingMode::kPostIndexed); }
   // Note, kPostIndexed will write back, but doesn't need to set bit w.
   int32_t w() { return 0; }
 
@@ -443,6 +456,7 @@ class Assembler : public AssemblerBase {
   void bhi(Label& l) { b(kHI, l); }
   void bhs(Label& l) { b(kHS, l); }
   void blo(Label& l) { b(kLO, l); }
+  void blx(CoreRegister rm);
   void bic(CoreRegister rd, CoreRegister rn, uint8_t imm);
   void bx(CoreRegister rm);
   // Cmp supports a subset of uint32_t offsets, see "A5.2.4 Modified immediate
@@ -455,6 +469,8 @@ class Assembler : public AssemblerBase {
   // LDRD <Rt>, <Rt2>, [<Rn>{, #+/-<imm>}].
   void ldrd(CoreRegister rt, CoreRegister rt2, MemOperand op);
   void mov(CoreRegister rd, CoreRegister rm);
+  void mov(CoreRegister rd, uint16_t imm);
+  void movt(CoreRegister rd, uint16_t imm);
   void moveq(CoreRegister rd, CoreRegister rm) { mov(kEQ, rd, rm); }
   void movlo(CoreRegister rd, CoreRegister rm) { mov(kLO, rd, rm); }
   void movls(CoreRegister rd, CoreRegister rm) { mov(kLS, rd, rm); }
@@ -509,12 +525,20 @@ class Assembler : public AssemblerBase {
   void vmla_f32(QRegister qd, QRegister qn, DRegisterLane dm);
   // VMLAL.S16 <Qd>, <Dn>, <Dm[x]>
   void vmlal_s16(QRegister qd, DRegister dn, DRegisterLane dm);
+  // VMOV.I32 <Qd>, #<imm>; encoding A1
+  void vmov_i32(QRegister qd, uint8_t imm);
   // VMOV.F32 <Qd>, #<imm>; encoding A1
   void vmov(QRegister qd, uint8_t imm);
+  // VMOV <Rt>, <Sn>; encoding A1.
+  void vmov(CoreRegister rt, SRegister sn);
+  // VMOV <Sn>, <Rt>; encoding A1.
+  void vmov(SRegister sn, CoreRegister rt);
   // VMOV.F32 <Sd>, <Sm>; encoding A2.
   void vmov(SRegister sd, SRegister sm);
   // VMOV <Dm>, <Rt>, <Rt2>; encoding A1.
   void vmov(DRegister dm, CoreRegister rt, CoreRegister rt2);
+  // VMOV <Rt>, <Rt2>, <Dm>; encoding A1.
+  void vmov(CoreRegister rt, CoreRegister rt2, DRegister dm);
   // VMOV <Dd>, <Dm>; encoding A1.
   void vmov(DRegister dd, DRegister dm);
   // VMOV <Qd>, <Qm>; encoding A1.
@@ -588,6 +612,19 @@ class MacroAssembler : public Assembler {
    void f32_hardswish(QRegister sixth, QRegister three, QRegister six,
                       QRegister zero, const QRegister *accs, size_t num_accs,
                       const QRegister *tmps, size_t num_tmps);
+   void Mov(CoreRegister rd, uint32_t imm);
+};
+
+class TrampolineGenerator : public MacroAssembler {
+  using MacroAssembler::MacroAssembler;
+
+ public:
+  void generate(size_t args_on_stack);
+ private:
+  // Helper functions to check that registers match. We keep the expected value inside of x0 and return early once we
+  // have a mismatch. x0 then becomes the error code, if it is 0, there are no errors.
+  void CheckRegisterMatch(DRegister actual, Label& exit);
+  void CheckRegisterMatch(CoreRegister actual, Label& exit);
 };
 
 }  // namespace aarch32

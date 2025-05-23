@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2023 Intel Corporation
+* Copyright 2019-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -22,6 +22,15 @@
 #include "c_types_map.hpp"
 #include "primitive_desc.hpp"
 #include "utils.hpp"
+
+#define VDISPATCH_LNORM(cond, msg, ...) \
+    VCONDCHECK(primitive, create, dispatch, layer_normalization, (cond), \
+            status::unimplemented, "%s," msg, this->info(engine), \
+            ##__VA_ARGS__)
+
+#define VDISPATCH_LNORM_SC(f, msg, ...) \
+    VCHECK(primitive, create, dispatch, layer_normalization, (f), "%s," msg, \
+            this->info(engine), ##__VA_ARGS__)
 
 namespace dnnl {
 namespace impl {
@@ -202,7 +211,8 @@ struct layer_normalization_fwd_pd_t : public layer_normalization_pd_t {
     }
 
     int n_inputs() const override {
-        return 1 + 2 * stats_are_src() + use_scale() + use_shift();
+        return 1 + 2 * stats_are_src() + use_scale() + use_shift()
+                + n_binary_po_inputs();
     }
     int n_outputs() const override {
         return 1 + 2 * (!stats_are_src()) * is_training();
@@ -225,9 +235,14 @@ protected:
                 && set_default_stat_md_format(src_md_);
     }
 
-    bool check_scale_shift_data_type() const {
-        return IMPLICATION(use_scale() || use_shift(),
-                weights_md()->data_type == data_type::f32);
+    bool check_scale_shift_data_type(
+            std::initializer_list<data_type_t> supported_dts
+            = {data_type::f32}) const {
+        if (!use_scale() && !use_shift()) return true;
+
+        for (auto dt : supported_dts)
+            if (weights_md()->data_type == dt) return true;
+        return false;
     }
 
     bool attr_scales_ok() const {
@@ -338,10 +353,16 @@ protected:
                 && set_default_stat_md_format(diff_src_md_);
     }
 
-    bool check_scale_shift_data_type() const {
-        return IMPLICATION(use_scale() || use_shift(),
-                utils::everyone_is(data_type::f32, weights_md()->data_type,
-                        diff_weights_md()->data_type));
+    bool check_scale_shift_data_type(
+            std::initializer_list<data_type_t> supported_dts
+            = {data_type::f32}) const {
+        if (!use_scale() && !use_shift()) return true;
+        if (weights_md()->data_type != diff_weights_md()->data_type)
+            return false;
+
+        for (auto dt : supported_dts)
+            if (weights_md()->data_type == dt) return true;
+        return false;
     }
 };
 

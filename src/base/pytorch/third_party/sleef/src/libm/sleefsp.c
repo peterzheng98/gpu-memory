@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -26,8 +26,10 @@ extern const float Sleef_rempitabsp[];
 #include "rename.h"
 #endif
 
-#if (defined(_MSC_VER))
+#if defined(_MSC_VER) && !defined (__clang__)
 #pragma fp_contract (off)
+#else
+#pragma STDC FP_CONTRACT OFF
 #endif
 
 #define MLA mlaf
@@ -35,21 +37,15 @@ extern const float Sleef_rempitabsp[];
 #include "estrin.h"
 
 static INLINE CONST int32_t floatToRawIntBits(float d) {
-  union {
-    float f;
-    int32_t i;
-  } tmp;
-  tmp.f = d;
-  return tmp.i;
+  int32_t ret;
+  memcpy(&ret, &d, sizeof(ret));
+  return ret;
 }
 
 static INLINE CONST float intBitsToFloat(int32_t i) {
-  union {
-    float f;
-    int32_t i;
-  } tmp;
-  tmp.i = i;
-  return tmp.f;
+  float ret;
+  memcpy(&ret, &i, sizeof(ret));
+  return ret;
 }
 
 static INLINE CONST float fabsfk(float x) {
@@ -72,6 +68,7 @@ static INLINE CONST float fminfk(float x, float y) { return x < y ? x : y; }
 static INLINE CONST float fmaxfk(float x, float y) { return x > y ? x : y; }
 static INLINE CONST int xisintf(float x) { return (x == (int)x); }
 
+static INLINE CONST int xsignbitf(double d) { return (floatToRawIntBits(d) & floatToRawIntBits(-0.0)) == floatToRawIntBits(-0.0); }
 static INLINE CONST int xisnanf(float x) { return x != x; }
 static INLINE CONST int xisinff(float x) { return x == SLEEF_INFINITYf || x == -SLEEF_INFINITYf; }
 static INLINE CONST int xisminff(float x) { return x == -SLEEF_INFINITYf; }
@@ -439,9 +436,8 @@ static CONST fi_t rempisubf(float x) {
 }
 
 static CONST dfi_t rempif(float a) {
-  Sleef_float2 x, y, z;
+  Sleef_float2 x, y;
   fi_t di;
-  float t;
   int ex = ilogb2kf(a) - 25, q = ex > (90 - 25) ? -64 : 0;
   a = ldexp3kf(a, q);
   if (ex < 0) ex = 0;
@@ -1324,11 +1320,11 @@ EXPORT CONST float xpowf(float x, float y) {
   float result = expkf(dfmul_f2_f2_f(logkf(fabsfk(x)), y));
 
   result = xisnanf(result) ? SLEEF_INFINITYf : result;
-  result *=  (x >= 0 ? 1 : (!yisint ? SLEEF_NANf : (yisodd ? -1 : 1)));
+  result *= (x >= 0 ? 1 : (yisint ? (yisodd ? -1 : 1) : SLEEF_NANf));
 
   float efx = mulsignf(fabsfk(x) - 1, y);
   if (xisinff(y)) result = efx < 0 ? 0.0f : (efx == 0 ? 1.0f : SLEEF_INFINITYf);
-  if (xisinff(x) || x == 0) result = (yisodd ? signf(x) : 1) * ((x == 0 ? -y : y) < 0 ? 0 : SLEEF_INFINITYf);
+  if (xisinff(x) || x == 0) result = mulsignf((xsignbitf(y) ^ (x == 0)) ? 0 : SLEEF_INFINITYf, yisodd ? x : 1);
   if (xisnanf(x) || xisnanf(y)) result = SLEEF_NANf;
   if (y == 0 || x == 1) result = 1;
 
@@ -1918,56 +1914,56 @@ EXPORT CONST float xldexpf(float x, int exp) {
 }
 
 EXPORT CONST float xnextafterf(float x, float y) {
-  union {
-    float f;
-    int32_t i;
-  } cx;
+  float cxf;
+  int32_t cxi;
 
-  cx.f = x == 0 ? mulsignf(0, y) : x;
-  int c = (cx.i < 0) == (y < x);
-  if (c) cx.i = -(cx.i ^ (1 << 31));
+  cxf = x == 0 ? mulsignf(0, y) : x;
+  memcpy(&cxi, &cxf, sizeof(cxi));
+  int c = (cxi < 0) == (y < x);
+  if (c) cxi = -(cxi ^ (1 << 31));
 
-  if (x != y) cx.i--;
+  if (x != y) cxi--;
 
-  if (c) cx.i = -(cx.i ^ (1 << 31));
+  if (c) cxi = -(cxi ^ (1 << 31));
 
-  if (cx.f == 0 && x != 0) cx.f = mulsignf(0, x);
-  if (x == 0 && y == 0) cx.f = y;
-  if (xisnanf(x) || xisnanf(y)) cx.f = SLEEF_NANf;
+  memcpy(&cxf, &cxi, sizeof(cxf));
+  if (cxf == 0 && x != 0) cxf = mulsignf(0, x);
+  if (x == 0 && y == 0) cxf = y;
+  if (xisnanf(x) || xisnanf(y)) cxf = SLEEF_NANf;
   
-  return cx.f;
+  return cxf;
 }
 
 EXPORT CONST float xfrfrexpf(float x) {
-  union {
-    float f;
-    int32_t u;
-  } cx;
+  float cxf;
+  int32_t cxu;
 
   if (fabsfk(x) < FLT_MIN) x *= (1 << 30);
   
-  cx.f = x;
-  cx.u &= ~0x7f800000U;
-  cx.u |=  0x3f000000U;
+  cxf = x;
+  memcpy(&cxu, &cxf, sizeof(cxu));
 
-  if (xisinff(x)) cx.f = mulsignf(SLEEF_INFINITYf, x);
-  if (x == 0) cx.f = x;
+  cxu &= ~0x7f800000U;
+  cxu |=  0x3f000000U;
+
+  memcpy(&cxf, &cxu, sizeof(cxf));
+  if (xisinff(x)) cxf = mulsignf(SLEEF_INFINITYf, x);
+  if (x == 0) cxf = x;
   
-  return cx.f;
+  return cxf;
 }
 
 EXPORT CONST int xexpfrexpf(float x) {
-  union {
-    float f;
-    uint32_t u;
-  } cx;
+  float cxf;
+  uint32_t cxu;
 
   int ret = 0;
   
   if (fabsfk(x) < FLT_MIN) { x *= (1 << 30); ret = -30; }
   
-  cx.f = x;
-  ret += (int32_t)(((cx.u >> 23) & 0xff)) - 0x7e;
+  cxf = x;
+  memcpy(&cxu, &cxf, sizeof(cxu));
+  ret += (int32_t)(((cxu >> 23) & 0xff)) - 0x7e;
 
   if (x == 0 || xisnanf(x) || xisinff(x)) ret = 0;
   
@@ -2246,7 +2242,7 @@ typedef struct {
 } df2;
 
 static CONST df2 gammafk(float a) {
-  Sleef_float2 clc = df(0, 0), clln = df(1, 0), clld = df(1, 0), v = df(1, 0), x, y, z;
+  Sleef_float2 clc = df(0, 0), clln = df(1, 0), clld = df(1, 0), x, y, z;
   float t, u;
 
   int otiny = fabsfk(a) < 1e-30f, oref = a < 0.5f;

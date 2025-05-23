@@ -13,12 +13,15 @@
 #include <cstddef>
 #include <cstdlib>
 #include <functional>
+#include <numeric>
 #include <random>
 #include <vector>
 
-#include <fp16.h>
+#include <fp16/fp16.h>
 
 #include <xnnpack.h>
+#include <xnnpack/aligned-allocator.h>
+#include <xnnpack/common.h>
 
 
 class ResizeBilinearOperatorTester {
@@ -222,6 +225,15 @@ class ResizeBilinearOperatorTester {
     return this->iterations_;
   }
 
+  inline ResizeBilinearOperatorTester& transient_indirection_buffer(bool transient_indirection_buffer) {
+    this->transient_indirection_buffer_ = transient_indirection_buffer;
+    return *this;
+  }
+
+  inline bool transient_indirection_buffer() const {
+    return this->transient_indirection_buffer_;
+  }
+
   void TestNHWCxF16() const {
     if (align_corners()) {
       ASSERT_FALSE(tf_legacy_mode());
@@ -267,9 +279,18 @@ class ResizeBilinearOperatorTester {
       ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
       xnn_operator_t resize_bilinear_op = nullptr;
 
+      uint32_t flags = 0;
+      if (align_corners()) {
+        flags |= XNN_FLAG_ALIGN_CORNERS;
+      }
+      if (tf_legacy_mode()) {
+        flags |= XNN_FLAG_TENSORFLOW_LEGACY_MODE;
+      }
+      if (transient_indirection_buffer()) {
+        flags |= XNN_FLAG_TRANSIENT_INDIRECTION_BUFFER;
+      }
       const xnn_status status = xnn_create_resize_bilinear2d_nhwc_f16(
-          channels(), input_pixel_stride(), output_pixel_stride(),
-          (align_corners() ? XNN_FLAG_ALIGN_CORNERS : 0) | (tf_legacy_mode() ? XNN_FLAG_TENSORFLOW_LEGACY_MODE : 0),
+          output_height(), output_width(), flags,
           &resize_bilinear_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -280,16 +301,35 @@ class ResizeBilinearOperatorTester {
       // Smart pointer to automatically delete resize_bilinear_op.
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_resize_bilinear_op(resize_bilinear_op, xnn_delete_operator);
 
+      size_t workspace_size = transient_indirection_buffer() ? 0 : SIZE_MAX;
+      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
-        xnn_setup_resize_bilinear2d_nhwc_f16(
+        xnn_reshape_resize_bilinear2d_nhwc_f16(
           resize_bilinear_op,
           batch_size(), input_height(), input_width(),
-          output_height(), output_width(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
+          channels(), input_pixel_stride(), output_pixel_stride(),
+          &workspace_size, &workspace_alignment,
+          /*threadpool=*/nullptr));
+      std::vector<char, AlignedAllocator<char, XNN_ALLOCATION_ALIGNMENT>> workspace(workspace_size);
+      std::iota(workspace.begin(), workspace.end(), 0);
+      if (transient_indirection_buffer()) {
+        ASSERT_NE(workspace_size, 0);
+        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
+        ASSERT_EQ(xnn_status_success,
+          xnn_setup_resize_bilinear2d_nhwc_f16(
+            resize_bilinear_op,
+            workspace.data(), input.data(), output.data()));
+      } else {
+        ASSERT_EQ(workspace_size, 0);
+        ASSERT_EQ(workspace_alignment, 1);
+        ASSERT_EQ(xnn_status_success,
+          xnn_setup_resize_bilinear2d_nhwc_f16(
+            resize_bilinear_op,
+            /*workspace=*/nullptr, input.data(), output.data()));
+      }
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(resize_bilinear_op, nullptr /* thread pool */));
+        xnn_run_operator(resize_bilinear_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -352,26 +392,55 @@ class ResizeBilinearOperatorTester {
       ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
       xnn_operator_t resize_bilinear_op = nullptr;
 
+      uint32_t flags = 0;
+      if (align_corners()) {
+        flags |= XNN_FLAG_ALIGN_CORNERS;
+      }
+      if (tf_legacy_mode()) {
+        flags |= XNN_FLAG_TENSORFLOW_LEGACY_MODE;
+      }
+      if (transient_indirection_buffer()) {
+        flags |= XNN_FLAG_TRANSIENT_INDIRECTION_BUFFER;
+      }
       ASSERT_EQ(xnn_status_success,
         xnn_create_resize_bilinear2d_nhwc_f32(
-          channels(), input_pixel_stride(), output_pixel_stride(),
-          (align_corners() ? XNN_FLAG_ALIGN_CORNERS : 0) | (tf_legacy_mode() ? XNN_FLAG_TENSORFLOW_LEGACY_MODE : 0),
+          output_height(), output_width(), flags,
           &resize_bilinear_op));
       ASSERT_NE(nullptr, resize_bilinear_op);
 
       // Smart pointer to automatically delete resize_bilinear_op.
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_resize_bilinear_op(resize_bilinear_op, xnn_delete_operator);
 
+      size_t workspace_size = transient_indirection_buffer() ? 0 : SIZE_MAX;
+      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
-        xnn_setup_resize_bilinear2d_nhwc_f32(
+        xnn_reshape_resize_bilinear2d_nhwc_f32(
           resize_bilinear_op,
           batch_size(), input_height(), input_width(),
-          output_height(), output_width(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
+          channels(), input_pixel_stride(), output_pixel_stride(),
+          &workspace_size, &workspace_alignment,
+          /*threadpool=*/nullptr));
+
+      std::vector<char, AlignedAllocator<char, XNN_ALLOCATION_ALIGNMENT>> workspace(workspace_size);
+      std::iota(workspace.begin(), workspace.end(), 0);
+      if (transient_indirection_buffer()) {
+        ASSERT_NE(workspace_size, 0);
+        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
+        ASSERT_EQ(xnn_status_success,
+          xnn_setup_resize_bilinear2d_nhwc_f32(
+            resize_bilinear_op,
+            workspace.data(), input.data(), output.data()));
+      } else {
+        ASSERT_EQ(workspace_size, 0);
+        ASSERT_EQ(workspace_alignment, 1);
+        ASSERT_EQ(xnn_status_success,
+          xnn_setup_resize_bilinear2d_nhwc_f32(
+            resize_bilinear_op,
+            /*workspace=*/nullptr, input.data(), output.data()));
+      }
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(resize_bilinear_op, nullptr /* thread pool */));
+        xnn_run_operator(resize_bilinear_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -434,26 +503,55 @@ class ResizeBilinearOperatorTester {
       ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
       xnn_operator_t resize_bilinear_op = nullptr;
 
+      uint32_t flags = 0;
+      if (align_corners()) {
+        flags |= XNN_FLAG_ALIGN_CORNERS;
+      }
+      if (tf_legacy_mode()) {
+        flags |= XNN_FLAG_TENSORFLOW_LEGACY_MODE;
+      }
+      if (transient_indirection_buffer()) {
+        flags |= XNN_FLAG_TRANSIENT_INDIRECTION_BUFFER;
+      }
       ASSERT_EQ(xnn_status_success,
         xnn_create_resize_bilinear2d_nhwc_s8(
-          channels(), input_pixel_stride(), output_pixel_stride(),
-          (align_corners() ? XNN_FLAG_ALIGN_CORNERS : 0) | (tf_legacy_mode() ? XNN_FLAG_TENSORFLOW_LEGACY_MODE : 0),
+          output_height(), output_width(), flags,
           &resize_bilinear_op));
       ASSERT_NE(nullptr, resize_bilinear_op);
 
       // Smart pointer to automatically delete resize_bilinear_op.
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_resize_bilinear_op(resize_bilinear_op, xnn_delete_operator);
 
+      size_t workspace_size = transient_indirection_buffer() ? 0 : SIZE_MAX;
+      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
-        xnn_setup_resize_bilinear2d_nhwc_s8(
+        xnn_reshape_resize_bilinear2d_nhwc_s8(
           resize_bilinear_op,
           batch_size(), input_height(), input_width(),
-          output_height(), output_width(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
+          channels(), input_pixel_stride(), output_pixel_stride(),
+          &workspace_size, &workspace_alignment,
+          /*threadpool=*/nullptr));
+
+      std::vector<char, AlignedAllocator<char, XNN_ALLOCATION_ALIGNMENT>> workspace(workspace_size);
+      std::iota(workspace.begin(), workspace.end(), 0);
+      if (transient_indirection_buffer()) {
+        ASSERT_NE(workspace_size, 0);
+        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
+        ASSERT_EQ(xnn_status_success,
+          xnn_setup_resize_bilinear2d_nhwc_s8(
+            resize_bilinear_op,
+            workspace.data(), input.data(), output.data()));
+      } else {
+        ASSERT_EQ(workspace_size, 0);
+        ASSERT_EQ(workspace_alignment, 1);
+        ASSERT_EQ(xnn_status_success,
+          xnn_setup_resize_bilinear2d_nhwc_s8(
+            resize_bilinear_op,
+            /*workspace=*/nullptr, input.data(), output.data()));
+      }
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(resize_bilinear_op, nullptr /* thread pool */));
+        xnn_run_operator(resize_bilinear_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -517,26 +615,55 @@ class ResizeBilinearOperatorTester {
       ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
       xnn_operator_t resize_bilinear_op = nullptr;
 
+      uint32_t flags = 0;
+      if (align_corners()) {
+        flags |= XNN_FLAG_ALIGN_CORNERS;
+      }
+      if (tf_legacy_mode()) {
+        flags |= XNN_FLAG_TENSORFLOW_LEGACY_MODE;
+      }
+      if (transient_indirection_buffer()) {
+        flags |= XNN_FLAG_TRANSIENT_INDIRECTION_BUFFER;
+      }
       ASSERT_EQ(xnn_status_success,
         xnn_create_resize_bilinear2d_nhwc_u8(
-          channels(), input_pixel_stride(), output_pixel_stride(),
-          (align_corners() ? XNN_FLAG_ALIGN_CORNERS : 0) | (tf_legacy_mode() ? XNN_FLAG_TENSORFLOW_LEGACY_MODE : 0),
+          output_height(), output_width(), flags,
           &resize_bilinear_op));
       ASSERT_NE(nullptr, resize_bilinear_op);
 
       // Smart pointer to automatically delete resize_bilinear_op.
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_resize_bilinear_op(resize_bilinear_op, xnn_delete_operator);
 
+      size_t workspace_size = transient_indirection_buffer() ? 0 : SIZE_MAX;
+      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
-        xnn_setup_resize_bilinear2d_nhwc_u8(
+        xnn_reshape_resize_bilinear2d_nhwc_u8(
           resize_bilinear_op,
           batch_size(), input_height(), input_width(),
-          output_height(), output_width(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
+          channels(), input_pixel_stride(), output_pixel_stride(),
+          &workspace_size, &workspace_alignment,
+          /*threadpool=*/nullptr));
+
+      std::vector<char, AlignedAllocator<char, XNN_ALLOCATION_ALIGNMENT>> workspace(workspace_size);
+      std::iota(workspace.begin(), workspace.end(), 0);
+      if (transient_indirection_buffer()) {
+        ASSERT_NE(workspace_size, 0);
+        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
+        ASSERT_EQ(xnn_status_success,
+          xnn_setup_resize_bilinear2d_nhwc_u8(
+            resize_bilinear_op,
+            workspace.data(), input.data(), output.data()));
+      } else {
+        ASSERT_EQ(workspace_size, 0);
+        ASSERT_EQ(workspace_alignment, 1);
+        ASSERT_EQ(xnn_status_success,
+          xnn_setup_resize_bilinear2d_nhwc_u8(
+            resize_bilinear_op,
+            /*workspace=*/nullptr, input.data(), output.data()));
+      }
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(resize_bilinear_op, nullptr /* thread pool */));
+        xnn_run_operator(resize_bilinear_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -604,7 +731,7 @@ class ResizeBilinearOperatorTester {
       xnn_operator_t resize_bilinear_op = nullptr;
 
       const xnn_status status = xnn_create_resize_bilinear2d_nchw_f16(
-          channels(), input_pixel_stride(), output_pixel_stride(),
+          output_height(), output_width(),
           (align_corners() ? XNN_FLAG_ALIGN_CORNERS : 0) | (tf_legacy_mode() ? XNN_FLAG_TENSORFLOW_LEGACY_MODE : 0),
           &resize_bilinear_op);
       if (status == xnn_status_unsupported_hardware) {
@@ -617,15 +744,19 @@ class ResizeBilinearOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_resize_bilinear_op(resize_bilinear_op, xnn_delete_operator);
 
       ASSERT_EQ(xnn_status_success,
-        xnn_setup_resize_bilinear2d_nchw_f16(
+        xnn_reshape_resize_bilinear2d_nchw_f16(
           resize_bilinear_op,
           batch_size(), input_height(), input_width(),
-          output_height(), output_width(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
+          channels(), input_pixel_stride(), output_pixel_stride(),
+          /*threadpool=*/nullptr));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(resize_bilinear_op, nullptr /* thread pool */));
+        xnn_setup_resize_bilinear2d_nchw_f16(
+          resize_bilinear_op,
+          input.data(), output.data()));
+
+      ASSERT_EQ(xnn_status_success,
+        xnn_run_operator(resize_bilinear_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -691,26 +822,33 @@ class ResizeBilinearOperatorTester {
       ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
       xnn_operator_t resize_bilinear_op = nullptr;
 
-      ASSERT_EQ(xnn_status_success,
+      const xnn_status status =
         xnn_create_resize_bilinear2d_nchw_f32(
-          channels(), input_pixel_stride(), output_pixel_stride(),
+          output_height(), output_width(),
           (align_corners() ? XNN_FLAG_ALIGN_CORNERS : 0) | (tf_legacy_mode() ? XNN_FLAG_TENSORFLOW_LEGACY_MODE : 0),
-          &resize_bilinear_op));
+          &resize_bilinear_op);
+      if (status == xnn_status_unsupported_hardware) {
+        GTEST_SKIP();
+      }
       ASSERT_NE(nullptr, resize_bilinear_op);
 
       // Smart pointer to automatically delete resize_bilinear_op.
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)> auto_resize_bilinear_op(resize_bilinear_op, xnn_delete_operator);
 
       ASSERT_EQ(xnn_status_success,
-        xnn_setup_resize_bilinear2d_nchw_f32(
+        xnn_reshape_resize_bilinear2d_nchw_f32(
           resize_bilinear_op,
           batch_size(), input_height(), input_width(),
-          output_height(), output_width(),
-          input.data(), output.data(),
-          nullptr /* thread pool */));
+          channels(), input_pixel_stride(), output_pixel_stride(),
+          /*threadpool=*/nullptr));
 
       ASSERT_EQ(xnn_status_success,
-        xnn_run_operator(resize_bilinear_op, nullptr /* thread pool */));
+        xnn_setup_resize_bilinear2d_nchw_f32(
+          resize_bilinear_op,
+          input.data(), output.data()));
+
+      ASSERT_EQ(xnn_status_success,
+        xnn_run_operator(resize_bilinear_op, /*threadpool=*/nullptr));
 
       // Verify results.
       for (size_t i = 0; i < batch_size(); i++) {
@@ -743,4 +881,5 @@ class ResizeBilinearOperatorTester {
   bool align_corners_{false};
   bool tf_legacy_mode_{false};
   size_t iterations_{1};
+  bool transient_indirection_buffer_{false};
 };

@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -11,8 +11,8 @@
 #define CONFIGMAX 4
 
 char *replaceAll(const char *in, const char *pat, const char *replace) {
-  const int replaceLen = strlen(replace);
-  const int patLen = strlen(pat);
+  const int replaceLen = (int)strlen(replace);
+  const int patLen = (int)strlen(pat);
 
   char *str = malloc(strlen(in)+1);
   strcpy(str, in);
@@ -21,8 +21,8 @@ char *replaceAll(const char *in, const char *pat, const char *replace) {
     char *p = strstr(str, pat);
     if (p == NULL) return str;
 
-    int replace_pos = p - str;
-    int tail_len = strlen(p + patLen);
+    int replace_pos = (int)(p - str);
+    int tail_len = (int)strlen(p + patLen);
 
     char *newstr = malloc(strlen(str) + (replaceLen - patLen) + 1);
 
@@ -48,8 +48,6 @@ int main(int argc, char **argv) {
 
   const char *baseType = argv[1];
   const int isastart = 2;
-  const int isamax = argc - isastart;
-  const int maxbutwidth = 6;
 
   for(int config=0;config<CONFIGMAX;config++) {
 #if ENABLE_STREAM == 0

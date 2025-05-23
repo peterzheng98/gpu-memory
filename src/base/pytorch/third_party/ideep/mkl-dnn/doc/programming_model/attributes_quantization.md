@@ -29,7 +29,7 @@ computation. Those should be computed and provided by the user.
 These quantization parameters can either be computed ahead of time
 using calibration tools (*static* quantization) or at runtime based on
 the actual minimum and maximum values of a tensor (*dynamic*
-quantization). Either method can be used in conjuction with oneDNN, as
+quantization). Either method can be used in conjunction with oneDNN, as
 the quantization parameters are passed to the oneDNN primitives at
 execution time.
 
@@ -91,7 +91,7 @@ appropriate post-operation.
 
 ### Example: Convolution Quantization Workflow
 
-Consider a convolution without bias. The tensors are represented as:
+Consider a convolution with bias. The tensors are represented as:
 
 - \f$\src_{f32}[:] = scale_{\src} \cdot (\src_{int8}[:] - zp_{\src})\f$
 - \f$\weights_{f32}[:] = scale_{\weights} \cdot \weights_{int8}[:]\f$
@@ -108,9 +108,9 @@ zero_point_{\dst}`. Mathematically, the computations are:
 \f[
    \dst_{int8}[:] =
       \operatorname{f32\_to\_int8}(
-         scale_{\src} \cdot scale_{\weights} \cdot
+         (scale_{\src} \cdot scale_{\weights} \cdot
          \operatorname{s32\_to\_f32}(conv_{s32}(\src_{int8}, \weights_{int8})
-	   - zp_{\src} \cdot comp_{s32}) / scale_{\dst}
+	   - zp_{\src} \cdot comp_{s32}) + bias_{f32}) / scale_{\dst}
            + zp_{\dst} )
 \f]
 
@@ -160,8 +160,8 @@ To compute the \f$\dst_{int8}\f$ we need to perform the following:
 
     \dst_{int8}(n, oc, oh, ow) =
         \operatorname{f32\_to\_int8}(
-            \frac{scale_{\src} \cdot scale_{\weights}(oc)}{scale_{\dst}} \cdot
-            conv_{s32}(\src_{int8}, \weights_{int8})|_{(n, oc, oh, ow)}
+            \frac{scale_{\src} \cdot scale_{\weights}(oc) \cdot
+            conv_{s32}(\src_{int8}, \weights_{int8})|_{(n, oc, oh, ow)} + \bias_{f32}}{scale_{\dst}}
         ).
 \f]
 

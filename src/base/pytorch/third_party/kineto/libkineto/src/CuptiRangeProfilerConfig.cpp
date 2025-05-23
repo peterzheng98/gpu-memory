@@ -10,9 +10,9 @@
 #include <Logger.h>
 
 #include <stdlib.h>
-#include <unistd.h>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <ostream>
 
 
@@ -63,6 +63,8 @@ void CuptiRangeProfilerConfig::printActivityProfilerConfig(std::ostream& s) cons
     s << "Cupti Profiler max ranges : " << cuptiProfilerMaxRanges_ << std::endl;
   }
 }
+
+void CuptiRangeProfilerConfig::setActivityDependentConfig(){}
 
 void CuptiRangeProfilerConfig::registerFactory() {
   Config::addConfigFactory(

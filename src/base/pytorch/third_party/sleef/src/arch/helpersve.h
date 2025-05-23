@@ -1,5 +1,5 @@
 /*********************************************************************/
-/*          Copyright ARM Ltd. 2010 - 2019.                          */
+/*          Copyright ARM Ltd. 2010 - 2024.                          */
 /* Distributed under the Boost Software License, Version 1.0.        */
 /*    (See accompanying file LICENSE.txt or copy at                  */
 /*          http://www.boost.org/LICENSE_1_0.txt)                    */
@@ -122,15 +122,14 @@ static INLINE vfloat2 vf2setxy_vf2_vf_vf(vfloat x, vfloat y)  { return svcreate2
 static INLINE vfloat2 vf2setx_vf2_vf2_vf(vfloat2 v, vfloat d) { return svset2_f32(v, 0, d); }
 static INLINE vfloat2 vf2sety_vf2_vf2_vf(vfloat2 v, vfloat d) { return svset2_f32(v, 1, d); }
 
-// vmask2 is mainly used for quad-precision functions
-typedef svint32x2_t vmask2;
-static INLINE vmask vm2getx_vm_vm2(vmask2 v) { return svget2_s32(v, 0); }
-static INLINE vmask vm2gety_vm_vm2(vmask2 v) { return svget2_s32(v, 1); }
-static INLINE vmask2 vm2setxy_vm2_vm_vm(vmask x, vmask y) { return svcreate2_s32(x, y); }
-static INLINE vmask2 vm2setx_vm2_vm2_vm(vmask2 v, vmask x) { return svset2_s32(v, 0, x); }
-static INLINE vmask2 vm2sety_vm2_vm2_vm(vmask2 v, vmask y) { return svset2_s32(v, 1, y); }
+typedef svint32x2_t vquad;
+static INLINE vmask vqgetx_vm_vq(vquad v) { return svget2_s32(v, 0); }
+static INLINE vmask vqgety_vm_vq(vquad v) { return svget2_s32(v, 1); }
+static INLINE vquad vqsetxy_vq_vm_vm(vmask x, vmask y) { return svcreate2_s32(x, y); }
+static INLINE vquad vqsetx_vq_vq_vm(vquad v, vmask x) { return svset2_s32(v, 0, x); }
+static INLINE vquad vqsety_vq_vq_vm(vquad v, vmask y) { return svset2_s32(v, 1, y); }
 
-typedef vmask2 vargquad;
+typedef vquad vargquad;
 
 // Auxiliary data types
 
@@ -443,7 +442,7 @@ static INLINE vfloat vsel_vf_vo_vf_vf(vopmask mask, vfloat x, vfloat y) {
 
 // Reciprocal 1/x, Division, Square root
 static INLINE vfloat vdiv_vf_vf_vf(vfloat n, vfloat d) {
-#ifndef ENABLE_ALTDIV
+#ifndef SLEEF_ENABLE_ALTDIV
   return svdiv_f32_x(ptrue, n, d);
 #else
   // Finite numbers (including denormal) only, gives mostly correctly rounded result
@@ -464,7 +463,7 @@ static INLINE vfloat vdiv_vf_vf_vf(vfloat n, vfloat d) {
 #endif
 }
 static INLINE vfloat vrec_vf_vf(vfloat d) {
-#ifndef ENABLE_ALTDIV
+#ifndef SLEEF_ENABLE_ALTDIV
   return svdivr_n_f32_x(ptrue, d, 1.0f);
 #else
   return vsel_vf_vo_vf_vf(svcmpeq_f32(ptrue, vabs_vf_vf(d), vcast_vf_f(SLEEF_INFINITYf)),
@@ -472,7 +471,7 @@ static INLINE vfloat vrec_vf_vf(vfloat d) {
 #endif
 }
 static INLINE vfloat vsqrt_vf_vf(vfloat d) {
-#ifndef ENABLE_ALTSQRT
+#ifndef SLEEF_ENABLE_ALTSQRT
   return svsqrt_f32_x(ptrue, d);
 #else
   // Gives correctly rounded result for all input range
@@ -665,6 +664,13 @@ static INLINE vmask vcast_vm_i_i(int i0, int i1) {
       svdup_n_u64((0xffffffff & (uint64_t)i1) | (((uint64_t)i0) << 32)));
 }
 
+static INLINE vmask vcast_vm_i64(int64_t i) {
+  return svreinterpret_s32_u64(svdup_n_u64((uint64_t)i));
+}
+static INLINE vmask vcast_vm_u64(uint64_t i) {
+  return svreinterpret_s32_u64(svdup_n_u64(i));
+}
+
 /*********************************/
 /* SVE for double precision math */
 /*********************************/
@@ -694,17 +700,11 @@ static INLINE vdouble vreinterpret_vd_vm(vmask vm) {
 static INLINE vmask vreinterpret_vm_vd(vdouble vd) {
   return svreinterpret_s32_f64(vd);
 }
-static INLINE vdouble vreinterpret_vd_vi2(vint2 x) {
-  return svreinterpret_f64_s32(x);
-}
-static INLINE vint2 vreinterpret_vi2_vd(vdouble x) {
-  return svreinterpret_s32_f64(x);
-}
-static INLINE vint2 vcastu_vi2_vi(vint x) {
+static INLINE vint2 vcastu_vm_vi(vint x) {
   return svreinterpret_s32_s64(
       svlsl_n_s64_x(ptrue, svreinterpret_s64_s32(x), 32));
 }
-static INLINE vint vcastu_vi_vi2(vint2 x) {
+static INLINE vint vcastu_vi_vm(vint2 x) {
   return svreinterpret_s32_u64(
       svlsr_n_u64_x(ptrue, svreinterpret_u64_s32(x), 32));
 }
@@ -801,7 +801,7 @@ static INLINE vdouble vfmapn_vd_vd_vd_vd(vdouble x, vdouble y,
 
 // Reciprocal 1/x, Division, Square root
 static INLINE vdouble vdiv_vd_vd_vd(vdouble n, vdouble d) {
-#ifndef ENABLE_ALTDIV
+#ifndef SLEEF_ENABLE_ALTDIV
   return svdiv_f64_x(ptrue, n, d);
 #else
   // Finite numbers (including denormal) only, gives mostly correctly rounded result
@@ -823,7 +823,7 @@ static INLINE vdouble vdiv_vd_vd_vd(vdouble n, vdouble d) {
 #endif
 }
 static INLINE vdouble vrec_vd_vd(vdouble d) {
-#ifndef ENABLE_ALTDIV
+#ifndef SLEEF_ENABLE_ALTDIV
   return svdivr_n_f64_x(ptrue, d, 1.0);
 #else
   return vsel_vd_vo_vd_vd(svcmpeq_f64(ptrue, vabs_vd_vd(d), vcast_vd_d(SLEEF_INFINITY)),
@@ -831,7 +831,7 @@ static INLINE vdouble vrec_vd_vd(vdouble d) {
 #endif
 }
 static INLINE vdouble vsqrt_vd_vd(vdouble d) {
-#ifndef ENABLE_ALTSQRT
+#ifndef SLEEF_ENABLE_ALTSQRT
   return svsqrt_f64_x(ptrue, d);
 #else
   // Gives correctly rounded result for all input range
@@ -899,6 +899,7 @@ static INLINE vopmask veq64_vo_vm_vm(vmask x, vmask y) {
 // pure predicate operations
 static INLINE vopmask vcast_vo32_vo64(vopmask o) { return o; }
 static INLINE vopmask vcast_vo64_vo32(vopmask o) { return o; }
+static INLINE vopmask vcast_vo_i(int i) { return svcmpne_s32(ptrue, svdup_n_s32(i), svdup_n_s32(0)); }
 
 // logical integer operations
 static INLINE vint vand_vi_vo_vi(vopmask x, vint y) {
@@ -970,8 +971,6 @@ static INLINE vmask vor_vm_vo64_vm(vopmask x, vmask y) {
 static INLINE vfloat vrev21_vf_vf(vfloat vf) {
   return svreinterpret_f32_u64(svrevw_u64_x(ptrue, svreinterpret_u64_f32(vf)));
 }
-
-static INLINE vint2 vrev21_vi2_vi2(vint2 i) { return vreinterpret_vi2_vf(vrev21_vf_vf(vreinterpret_vf_vi2(i))); }
 
 // Comparison returning integer
 static INLINE vint2 veq_vi2_vi2_vi2(vint2 x, vint2 y) {
@@ -1071,14 +1070,14 @@ static int vcast_i_vi2(vint2 v) {
 
 //
 
-static vmask2 vloadu_vm2_p(void *p) {
-  vmask2 vm2;
-  memcpy(&vm2, p, VECTLENDP * 16);
-  return vm2;
+static vquad loadu_vq_p(const int32_t *ptr) {
+  int32_t a[svcntw()*2];
+  memcpy(a, ptr, svcntw()*8);
+  return svld2_s32(ptrue, a);
 }
 
-static INLINE vmask2 vcast_vm2_aq(vargquad aq) { return aq; }
-static INLINE vargquad vcast_aq_vm2(vmask2 vm2) { return vm2; }
+static INLINE vquad cast_vq_aq(vargquad aq) { return aq; }
+static INLINE vargquad cast_aq_vq(vquad vq) { return vq; }
 
 static INLINE int vtestallzeros_i_vo64(vopmask g) {
   return svcntp_b64(svptrue_b64(), g) == 0;

@@ -1,4 +1,4 @@
-//   Copyright Naoki Shibata and contributors 2010 - 2020.
+//   Copyright Naoki Shibata and contributors 2010 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -11,10 +11,46 @@
 
 #define N 1000
 
+FILE *cygopen(const char *path, const char *mode) {
+#if defined(__MINGW64__) || defined(__MINGW32__)
+  FILE *fp = fopen(path, mode);
+  if (fp != NULL) return fp;
+
+  char *buf = malloc(strlen(path) + N + 1);
+  snprintf(buf, strlen(path) + N, "cygpath -m '%s'", path);
+
+  FILE *pfp = popen(buf, "r");
+
+  if (pfp == NULL || fgets(buf, N, pfp) == NULL) {
+    if (pfp != NULL) pclose(pfp);
+    free(buf);
+    return NULL;
+  }
+
+  pclose(pfp);
+
+  int len = strlen(buf);
+  if (0 < len && len < N && buf[len-1] == '\n') buf[len-1] = '\0';
+  
+  fp = fopen(buf, mode);
+
+  free(buf);
+
+  return fp;
+#else
+  return fopen(path, mode);
+#endif
+}
+
 int nkeywords = 0, nalloc = 0;
 char **keywords = NULL, *suffix = NULL;
 
+int nIgnore = 0;
+char **ignore = NULL;
+
 void insert(char *buf) {
+  for(int i=0;i<nIgnore;i++) if (strcmp(ignore[i], buf) == 0) return;
+
   for(int i=0;i<nkeywords;i++) {
     if (strcmp(keywords[i], buf) == 0) printf("%s", suffix);
   }
@@ -133,19 +169,36 @@ int main(int argc, char **argv) {
   nalloc = 1;
   keywords = malloc(sizeof(char *) * nalloc);
 
-  if (argc != 4) {
-    fprintf(stderr, "%s <input file> <keywords file> <suffix>\n", argv[0]);
+  if (argc < 2) {
+    fprintf(stderr, "%s <input file>\n", argv[0]);
+    fprintf(stderr, "Print the file on the standard output\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "%s <input file> <keywords file> <suffix> [<keywords to ignore> ... ]\n", argv[0]);
     fprintf(stderr, "Add the suffix to keywords\n");
     exit(-1);
   }
 
-  FILE *fp = fopen(argv[2], "r");
+  char buf[N];
+
+  if (argc == 2) {
+    FILE *fp = cygopen(argv[1], "r");
+    if (fp == NULL) {
+      fprintf(stderr, "Cannot open %s\n", argv[1]);
+      exit(-1);
+    }
+
+    while(fgets(buf, N, fp) != NULL) {
+      fputs(buf, stdout);
+    }
+    fclose(fp);
+    exit(0);
+  }
+
+  FILE *fp = cygopen(argv[2], "r");
   if (fp == NULL) {
     fprintf(stderr, "Cannot open %s\n", argv[2]);
     exit(-1);
   }
-
-  char buf[N];
 
   while(fgets(buf, N, fp) != NULL) {
     if (strlen(buf) >= 1) buf[strlen(buf)-1] = '\0';
@@ -160,9 +213,12 @@ int main(int argc, char **argv) {
 
   fclose(fp);
 
+  nIgnore = argc - 4;
+  ignore = argv + 4;
+
   suffix = argv[3];
 
-  fp = fopen(argv[1], "r");
+  fp = cygopen(argv[1], "r");
   if (fp == NULL) {
     fprintf(stderr, "Cannot open %s\n", argv[1]);
     exit(-1);
@@ -175,4 +231,4 @@ int main(int argc, char **argv) {
   exit(0);
 }
 
-// cat sleefinline*.h | egrep -o '[a-zA-Z_][0-9a-zA-Z_]*' | sort | uniq > cand.txt
+// cat sleef*inline*.h | egrep -o '[a-zA-Z_][0-9a-zA-Z_]*' | sort | uniq > cand.txt

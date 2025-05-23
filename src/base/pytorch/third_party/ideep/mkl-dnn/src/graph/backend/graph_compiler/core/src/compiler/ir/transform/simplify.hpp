@@ -24,20 +24,23 @@ namespace impl {
 namespace graph {
 namespace gc {
 
+namespace attr_keys {
+// bool. Applied on stmts_node. If true, the ir_simplifier will not remove the
+// stmts.
+constexpr const char *preserve_stmts = "preserve_stmts";
+} // namespace attr_keys
+
 /**
  * Remove empty stmts nodes in parent stmts nodes. Simplify for nodes if
  * boundaris are constants/loop body is empty. Simplify if-else nodes if
  * condition is constant.
  * @param skip_rename skip renaming the variables if the it has conflicts with
  * parent scopes. Enabling this feature will slow down this pass a lot.
- * @param skip_if_loop skip simplifying if-else and for-loop node
  * */
 class ir_simplifier_t : public function_pass_t {
 public:
     bool skip_rename_;
-    bool skip_if_loop_;
-    ir_simplifier_t(bool skip_rename, bool skip_if_loop = false)
-        : skip_rename_(skip_rename), skip_if_loop_(skip_if_loop) {}
+    ir_simplifier_t(bool skip_rename) : skip_rename_(skip_rename) {}
     func_c operator()(func_c f) override;
     stmt_c operator()(stmt_c f) const;
     SC_DECL_PASS_INFO_FUNC();

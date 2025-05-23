@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <condition_variable>
 #include <list>
 #include <map>
@@ -29,6 +30,10 @@
 #include <cupti.h>
 #include "CuptiActivity.h"
 #endif // HAS_CUPTI
+
+#ifdef HAS_ROCTRACER
+#include "RoctracerLogger.h"
+#endif // HAS_ROCTRACER
 
 #include "ThreadUtil.h"
 #include "TraceSpan.h"
@@ -131,6 +136,22 @@ class CuptiActivityProfiler {
     logger_ = logger;
   }
 
+ inline void setCpuActivityPresent(bool val){
+    cpuActivityPresent_ = val;
+  }
+
+  inline void setGpuActivityPresent(bool val){
+    gpuActivityPresent_ = val;
+  } 
+
+  inline bool gpuActivityPresent(){
+    return gpuActivityPresent_;
+  }
+
+  inline bool traceNonEmpty(){
+    return cpuActivityPresent_ || gpuActivityPresent_;
+  }
+
   // Synchronous control API
   void startTrace(
       const std::chrono::time_point<std::chrono::system_clock>& now) {
@@ -158,6 +179,9 @@ class CuptiActivityProfiler {
   void configure(
       const Config& config,
       const std::chrono::time_point<std::chrono::system_clock>& now);
+  
+  // Toggle GPU tracing during a profile instance
+  void toggleCollectionDynamic(const bool enable);
 
   // Registered with client API to pass CPU trace events over
   void transferCpuTrace(
@@ -201,12 +225,28 @@ class CuptiActivityProfiler {
     profilers_.push_back(std::move(profiler));
   }
 
+  std::unordered_map<std::string, std::vector<std::string>> getLoggerMetadata();
+
+  void pushCorrelationId(uint64_t id);
+  void popCorrelationId();
+
+  void pushUserCorrelationId(uint64_t id);
+  void popUserCorrelationId();
+
  protected:
 
   using CpuGpuSpanPair = std::pair<TraceSpan, TraceSpan>;
   static const CpuGpuSpanPair& defaultTraceSpan();
 
  private:
+  // Deferred logging of CUDA-event synchronization
+  struct DeferredLogEntry {
+    uint32_t device;
+    uint32_t stream;
+    std::function<void()> logMe;
+  };
+
+  std::deque<DeferredLogEntry> logQueue_;
 
   // Map of gpu activities to user defined events
   class GpuUserEventMap {
@@ -251,7 +291,7 @@ class CuptiActivityProfiler {
     int cntr;
   };
 
-  void logCudaVersions();
+  void logGpuVersions();
 
   void startTraceInternal(
       const std::chrono::time_point<std::chrono::system_clock>& now);
@@ -314,14 +354,15 @@ class CuptiActivityProfiler {
       const std::unordered_map<int64_t, int64_t>& correlationMap);
 
   const ITraceActivity* cpuActivity(int32_t correlationId);
+  void updateGpuNetSpan(const ITraceActivity& gpuOp);
+  bool outOfRange(const ITraceActivity& act);
+  void handleGpuActivity(const ITraceActivity& act,
+      ActivityLogger* logger);
 
 #ifdef HAS_CUPTI
   // Process generic CUPTI activity
   void handleCuptiActivity(const CUpti_Activity* record, ActivityLogger* logger);
-
   // Process specific GPU activity types
-  void updateGpuNetSpan(const ITraceActivity& gpuOp);
-  bool outOfRange(const ITraceActivity& act);
   void handleCorrelationActivity(
       const CUpti_ActivityExternalCorrelation* correlation);
   void handleRuntimeActivity(
@@ -333,11 +374,29 @@ class CuptiActivityProfiler {
   void handleCudaEventActivity(const CUpti_ActivityCudaEvent* activity);
   void handleCudaSyncActivity(
       const CUpti_ActivitySynchronization* activity, ActivityLogger* logger);
-  void handleGpuActivity(const ITraceActivity& act,
-      ActivityLogger* logger);
   template <class T>
   void handleGpuActivity(const T* act, ActivityLogger* logger);
+  void logDeferredEvents();
 #endif // HAS_CUPTI
+
+#ifdef HAS_ROCTRACER
+  // Process generic RocTracer activity
+  void handleRoctracerActivity(
+    const roctracerBase* record,
+    ActivityLogger* logger);
+  void handleCorrelationActivity(
+    uint64_t correlationId,
+    uint64_t externalId,
+    RoctracerLogger::CorrelationDomain externalKind);
+  // Process specific GPU activity types
+  template <class T>
+  void handleRuntimeActivity(
+    const T* activity,
+    ActivityLogger* logger);
+  void handleGpuActivity(
+    const roctracerAsyncRow* record,
+    ActivityLogger* logger);
+#endif // HAS_ROCTRACER
 
   void resetTraceData();
 
@@ -403,6 +462,8 @@ class CuptiActivityProfiler {
   profilerOverhead setupOverhead_;
 
   bool cpuOnly_{false};
+  bool cpuActivityPresent_{false};
+  bool gpuActivityPresent_{false};
 
   // ***************************************************************************
   // Below state is shared with external threads.

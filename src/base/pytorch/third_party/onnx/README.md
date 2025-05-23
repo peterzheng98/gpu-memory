@@ -6,12 +6,15 @@ Copyright (c) ONNX Project Contributors
 
 <p align="center"><img width="40%" src="https://github.com/onnx/onnx/raw/main/docs/onnx-horizontal-color.png" /></p>
 
+[![PyPI - Version](https://img.shields.io/pypi/v/onnx.svg)](https://pypi.org/project/onnx)
 [![Build Status](https://dev.azure.com/onnx-pipelines/onnx/_apis/build/status/Windows-CI?branchName=main&label=Windows)](https://dev.azure.com/onnx-pipelines/onnx/_build/latest?definitionId=5&branchName=main)
 [![Build Status](https://dev.azure.com/onnx-pipelines/onnx/_apis/build/status/Linux-CI?branchName=main&label=Linux)](https://dev.azure.com/onnx-pipelines/onnx/_build/latest?definitionId=7&branchName=main)
 [![Build Status](https://dev.azure.com/onnx-pipelines/onnx/_apis/build/status/MacOS-CI?branchName=main&label=MacOS)](https://dev.azure.com/onnx-pipelines/onnx/_build/latest?definitionId=6&branchName=main)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/3313/badge)](https://bestpractices.coreinfrastructure.org/projects/3313)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/onnx/onnx/badge)](https://api.securityscorecards.dev/projects/github.com/onnx/onnx)
 [![REUSE compliant](https://api.reuse.software/badge/github.com/onnx/onnx)](https://api.reuse.software/info/github.com/onnx/onnx)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 
 [Open Neural Network Exchange (ONNX)](https://onnx.ai) is an open ecosystem that empowers AI developers
@@ -28,27 +31,27 @@ ONNX is [widely supported](http://onnx.ai/supported-tools) and can be found in m
 
 # Learn about the ONNX spec
 
-* [Overview](docs/Overview.md)
-* [ONNX intermediate representation spec](docs/IR.md)
-* [Versioning principles of the spec](docs/Versioning.md)
-* [Operators documentation](docs/Operators.md) (development version)
+* [Overview](https://github.com/onnx/onnx/blob/main/docs/Overview.md)
+* [ONNX intermediate representation spec](https://github.com/onnx/onnx/blob/main/docs/IR.md)
+* [Versioning principles of the spec](https://github.com/onnx/onnx/blob/main/docs/Versioning.md)
+* [Operators documentation](https://github.com/onnx/onnx/blob/main/docs/Operators.md)
 * [Operators documentation](https://onnx.ai/onnx/operators/index.html) (latest release)
-* [Python API Overview](docs/PythonAPIOverview.md)
+* [Python API Overview](https://github.com/onnx/onnx/blob/main/docs/PythonAPIOverview.md)
 
 # Programming utilities for working with ONNX Graphs
 
-* [Shape and Type Inference](docs/ShapeInference.md)
+* [Shape and Type Inference](https://github.com/onnx/onnx/blob/main/docs/ShapeInference.md)
 * [Graph Optimization](https://github.com/onnx/optimizer)
-* [Opset Version Conversion](docs/VersionConverter.md)
+* [Opset Version Conversion](https://github.com/onnx/onnx/blob/main/docs/docsgen/source/api/version_converter.md)
 
 # Contribute
 
-ONNX is a community project and the open governance model is described [here](community/readme.md). We encourage you to join the effort and contribute feedback, ideas, and code. You can participate in the [Special Interest Groups](community/sigs.md) and [Working Groups](community/working-groups.md) to shape the future of ONNX.
+ONNX is a community project and the open governance model is described [here](https://github.com/onnx/onnx/blob/main/community/readme.md). We encourage you to join the effort and contribute feedback, ideas, and code. You can participate in the [Special Interest Groups](https://github.com/onnx/onnx/blob/main/community/sigs.md) and [Working Groups](https://github.com/onnx/onnx/blob/main/community/working-groups.md) to shape the future of ONNX.
 
-Check out our [contribution guide](/CONTRIBUTING.md) to get started.
+Check out our [contribution guide](https://github.com/onnx/onnx/blob/main/CONTRIBUTING.md) to get started.
 
 If you think some operator should be added to ONNX specification, please read
-[this document](docs/AddNewOp.md).
+[this document](https://github.com/onnx/onnx/blob/main/docs/AddNewOp.md).
 
 # Community meetings
 
@@ -111,7 +114,7 @@ conda install -c conda-forge onnx
 
 Before building from source uninstall any existing versions of onnx `pip uninstall onnx`.
 
-c++17 or higher C++ compiler version is required to build ONNX from source on Windows. For other platforms, please use C++14 or higher versions.
+c++17 or higher C++ compiler version is required to build ONNX from source. Still, users can specify their own `CMAKE_CXX_STANDARD` version for building ONNX.
 
 If you don't have protobuf installed, ONNX will internally download and build protobuf for ONNX build.
 
@@ -280,7 +283,7 @@ For full list refer to CMakeLists.txt
 * `USE_MSVC_STATIC_RUNTIME` should be 1 or 0, not ON or OFF. When set to 1 onnx links statically to runtime library.
 **Default**: `USE_MSVC_STATIC_RUNTIME=0`
 
-* `DEBUG` should be 0 or 1. When set to 1 onnx is built in debug mode. or debug versions of the dependencies, you need to open the [CMakeLists file](CMakeLists.txt) and append a letter `d` at the end of the package name lines. For example, `NAMES protobuf-lite` would become `NAMES protobuf-lited`.
+* `DEBUG` should be 0 or 1. When set to 1 onnx is built in debug mode. or debug versions of the dependencies, you need to open the [CMakeLists file](https://github.com/onnx/onnx/blob/main/CMakeLists.txt) and append a letter `d` at the end of the package name lines. For example, `NAMES protobuf-lite` would become `NAMES protobuf-lited`.
 **Default**: `Debug=0`
 
 ### CMake variables
@@ -321,7 +324,7 @@ pytest
 
 # Development
 
-Check out the [contributor guide](/CONTRIBUTING.md) for instructions.
+Check out the [contributor guide](https://github.com/onnx/onnx/blob/main/CONTRIBUTING.md) for instructions.
 
 # License
 

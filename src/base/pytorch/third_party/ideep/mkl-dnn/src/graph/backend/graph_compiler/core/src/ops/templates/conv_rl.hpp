@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2023 Intel Corporation
+ * Copyright 2023-2024 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 
 #include <tuple>
 #include <vector>
+#include <compiler/ir/graph/graph.hpp>
 #include <ops/body_generator.hpp>
 #include <util/any_map.hpp>
 
@@ -35,7 +36,7 @@ struct conv_fwd_rl_config_t {
     : brgemm_m(brgemm_m), brgemm_n(brgemm_n) {}
 };
 
-enum class parallel_kind : int { BATCH = 0, WIDTH };
+enum class parallel_kind : int { BATCH = 0, HEIGHT };
 namespace rl_kind {
 constexpr int NO_LOWERING = 0;
 constexpr int FULL_LOWERING = 1;
@@ -83,7 +84,7 @@ public:
   sc_data_type_t get_output_dtype() const { return out_tensors_[0].dtype_; }
 
   bool generate(context_ptr ctx, const conv_fwd_rl_config_t &config,
-    fusion_manager *fusion, const std::vector<expr> &inputs,
+    fusion_anchor_mgr_t *fusion, const std::vector<expr> &inputs,
     const std::vector<expr> &outputs,
     std::vector<for_loop> &loops) const override;
   config_ptr get_default_config(context_ptr ctx) const override;
@@ -92,6 +93,18 @@ public:
 
   void schedule_loops(context_ptr ctx, const conv_fwd_rl_config_t &config,
     stmt body, std::vector<for_loop> &fors) const override;
+
+  std::vector<expr> data_offset(const expr &N, const expr &G, const expr &C,
+    const expr &D, const expr &H, const expr &W, const expr &C_block,
+    const expr &c_idx = expr(0)) const;
+  std::vector<expr> output_offset(const expr &N, const expr &G, const expr &C,
+    const expr &D, const expr &H, const expr &W, const expr &C_block,
+    const expr &c_idx = expr(0)) const;
+  void create_anchor(fusion_anchor_mgr_t *fusion,
+    const graph_tensor_ptr &output_gt, const expr &n, const int n_len,
+    const expr &g, const expr &g_len, const expr &k, const int k_len,
+    const expr &d, const int d_len, const expr &p, const expr &p_len,
+    const expr &q, const int q_len, const int K_block) const;
 
   size_t ndims_ = 0;
   int groups_ = 1;
@@ -107,7 +120,9 @@ public:
   int num_brgemm_k_ = 0, brgemm_k_ = 0;
   uint64_t init_mask_ = 0, update_mask_ = 0;
   int init_lanes_ = 0, update_lanes_ = 0;
+  bool is_group_conv_ = false;
   parallel_kind parallel_axis_;
+  bool blocking_input_ = false, blocking_output_ = false;
   any_map_t attrs_;
 };
 } // namespace ops

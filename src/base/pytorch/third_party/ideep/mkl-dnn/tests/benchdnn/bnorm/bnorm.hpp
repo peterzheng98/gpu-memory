@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2017-2023 Intel Corporation
+* Copyright 2017-2024 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -75,6 +75,7 @@ struct settings_t : public base_settings_t {
     std::vector<dir_t> dir {FWD_D};
     std::vector<dnnl_data_type_t> dt {dnnl_f32};
     std::vector<std::string> tag {tag::abx};
+    std::vector<vdims_t> strides {vdims_t(2)};
     std::vector<flags_t> flags {NONE};
     check_alg_t check_alg = ALG_AUTO;
     bool debug_check_ws = false;
@@ -88,24 +89,23 @@ struct settings_t : public base_settings_t {
 
     bool has_single_setup() const override {
         return dir.size() == 1 && dt.size() == 1 && tag.size() == 1
-                && flags.size() == 1 && base_settings_t::has_single_setup();
+                && strides.size() == 1 && flags.size() == 1
+                && base_settings_t::has_single_setup();
     }
 };
 
 struct prb_t : public desc_t {
     // A ctor with common interface across all drivers.
     prb_t(const settings_t &s)
-        : prb_t(s.desc, s.mb[0], s.dir[0], s.dt[0], s.tag[0], s.flags[0],
-                s.inplace[0],
-                settings_t::get_attr(s.scales[0], s.zero_points[0],
-                        s.post_ops[0], s.scratchpad_mode[0], s.fpmath_mode[0]),
-                s.ctx_init[0], s.ctx_exe[0], s.check_alg, s.debug_check_ws) {
+        : prb_t(s.desc, s.mb[0], s.dir[0], s.dt[0], s.tag[0], s.strides[0],
+                s.flags[0], s.inplace[0], s.attributes.front(), s.ctx_init[0],
+                s.ctx_exe[0], s.check_alg, s.debug_check_ws) {
         SAFE_V(s.has_single_setup() ? OK : FAIL);
     }
 
     prb_t(const desc_t &desc, int64_t mb, dir_t dir, dnnl_data_type_t dt,
-            const std::string &tag, flags_t flags, bool inplace,
-            const attr_t &attr, const thr_ctx_t &ctx_init,
+            const std::string &tag, const vdims_t &strides, flags_t flags,
+            bool inplace, const attr_t &attr, const thr_ctx_t &ctx_init,
             const thr_ctx_t &ctx_exe, check_alg_t check_alg,
             bool debug_check_ws)
         : desc_t(desc)
@@ -114,6 +114,7 @@ struct prb_t : public desc_t {
         , dir(dir)
         , dt(dt)
         , tag(tag)
+        , strides(strides)
         , flags(flags)
         , inplace(inplace)
         , attr(attr)
@@ -130,6 +131,7 @@ struct prb_t : public desc_t {
     dir_t dir;
     dnnl_data_type_t dt;
     std::string tag;
+    vdims_t strides;
     flags_t flags;
     bool inplace;
     attr_t attr;
@@ -161,6 +163,62 @@ private:
     std::string repro;
 
     std::string set_repro_line();
+};
+
+struct cfg_t {
+    // The idea of data filling is to choose source values the way both mean
+    // and variance values are computed exactly. Exactness must hold for any
+    // order of the computations. It is achieved when the following equation
+    // holds: src[i] + src[i + 1] = 2 * mean.
+    //
+    // The data variation in source values is allowed in the last `flex_bits_`
+    // bits. If the sequence `L_` is too big, e.g.,
+    // `flex_bits_ <= min_flex_bits_`, the mean value is set to `0.f` and source
+    // is partially filled with zeros according to `density_`. In such case at
+    // least `want_flex_bits_` is reserved for source values variation.
+    // Once source values are set, the variance value is computed.
+    //
+    // ALG_0: mean value is set to 0.
+    // ALG_1: mean value is set to 2^x, where `x` \in {-2, -1, ..., 4}.
+    // ALG_AUTO: choose between ALG_0 and ALG_1 automatically.
+    //
+    // `density_` is filled according to the following inequation:
+    //     (exact_bits - log_2(L * density)) / 2 >= flex_bits
+    cfg_t(const prb_t *prb)
+        : exact_bits_(digits_dt(prb->dt))
+        , L_(prb->mb * prb->id * prb->ih * prb->iw)
+        , logL_(static_cast<int64_t>(
+                  std::ceil(std::log2(static_cast<float>(L_)))))
+        , free_bits_((exact_bits_ - logL_) / 2 - 1)
+        , want_flex_bits_(MIN2(6, exact_bits_ / 2))
+        , check_alg_(prb->check_alg == ALG_AUTO
+                          ? (free_bits_ >= min_flex_bits_ ? ALG_1 : ALG_0)
+                          : prb->check_alg)
+        , flex_bits_(check_alg_ == ALG_0 ? want_flex_bits_
+                                         : MIN2(exact_bits_, free_bits_))
+        , flex_mask_((1LL << flex_bits_) - 1)
+        , density_(check_alg_ == ALG_0
+                          ? 1.f * (1LL << (exact_bits_ - 2 * flex_bits_)) / L_
+                          : 1.f) {
+        assert(logL_ <= 0 || (1LL << (logL_ - 1)) < L_);
+        assert(L_ <= (1LL << logL_));
+        assert(flex_bits_ >= min_flex_bits_);
+        BENCHDNN_PRINT(6,
+                "[CFG]: check_alg:%s; density:%g; flex_bits:" IFMT "\n",
+                check_alg2str(check_alg_), density_, flex_bits_);
+    }
+
+    int64_t exact_bits_;
+    int64_t L_;
+    int64_t logL_;
+    int64_t free_bits_; // Helper value holder.
+    int64_t want_flex_bits_;
+    check_alg_t check_alg_;
+    int64_t flex_bits_;
+    int64_t flex_mask_;
+    float density_;
+
+    static constexpr int64_t min_flex_bits_ = 3;
 };
 
 struct perf_report_t : public base_perf_report_t {
@@ -208,7 +266,7 @@ void setup_cmp(compare::compare_t &cmp, const prb_t *prb, data_kind_t kind,
         const args_t &ref_args);
 std::vector<int> supported_exec_args(dir_t dir);
 int init_ref_memory_args(dnn_mem_map_t &ref_mem_map, dnn_mem_map_t &mem_map,
-        dnnl_primitive_t prim, const prb_t *prb, res_t *res, dir_t dir,
+        dnnl_primitive_t prim, const prb_t *prb, res_t *res,
         dnnl_primitive_t prim_ref = nullptr);
 
 void skip_unimplemented_prb(const prb_t *prb, res_t *res);
